@@ -81,15 +81,31 @@ All options are located in b:formatOptions and g:formatOptions dictionaries.
 
 DefaultFormat :: String                           *format-opt-DefaultFormat*
         Default format specification's name.
+
 IgnoreFolds :: Bold                                 *format-opt-IgnoreFolds*
         If IgnoreFolds is true, then act as if there were no text folds. See 
         |fold.txt| for more information about folding. Note that if format 
         specification does not provide "fold" key then folds will be ignored 
         even if IgnoreFolds is set to 0 .
+
 IgnoreList :: Bool                                   *format-opt-IgnoreList*
         If IgnoreList is true, then ignore 'list' and 'listchars' options.
         Now plugin supports only tab, trail and eol 'listchars' 
         specifications.
+
+NoLineNR :: Bool                                       *format-opt-NoLineNR*
+        If it is true then do no add the line numbers. It does the following:
+        1. Sets @_donr@ to 0
+        2. Makes "%#" and "%_" return empty strings
+        3. Forces skipping applying "linenr" specification
+        It has the same effect as removing "linenr" key from specification.
+
+CollapsFiller :: UnsignedInteger                  *format-opt-CollapsFiller*
+        If this value is not zero, number of deleted lines is equal or greater 
+        than CollapsFiller and there is "collapsedfiller" key in format 
+        specification then this key is used instead of repeating "difffiller" 
+        for every deleted line.
+
 DoNotLoad                                             *format-opt-DoNotLoad*
         If this key exists and plugin is not already loaded, then it will not 
         be loaded (only for g:formatOptions dictionary).
@@ -147,6 +163,15 @@ difffiller                                      *format-spec-key-difffiller*
         values):
         Argument    Value ~
         @@@         @_difffillchar@
+        @.@         0 (zero)
+        @{stspec}@  Specification derived from "DiffDelete" highlight group
+
+collapsedfiller                            *format-spec-key-collapsedfiller*
+        String, describes collapsed filler. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Number of deleted lines
         @.@         0 (zero)
         @{stspec}@  Specification derived from "DiffDelete" highlight group
 
@@ -233,6 +258,9 @@ inside the |format-spec-expression|.
 %<SPACE>                                               *format-spec-%SPACE*
         A single @_leadingspace@. Just the same as %=@_leadingspace@=%, but 
         computed only once.
+%^                                                          *format-spec-%^*
+        A single @_leadingspace@ if @_donr@ is true and an empty string 
+        otherwise.
 %-                                                          *format-spec-%-*
         @_difffillchar@ repeated enough times for the line length to be less 
         or equal to @_columns@.
@@ -294,8 +322,7 @@ sequences (use them in place of ordinary variables):
                       "#ffffff" depending on 'background' option.
         linenumlen    Length of the number of the last line.
         ignorefolds   1 if folds are ignored, 0 otherwise.
-        donr          1 if lines will be numbered, 0 otherwise. Now only 
-                      indicates that "linenr" key is present.
+        donr          1 if lines will be numbered, 0 otherwise.
 
 vim: ft=help:tw=78
 

@@ -69,6 +69,8 @@ let s:g.p={
             \    "nvar": "No such variable",
             \   "nfunc": "No such function",
             \    "iarg": "Invalid argument",
+            \    "iopt": "Invalid option",
+            \    "uopt": "Unknown option",
             \},
             \"etype": {
             \    "value": "InvalidValue",

@@ -87,18 +87,21 @@ endif
 "{{{1 Вторая загрузка
 let s:g.pluginloaded=1
 "{{{2 Настройки
-" TODO CollapsFiller, NoLineNR
 let s:g.defaultOptions={
             \"DefaultFormat": "html",
             \"UseStyleCache": 1,
             \"IgnoreFolds":   0,
             \"IgnoreList":    0,
+            \"NoLineNR":      0,
+            \"CollapsFiller": 0,
         \}
 let s:g.chk.options={
             \"DefaultFormat": ["keyof", s:g.fmt.formats],
             \"UseStyleCache": ["bool", ""],
             \"IgnoreFolds":   ["bool", ""],
             \"IgnoreList":    ["bool", ""],
+            \"NoLineNR":      ["bool", ""],
+            \"CollapsFiller": ["num", [0]],
         \}
 "{{{2 Чистка
 unlet s:g.load
@@ -511,14 +514,18 @@ let s:g.fmt.expressions={
         \}
 "{{{4 s:g.fmt.complexexpressions
 let s:g.fmt.complexexpressions={
-            \'#': "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', '.".
-            \     "a:opts.linenumlen.'-len(@-@)).@-@'",
+            \'#': "((a:opts.donr)?(".
+            \       "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', '.".
+            \       "a:opts.linenumlen.'-len(@-@)).@-@'):(''''''))",
             \'-': "'repeat('.s:F.plug.stuf.squote(a:opts.difffillchar).', ('.".
             \     "a:opts.columns.'-@=@)/'.".
             \       "s:F.stuf.strlen(a:opts.difffillchar).')'",
             \'_': "s:F.plug.stuf.squote(repeat(a:opts.leadingspace, ".
-            \                                 "a:opts.linenumlen))",
+            \                                 "((a:opts.donr)?(".
+            \                                   "a:opts.linenumlen):(0))))",
             \' ': "s:F.plug.stuf.squote(a:opts.leadingspace)",
+            \'^': "((a:opts.donr)?s:F.plug.stuf.squote(a:opts.leadingspace):".
+            \       "(''''''))",
             \'~': "s:F.plug.stuf.squote(a:opts.difffillchar)",
         \}
 "}}}4
@@ -627,6 +634,7 @@ function s:F.fmt.prepare(format, startline, endline)
                 \(a:format.strlen):
                 \(s:F.stuf.strlen))
     let opts.linenumlen=len(a:endline)
+    let opts.donr=has_key(a:format, "linenr") && !s:F.main.option("NoLineNR")
     let id=hlID("normal")
     let opts.fgcolor=s:F.fmt.getcolor(synIDattr(id, "fg#", s:g.fmt.whatterm))
     let opts.bgcolor=s:F.fmt.getcolor(synIDattr(id, "bg#", s:g.fmt.whatterm))
@@ -639,7 +647,7 @@ function s:F.fmt.prepare(format, startline, endline)
     "{{{4 «Компиляция» некоторых ключей
     let cformat={}
     for key in  ["linestart", "line", "lineend", "begin", "end", "style",
-                \"linenr", "fold", "difffiller"]
+                \"linenr", "fold", "difffiller", "collapsedfiller"]
         if has_key(a:format, key)
             let [cformat[key], cformat["r_".key]]=s:F.fmt.compile(a:format[key],
                         \                                         opts)
@@ -697,7 +705,7 @@ let s:g.fmt.escapehtml="%'substitute(substitute(@@@, '[<>\"&]', ".
             \          "'\\=\"&#\".char2nr(submatch(0)).\";\"', 'g'), ".
             \          "' ', '\\&nbsp;', 'g')'%"
 let s:g.fmt.formats.html={
-            \"style":        '%=((@styleid@!="")?'.
+            \"style":        '%>((@styleid@!="")?'.
             \                   '(".s".@styleid@." {".'.
             \                     '((@inverse@)?("color: ".'.
             \                       '((@bgcolor@!="")?'.
@@ -722,15 +730,15 @@ let s:g.fmt.formats.html={
             \                       '("text-decoration: underline;"):'.
             \                       '("")).'.
             \                   '"} "):'.
-            \                   '(""))=%',
+            \                   '(""))',
             \"begin":        "<html><head>".
             \                "<meta http-equiv=\"content-type\" ".
             \                       "content=\"text/hmtl; charset=UTF-8\" />".
             \                "<style> ".
             \                "body { font-family: monospace; ".
             \                        "white-space: nowrap; ".
-            \                        "margin: 0; padding: 0; border: 0; }".
-            \                "div { margin: 0; padding: 0; border: 0; }".
+            \                        "margin: 0; padding: 0; border: 0; } ".
+            \                "div { margin: 0; padding: 0; border: 0; } ".
             \                "%:</style>".
             \                '<title>%''substitute(expand("%:p:~%"), '.
             \                '''[<>"&]'', '.
@@ -742,10 +750,12 @@ let s:g.fmt.formats.html={
             \"linenr":       "<span class='s%S'>%#% </span>",
             \"line":         "<span class='s%S'>".s:g.fmt.escapehtml."</span>",
             \"lineend":      "</div>\n",
-            \"fold":         "<div class='s%S'><span class='s%S'>%#% ".
+            \"fold":         "<div class='s%S'><span class='s%S'>%#%^".
             \                s:g.fmt.escapehtml."% %-</span></div>\n",
-            \"difffiller":   "<div>%_% ".
+            \"difffiller":   "<div>%_%^".
             \                "<span class='s%S'>%-</span></div>\n",
+            \"collapsedfiller": "<div>%_%^<span class='s%S'>".
+            \                   '%~ Deleted lines: %s %-</span></div>'."\n",
             \"leadingspace": "&nbsp;",
             \"strlen":       s:F.stuf.htmlstrlen,
         \}
@@ -764,7 +774,6 @@ let s:g.fmt.formats.bbcode_unixforum_nonr={
             \           '((@italic@)?("[/i]"):("")).'.
             \           '((@bold@)?("[/b]"):(""))''%[/color]',
             \"lineend": "\n",
-            \"difffiller": "",
             \"leadingspace": "&#160;",
             \"strlen": s:F.stuf.bbstrlen,
         \}
@@ -830,26 +839,37 @@ function s:F.fmt.format(type, startline, endline)
         let foldspec    = s:F.fmt.spec(cformat, "Folded") " Формат складок
     endif
     let opts.donr=0
-    if has_key(cformat, "linenr")
+    if has_key(cformat, "linenr") && !s:F.main.option("NoLineNR")
         let nrspec      = s:F.fmt.spec(cformat, "LineNr") " Для номеров строк
         let opts.donr=1
     endif
+    let donr=opts.donr
     if &diff
         let fillspec    = s:F.fmt.spec(cformat, "DiffDelete") " Для удалённых 
                                                               " строк
     endif
     lockvar! opts
     "{{{5 Удалённая строка: предсоздание, если возможно
-    if &diff && has_key(cformat, "r_difffiller")
-        let persistentfiller=1
-        let fillerstr=cformat.difffiller(opts.difffillchar, fillspec, 0, 0, "",
-                    \                    opts, "")
-        for requirement in cformat.r_difffiller
-            if requirement=~'^a:line\|a:style$'
-                let persistentfiller=0
-                break
-            endif
-        endfor
+    if &diff
+        let persistentfiller=0
+        let collapsafter=s:F.main.option("CollapsFiller")
+        if collapsafter && has_key(cformat, "collapsedfiller")
+            let persistentfiller=0
+        elseif has_key(cformat, "difffiller")
+            let collapsafter=0
+            let persistentfiller=1
+            let fillerstr=cformat.difffiller(opts.difffillchar, fillspec, 0, 0,
+                        \                    "", opts, "")
+            for requirement in cformat.r_difffiller
+                if requirement=~'^a:line\|a:style$'
+                    let persistentfiller=0
+                    break
+                endif
+            endfor
+        else
+            let persistentfiller=1
+            let fillerstr=""
+        endif
     endif
     "{{{5 listchars: отображение некоторых символов в соответствии с 'listchars'
     let listchars={}
@@ -870,19 +890,23 @@ function s:F.fmt.format(type, startline, endline)
         if &diff
             let filler=diff_filler(curline)
             if filler>0
-                let curfil=filler
-                if has_key(cformat, "difffiller")
-                    if !persistentfiller
+                if !persistentfiller
+                    if !collapsafter || filler<collapsafter
+                        let curfil=filler
                         while curfil
                             let r.=cformat.difffiller(opts.difffillchar,
                                         \             fillspec, curline, 0, "",
                                         \             opts, cformat.stylestr)
                             let curfil-=1
                         endwhile
-                    " Удалённая строка уже предсоздана
                     else
-                        let r.=repeat(fillerstr, curfil)
+                        let r.=cformat.collapsedfiller(filler, fillspec,
+                                    \                  curline, 0, "", opts,
+                                    \                  cformat.stylestr)
                     endif
+                " Удалённая строка уже предсоздана
+                else
+                    let r.=repeat(fillerstr, curfil)
                 endif
                 let curline+=1
                 continue
@@ -931,7 +955,7 @@ function s:F.fmt.format(type, startline, endline)
                         \((diffattr)?(dspec):(normalspec)), curline, 0, curstr,
                         \                 opts, cformat.stylestr)
             "{{{7 Номер
-            if has_key(cformat, "linenr")
+            if donr
                 let curstr.=cformat.linenr(curline, nrspec, curline, 0, curstr,
                             \              opts, cformat.stylestr)
             endif
