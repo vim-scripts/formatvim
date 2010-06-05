@@ -1,0 +1,301 @@
+*format.txt*  Convert current file to colored HTML, BBCode or whatever
+==============================================================================
+CONTENTS                                                   *format-contents*
+
+    1. Intro                                      |format-intro|
+    2. Functionality provided                     |format-functionality|
+        2.1. Commands                             |format-commands|
+        2.2. Functions                            |format-functions|
+    3. Options                                    |format-options|
+    4. Format specification description           |format-spec|
+        4.1. Dictionary keys                      |format-spec-keys|
+        4.2. String descriptions                  |format-spec-description|
+
+==============================================================================
+1. Intro                                                      *format-intro*
+
+This plugin provides the ability to convert current file to colored HTML, 
+BBcode, (in future) LaTeX or whatever you have written specification for.
+
+Features:
+    ∙ Flexible format specifications
+    ∙ Ability to create abstract stylesheets
+    ∙ 'list' and 'listchars' options support (only tab, trail and eol for now)
+    ∙ Diffed buffers support (if file is in diff mode and current line is 
+      different from other's file line then foreground color is taken from 
+      current syntaxID and background color is taken from diff syntax ID)
+    ∙ Support for creating numbered lines
+    ∙ Folds support
+
+Plugin requires chk, comp, stuf and load plugins.
+
+==============================================================================
+2. Functionality provided                             *format-functionality*
+
+This plugin provides one command and three functions. One function is accessed 
+via dictionary returned by |load-func-getfunctions| function.
+
+------------------------------------------------------------------------------
+2.1. Commands                                              *format-commands*
+                                                            *format-actions*
+
+:FormatCommand {action} ...               *format-:Command* *:FormatCommand*
+            The only command provided by this plugin. If variable 
+            g:formatOptions exists and has key CmdPrefix, then prefix Format 
+            is altered.
+:{range}FormatCommand format [{formatName}]
+            Create a new buffer which contains lines formatted using the 
+            specification named {formatName} ("html" by default). If {range} 
+            is not given, format the whole file.
+
+------------------------------------------------------------------------------
+2.2. Functions                                            *format-functions*
+
+Global functions ("Format" prefix can be altered in g:formatOptions.FuncPrefix 
+option):
+
+                                                           *format-func-Add*
+FormatAdd({formatName}, {specification})                       *FormatAdd()*
+            Add {specification} to the list of specifications and name it 
+            {formatName}. If specification named {formatName} already exists 
+            then it throws an exception. For the description of 
+            {specification} see |format-spec|.
+                                                       *format-func-Delete*
+FormatDelete({formatName})                                 *FormatDelete()*
+            Delete format named {formatName}.
+
+
+Function, accessed via dictionary returned by |load-func-getfunctions| 
+function:
+                                                        *format-func-format*
+format({formatName}, [{startline}, [{endline}]])
+            Return the string containing lines formatted using the 
+            specification named {formatName}. If {startline} is not given, use 
+            the whole file. If {endline} is not given, format from the 
+            {startline} to the end of file.
+
+==============================================================================
+3. Options                                                  *format-options*
+                                         *b:formatOptions* *g:formatOptions*
+All options are located in b:formatOptions and g:formatOptions dictionaries.
+
+DefaultFormat :: String                           *format-opt-DefaultFormat*
+        Default format specification's name.
+IgnoreFolds :: Bold                                 *format-opt-IgnoreFolds*
+        If IgnoreFolds is true, then act as if there were no text folds. See 
+        |fold.txt| for more information about folding. Note that if format 
+        specification does not provide "fold" key then folds will be ignored 
+        even if IgnoreFolds is set to 0 .
+IgnoreList :: Bool                                   *format-opt-IgnoreList*
+        If IgnoreList is true, then ignore 'list' and 'listchars' options.
+        Now plugin supports only tab, trail and eol 'listchars' 
+        specifications.
+DoNotLoad                                             *format-opt-DoNotLoad*
+        If this key exists and plugin is not already loaded, then it will not 
+        be loaded (only for g:formatOptions dictionary).
+
+==============================================================================
+4. Format specification description                            *format-spec*
+
+Format specification is the dictionary with the following keys:
+
+------------------------------------------------------------------------------
+4.1. Dictionary keys                                      *format-spec-keys*
+
+linestart                                        *format-spec-key-linestart*
+        String, describes each start of line. Required. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Empty string
+        @.@         0 (zero)
+        @{stspec}@  Specification derived from "Normal" highlight group
+
+linenr                                              *format-spec-key-linenr*
+        String, describes line number at the start of each line without folds. 
+        Arguments (see |format-spec-description|) (listed only arguments with 
+        non-standart values):
+        Argument    Value ~
+        @@@         Same as @-@
+        @.@         0 (zero)
+        @{stspec}@  Specification derived from "LineNr" highlight group
+
+line                                                  *format-spec-key-line*
+        String, describes each differently highlighted group of characters. 
+        Required. Arguments take only standart values (see 
+        |format-spec-description|).
+
+lineend                                            *format-spec-key-lineend*
+        String, describes each line end. Required. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Empty string
+        @{stspec}@  Specification derived from "Normal" highlight group
+
+fold                                                  *format-spec-key-fold*
+        String, describes each fold. Arguments (see |format-spec-description|) 
+        (listed only arguments with non-standart values):
+        Argument    Value ~
+        @@@         Value returned by |foldtextresult()|
+        @.@         0 (zero)
+        @{stspec}@  Specification derived from "Folded" highlight group
+
+difffiller                                      *format-spec-key-difffiller*
+        String, describes difffiller. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         @_difffillchar@
+        @.@         0 (zero)
+        @{stspec}@  Specification derived from "DiffDelete" highlight group
+
+begin                                                *format-spec-key-begin*
+        String, describes the beginning of the document. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Empty string
+        @.@         0 (zero)
+        @-@         0 (zero)
+        @{stspec}@  Specification derived from "Normal" highlight group
+
+end                                                    *format-spec-key-end*
+        String, describes the end of the document. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Empty string
+        @.@         0 (zero)
+        @-@         Number of last formatted line
+        @{stspec}@  Specification derived from "Normal" highlight group
+
+style                                                *format-spec-key-style*
+        String, describes the style of the given highlight group, this style 
+        is appended to @:@. Used only once for each highlight group. Arguments 
+        (see |format-spec-description|) (listed only arguments with 
+        non-standart values):
+        Argument    Value ~
+        @@@         Style id
+        @.@         0 (zero)
+        @-@         0 (zero)
+        @{stspec}@  Specification derived from current style
+
+difffillchar                                  *format-spec-key-difffillchar*
+        String, specifies the character(s) for "%-" and "%~" formats. Can be 
+        accessed inside %=...=% via @_difffillchar@.
+
+leadingspace                                  *format-spec-key-leadingspace*
+        String, specifies the character(s) for "%#", "%_" and "% " formats. 
+        Can be accessed inside %=...=% via @_leadingspace@.
+
+columns                                            *format-spec-key-columns*
+        Number of columns. If it is not specified, 'columns' option is used 
+        instead.
+
+strlen                                              *format-spec-key-strlen*
+        Function reference, specifies the function that counts length of line 
+        for "%_" and "%-" formats and "@=@" argument. Can be accessed inside
+        %=...=% via @_strlen@. May be removed in future versions.
+
+------------------------------------------------------------------------------
+4.2. String descriptions                           *format-spec-description*
+
+Most specification keys use the following format to describe what plugin 
+should actually have in the returned value. It uses %C to describe some common 
+strings and |format-spec-expression| to describe more complex structures. Here 
+are the characters that are used in the %C expression. All characters not 
+listed here get escaped. Note that you must escape all "@" characters not 
+inside the |format-spec-expression|.
+
+%f, %b                                     *format-spec-%f* *format-spec-%b*
+        Foreground and background colors (string with format "#RRGGBB"), same 
+        as @fgcolor@ and @bgcolor@ inside %=...=%.
+%S                                                          *format-spec-%S*
+        Style id ("N" or "N_N" for characters affected by diff mode), same as 
+        %=@styleid@=%.
+%N                                                          *format-spec-%N*
+        Current line number, same as %=@-@=%.
+%C                                                          *format-spec-%C*
+        Column number of the end of string, same as %=@.@=%.
+%s                                                          *format-spec-%s*
+        String being formatted, same as %=@@@=%.
+%:                                                          *format-spec-%:*
+        All current styles, same as %=@:@=%. It is a very bad idea to use it 
+        outside of |format-spec-key-begin| or |format-spec-key-end| as we will 
+        know all styles only when we format beginning and end of the document 
+        (yes, beginning of the document is formatted only before its end and 
+        the latter is the last thing that is being formatted).
+%#                                                          *format-spec-%#*
+        Line number, padded to the right with @_leadingspace@.
+%_                                                          *format-spec-%_*
+        @_leadingspace@ repeated @_linenumlen@ times.
+%<SPACE>                                               *format-spec-%SPACE*
+        A single @_leadingspace@. Just the same as %=@_leadingspace@=%, but 
+        computed only once.
+%-                                                          *format-spec-%-*
+        @_difffillchar@ repeated enough times for the line length to be less 
+        or equal to @_columns@.
+%~                                                          *format-spec-%~*
+        A single @_difffillchar@. Just the same as %=@_difffillchar@=%, but 
+        computed only once.
+
+------------------------------------------------------------------------------
+4.2.1. Expressions in string description                    *format-spec-%=*
+                                           *format-spec-%'* *format-spec-%>*
+                                                    *format-spec-expression*
+
+Inside string descriptions can be used complex expressions: "%=expression=%", 
+"%'expression'%" and "%>expression". In the first form all '%' and '\' 
+characters need to be escaped, in the second form you must not allow the 
+string "'%" to appear inside expression, and the third form just grabs the 
+whole string after "%>". Inside the expressions you can use the following 
+sequences (use them in place of ordinary variables):
+
+@@@                                                        *format-spec-@@@*
+        String being formatted.
+@-@                                                        *format-spec-@-@*
+        Current line number.
+@.@                                                        *format-spec-@.@*
+        Column number of the end of the string.
+@:@                                                        *format-spec-@:@*
+        String with all styles. For use in |format-spec-key-begin| and 
+        |format-spec-key-end|.
+@=@                                                        *format-spec-@=@*
+        Length of the string of the current line before expression. Before 
+        using this ensure that there are no "'." sequences before it inside 
+        character expression.
+@{stspec}@                                               *format-spec-@key@*
+        Value of the style specification. Possible {stspec}s:
+        {stspec}   Value ~
+        styleid    ID of the current highlight group. For normal lines it is 
+                   a single number, for lines with differencies it is equal to 
+                   {highID}_{diffhighID}.
+        fgcolor    Foreground color transformed to "#RRGGBB" notation.
+        bgcolor    Background color transformed to "#RRGGBB" notation.
+        bold       Bold syntax attribute.
+        italic     Italic syntax attribute.
+        inverse    Inverse syntax attribute.
+        underline  Underline syntax attribute.
+@_{option}@                                             *format-spec-@_opt@*
+        Value of the specified option. Possible {option}s:
+        {option}      Value ~
+        leadingspace  Value of the "leadingspace" key from format 
+                      specification if it is present.
+        difffillchar  Value of the "difffillchar" key from format 
+                      specification if it is present.
+        columns       Value of the "columns" key from format specification or 
+                      value of 'columns' option if it is not present.
+        fgcolor       Foreground color of "Normal" highlight group. If this 
+                      color is an empty string then it is either "#000000" or 
+                      "#ffffff" depending on 'background' option.
+        bgcolor       Background color of "Normal" highlight group. If this 
+                      color is an empty string then it is either "#000000" or 
+                      "#ffffff" depending on 'background' option.
+        linenumlen    Length of the number of the last line.
+        ignorefolds   1 if folds are ignored, 0 otherwise.
+        donr          1 if lines will be numbered, 0 otherwise. Now only 
+                      indicates that "linenr" key is present.
+
+vim: ft=help:tw=78
+
