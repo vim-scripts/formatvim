@@ -106,6 +106,18 @@ CollapsFiller :: UnsignedInteger                  *format-opt-CollapsFiller*
         specification then this key is used instead of repeating "difffiller" 
         for every deleted line.
 
+ShowProgress :: 0, 1 or 2                          *format-opt-ShowProgress*
+        If this value is not zero then show progress bar. Differencies between 
+        1 and 2:
+        Value  Bar ~
+          1    [=>       ] 10% (bar and per cent count)
+          2    [=>   ] 1/9 10% (bar, currentline/lastline, per cent count)
+               Note that it is currentline/lastline, not 
+               linesformatted/linestoformat
+        Note that this option alters your 'statusline' and 'laststatus' 
+        options during its work, so if you hit <Ctrl-C> you will end with this 
+        options altered.
+
 DoNotLoad                                             *format-opt-DoNotLoad*
         If this key exists and plugin is not already loaded, then it will not 
         be loaded (only for g:formatOptions dictionary).

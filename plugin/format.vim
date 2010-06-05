@@ -93,6 +93,7 @@ let s:g.defaultOptions={
             \"IgnoreFolds":   0,
             \"IgnoreList":    0,
             \"NoLineNR":      0,
+            \"ShowProgress":  0,
             \"CollapsFiller": 0,
         \}
 let s:g.chk.options={
@@ -101,6 +102,7 @@ let s:g.chk.options={
             \"IgnoreFolds":   ["bool", ""],
             \"IgnoreList":    ["bool", ""],
             \"NoLineNR":      ["bool", ""],
+            \"ShowProgress":  ["num", [0, 2]],
             \"CollapsFiller": ["num", [0]],
         \}
 "{{{2 Чистка
@@ -829,6 +831,29 @@ function s:F.fmt.format(type, startline, endline)
                              " Используется словарь для ускорения
     let r=""                 " Строка с возвращаемым значением
     let curline=startline    " Номер преобразовываемой линии
+    "{{{5 Progress bar
+    let showprogress=s:F.main.option("ShowProgress") " Показывать progress bar
+    if !has("statusline")
+        let showprogress=0
+    endif
+    if showprogress
+        " Сохраненённое значения настройки 'statusline'
+        let oldstatusline=getwinvar(0, "&statusline")
+        let oldlaststatus=&laststatus " Сохранённое значение 'laststatus'
+        let oldprogress=0        " Старое значение % сделанного
+        let oldcolnum=0          " Старое значение длины строки из '='
+        let barstart="["         " Первая часть progress bar’а со строкой =
+        set laststatus=2
+        " Вторая часть прогресс бара
+        let barlen=((winwidth(0))-
+                    \((showprogress==2)?
+                    \    ((opts.linenumlen)*2+10):
+                    \    (8)))
+        if barlen<0
+            let showprogress=0
+        endif
+        let barend=repeat(" ", barlen)."] "
+    endif
     "{{{5 Форматы
     let normalspec  = s:F.fmt.spec(cformat, "Normal")     " Формат по умолчанию
     let specialspec = s:F.fmt.spec(cformat, "SpecialKey") " Для спецсимволов, 
@@ -884,6 +909,28 @@ function s:F.fmt.format(type, startline, endline)
     "{{{4 Основной цикл: создание указанного представления
     while curline<=endline
         let curstr=""
+        "{{{5 Progress bar
+        if showprogress
+            let progress=100*curline/endline
+            let colnum=barlen*curline/endline
+            if showprogress==2 || progress!=oldprogress || colnum!=oldcolnum
+                if colnum!=oldcolnum
+                    let barstart.="="
+                    let barend=barend[1:]
+                endif
+                let bar=((barstart).">".(barend).
+                            \((showprogress==2)?
+                            \   (repeat(" ", opts.linenumlen-
+                            \                len(curline)).
+                            \    curline."/".endline." "):
+                            \   ("")).
+                            \(repeat(" ", 3-len(progress)).progress)."%%")
+                call setwinvar(0, "&statusline", bar)
+                redrawstatus
+            endif
+            let oldprogress=progress
+            let oldcolnum=colnum
+        endif
         "{{{5 Обработка удалённых строк
         " Если не включён режим разности, то никаких удалённых строк быть не 
         " может
@@ -1097,8 +1144,13 @@ function s:F.fmt.format(type, startline, endline)
         let r.=cformat.end("", normalspec, endline, 0, "", opts,
                 \          cformat.stylestr)
     endif
-    "}}}4
+    "{{{4 Восстановление старых значений
     let &magic=oldmagic
+    if showprogress
+        let &laststatus=oldlaststatus
+        call setwinvar(0, '&statusline', oldstatusline)
+    endif
+    "}}}4
     return r
 endfunction
 "{{{3 fmt.add
