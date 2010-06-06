@@ -50,9 +50,9 @@ elseif !exists("s:g.pluginloaded")
                 \       "func": "mng.main",
                 \      "range": '%',
                 \        "bar": "",
+                \   "complete": "customlist,s:_complete",
                 \},
             \}
-                " \   "complete": "customlist,s:_complete",
     let s:g.chk.ff=[
                 \["Add", "fmt.add", {
                 \       "model": "simple",
@@ -122,6 +122,7 @@ let s:g.p={
 "{{{1 Вторая загрузка — функции
 "{{{2 Внешние дополнения
 let s:F.plug.stuf=s:F.plug.load.getfunctions("stuf")
+let s:F.plug.comp=s:F.plug.load.getfunctions("comp")
 let s:F.plug.chk =s:F.plug.load.getfunctions("chk")
 "{{{2 stuf: strlen, htmlstrlen, bbstrlen
 "{{{3 stuf.strlen
@@ -147,6 +148,7 @@ endfunction
 "{{{2 main: eerror, destruct, option
 "{{{3 main.destruct: выгрузить плагин
 function s:F.main.destruct()
+    call s:F.plug.comp.delcomp(s:g.comp._cname)
     unlet s:g
     unlet s:F
     return 1
@@ -980,17 +982,19 @@ function s:F.fmt.format(type, startline, endline)
         let closedfoldslist=[]
         let fcurline=startline
         "{{{5 Складки, закрытые в данный момент
-        while fcurline<=endline
-            if foldclosed(fcurline)>-1
-                call add(closedfoldslist, fcurline)
-                let closedfolds[fcurline]=
-                            \cformat.fold(foldtextresult(fcurline),
-                            \           foldspec, "", 0, "",
-                            \           opts, cformat.stylestr)
-                let fcurline=foldclosedend(fcurline)
-            endif
-            let fcurline+=1
-        endwhile
+        if has_key(cformat, "fold")
+            while fcurline<=endline
+                if foldclosed(fcurline)>-1
+                    call add(closedfoldslist, fcurline)
+                    let closedfolds[fcurline]=
+                                \cformat.fold(foldtextresult(fcurline),
+                                \           foldspec, "", 0, "",
+                                \           opts, cformat.stylestr)
+                    let fcurline=foldclosedend(fcurline)
+                endif
+                let fcurline+=1
+            endwhile
+        endif
         let opts.closedfoldslist=closedfoldslist
         "{{{5 Остальные складки
         let possiblefolds={}
@@ -1495,6 +1499,16 @@ function s:F.mng.main(startline, endline, action, ...)
     endif
     "}}}4
 endfunction
+"{{{2 comp
+let s:g.comp={}
+let s:g.comp._cname="format"
+let s:g.comp.a={"model": "actions"}
+let s:g.comp.a.actions={}
+let s:g.comp.a.actions.format={
+            \"model": "simple",
+            \"arguments": [["keyof", s:g.fmt.formats]],
+        \}
+let s:F.comp._complete=s:F.plug.comp.ccomp(s:g.comp._cname, s:g.comp.a)
 "{{{1
 lockvar! s:F
 unlockvar s:F.fmt
