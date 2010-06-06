@@ -827,6 +827,7 @@ function s:F.fmt.format(type, startline, endline)
                 \!has_key(cformat, "fold") ||
                 \!has("folding")
     let opts.ignorefolds=ignorefolds
+    let npregex='\t\|\p\@!.'
     let cformat.hasstyles={} " Здесь содержится список определённых стилей. 
                              " Используется словарь для ускорения
     let r=[]                 " Список строк с возвращаемыми значениями
@@ -904,6 +905,9 @@ function s:F.fmt.format(type, startline, endline)
         for lc in lcs
             let [o, v]=matchlist(lc, '^\(\w*\):\(.*\)$')[1:2]
             let listchars[o]=map(split(v, '\zs'), 'escape(v:val, "&\\")')
+            if o==#"nbsp"
+                let npregex='\t\| \|\p\@!.'
+            endif
         endfor
     endif
     "{{{4 Основной цикл: создание указанного представления
@@ -1021,6 +1025,15 @@ function s:F.fmt.format(type, startline, endline)
                     " цвета символа, определённого файлом подсветки синтаксиса 
                     " и цвета фона, определённого наличием отличий
                     let diffid=diff_hlID(curline, curcol)
+                    let diffhlname=synIDattr(synIDtrans(diffid), "name",
+                                \            s:g.fmt.whatterm)
+                    " Для отличающихся строк подсветка линии складывается из цвета 
+                    " символа, определённого файлом подсветки синтаксиса и цвета 
+                    " фона, определённого наличием отличий. ddspec — 
+                    " спецификация стиля обычных символов, но не для всей 
+                    " строки, как dspec, а для текущего региона (нужно для 
+                    " форматирования спецсимволов)
+                    let ddspec=s:F.fmt.spec(cformat, "Normal", diffhlname)
                     let id=synID(curline, curcol, 1)
                     while id==synID(curline, curcol, 1) &&
                                 \diffid==diff_hlID(curline, curcol) &&
@@ -1054,7 +1067,7 @@ function s:F.fmt.format(type, startline, endline)
                     let spec=s:F.fmt.spec(cformat, hlname)
                 endif
                 "{{{8 Обработка табуляции и непечатных символов
-                let idx=match(cstr, '\t\|\p\@!.')
+                let idx=match(cstr, npregex)
                 if idx!=-1
                     " rstartcol — длина обработанной части строки с учётом
                     "             возможного наличия многобайтных символов
@@ -1071,7 +1084,7 @@ function s:F.fmt.format(type, startline, endline)
                         if (!istab || has_key(listchars, "tab"))
                             if fcstr!=""
                                 let curstr.=cformat.line(fcstr,
-                                            \((diffattr)?(dspec):(spec)),
+                                            \((diffattr)?(ddspec):(spec)),
                                             \            curline, curcol,
                                             \            curstr, opts,
                                             \            cformat.stylestr)
@@ -1088,7 +1101,7 @@ function s:F.fmt.format(type, startline, endline)
                                 let tabstr.=repeat(listchars.tab[1], i-1)
                                 "{{{11 Форматирование табуляции
                                 let curstr.=cformat.line(tabstr,
-                                            \((diffattr)?(dspec):(specialspec)),
+                                            \((diffattr)?(ddspec):(specialspec)),
                                             \            curline, curcol,
                                             \            curstr, opts,
                                             \            cformat.stylestr)
@@ -1104,13 +1117,20 @@ function s:F.fmt.format(type, startline, endline)
                             let cstr=cstr[(len(fcstr)):]
                             let char=matchstr(cstr, '^.')
                             let cstr=cstr[(len(char)):]
-                            let curstr.=cformat.line(strtrans(char),
-                                        \((diffattr)?(dspec):(ntspec)),
-                                        \            curline, curcol, curstr,
-                                        \            opts, cformat.stylestr)
+                            if char==#" "
+                                let curstr.=cformat.line(listchars.nbsp[0],
+                                            \((diffattr)?(ddspec):(ntspec)),
+                                            \            curline, curcol, curstr,
+                                            \            opts, cformat.stylestr)
+                            else
+                                let curstr.=cformat.line(strtrans(char),
+                                            \((diffattr)?(ddspec):(ntspec)),
+                                            \            curline, curcol, curstr,
+                                            \            opts, cformat.stylestr)
+                            endif
                         endif
                         "}}}9
-                        let idx=match(cstr, '\t\|\p\@!.') " Следующий символ
+                        let idx=match(cstr, npregex) " Следующий символ
                     endwhile
                 endif
                 "{{{8 Сброс trail
