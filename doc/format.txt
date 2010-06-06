@@ -69,10 +69,10 @@ Function, accessed via dictionary returned by |load-func-getfunctions|
 function:
                                                         *format-func-format*
 format({formatName}, [{startline}, [{endline}]])
-            Return the string containing lines formatted using the 
-            specification named {formatName}. If {startline} is not given, use 
-            the whole file. If {endline} is not given, format from the 
-            {startline} to the end of file.
+            Return the List of lines formatted using the specification named 
+            {formatName}. If {startline} is not given, use the whole file. If 
+            {endline} is not given, format from the {startline} to the end of 
+            file.
 
 ==============================================================================
 3. Options                                                  *format-options*
@@ -234,6 +234,15 @@ strlen                                              *format-spec-key-strlen*
         Function reference, specifies the function that counts length of line 
         for "%_" and "%-" formats and "@=@" argument. Can be accessed inside
         %=...=% via @_strlen@. May be removed in future versions.
+
+Note that after each lineend, difffiller, collapsedfiller and fold a newline 
+will be added: using "{range}FormatCommand format {formatName}" is equivalent 
+to: >
+
+    let Format=LoadFuncDict().getfunctions("format").format
+    let lines=Format({formatName}, {rangeStart}, {rangeEnd})
+    new ++enc=utf-8
+    call setline(1, lines)
 
 ------------------------------------------------------------------------------
 4.2. String descriptions                           *format-spec-description*

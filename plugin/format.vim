@@ -746,18 +746,18 @@ let s:g.fmt.formats.html={
             \                '''[<>"&]'', '.
             \                '''\\="&#".char2nr(submatch(0)).";"'', "g")''%'.
             \                '</title></head>'.
-            \                "<body class='s%S'>\n",
-            \"end":          "</body></html>\n",
+            \                "<body class='s%S'>",
+            \"end":          "</body></html>",
             \"linestart":    "<div class='s%S'>",
             \"linenr":       "<span class='s%S'>%#% </span>",
             \"line":         "<span class='s%S'>".s:g.fmt.escapehtml."</span>",
-            \"lineend":      "</div>\n",
+            \"lineend":      "</div>",
             \"fold":         "<div class='s%S'><span class='s%S'>%#%^".
-            \                s:g.fmt.escapehtml."% %-</span></div>\n",
+            \                s:g.fmt.escapehtml."% %-</span></div>",
             \"difffiller":   "<div>%_%^".
-            \                "<span class='s%S'>%-</span></div>\n",
+            \                "<span class='s%S'>%-</span></div>",
             \"collapsedfiller": "<div>%_%^<span class='s%S'>".
-            \                   '%~ Deleted lines: %s %-</span></div>'."\n",
+            \                   '%~ Deleted lines: %s %-</span></div>',
             \"leadingspace": "&nbsp;",
             \"strlen":       s:F.stuf.htmlstrlen,
         \}
@@ -775,7 +775,7 @@ let s:g.fmt.formats.bbcode_unixforum_nonr={
             \           '" ", ''\&#160;'', "g").'.
             \           '((@italic@)?("[/i]"):("")).'.
             \           '((@bold@)?("[/b]"):(""))''%[/color]',
-            \"lineend": "\n",
+            \"lineend": "",
             \"leadingspace": "&#160;",
             \"strlen": s:F.stuf.bbstrlen,
         \}
@@ -829,7 +829,7 @@ function s:F.fmt.format(type, startline, endline)
     let opts.ignorefolds=ignorefolds
     let cformat.hasstyles={} " Здесь содержится список определённых стилей. 
                              " Используется словарь для ускорения
-    let r=""                 " Строка с возвращаемым значением
+    let r=[]                 " Список строк с возвращаемыми значениями
     let curline=startline    " Номер преобразовываемой линии
     "{{{5 Progress bar
     let showprogress=s:F.main.option("ShowProgress") " Показывать progress bar
@@ -941,19 +941,20 @@ function s:F.fmt.format(type, startline, endline)
                     if !collapsafter || filler<collapsafter
                         let curfil=filler
                         while curfil
-                            let r.=cformat.difffiller(opts.difffillchar,
-                                        \             fillspec, curline, 0, "",
-                                        \             opts, cformat.stylestr)
+                            call add(r, cformat.difffiller(opts.difffillchar,
+                                        \                  fillspec, curline, 0,
+                                        \                  "", opts,
+                                        \                  cformat.stylestr))
                             let curfil-=1
                         endwhile
                     else
-                        let r.=cformat.collapsedfiller(filler, fillspec,
-                                    \                  curline, 0, "", opts,
-                                    \                  cformat.stylestr)
+                        call add(cformat.collapsedfiller(filler, fillspec,
+                                    \                    curline, 0, "", opts,
+                                    \                    cformat.stylestr))
                     endif
                 " Удалённая строка уже предсоздана
                 else
-                    let r.=repeat(fillerstr, curfil)
+                    let r+=repeat([fillerstr], filler)
                 endif
                 let curline+=1
                 continue
@@ -990,12 +991,15 @@ function s:F.fmt.format(type, startline, endline)
             let trail=0
             if has_key(listchars, "trail")
                 let trail=len(matchstr(linestr, '\s\+$'))
-                " Мы не будем обрабатывать пробельные символы в конце строки 
-                " обычным способом
-                let linelen-=trail
-                let linestr=linestr[:(linelen-1)].
-                            \substitute(linestr[(linelen):], ' ',
-                            \           escape(listchars.trail[0], '&~\'), 'g')
+                if trail
+                    " Мы не будем обрабатывать пробельные символы в конце строки 
+                    " обычным способом
+                    let linelen-=trail
+                    let linestr=linestr[:(linelen-1)].
+                                \substitute(linestr[(linelen):], ' ',
+                                \           escape(listchars.trail[0], '&~\'),
+                                \           'g')
+                endif
             endif
             "{{{6 Начало строки
             let curstr.=cformat.linestart("",
@@ -1132,17 +1136,17 @@ function s:F.fmt.format(type, startline, endline)
                         \               opts, cformat.stylestr)
             "}}}7
         endif
-        let r.=curstr
+        call add(r, curstr)
         let curline+=1
     endwhile
     "{{{4 Начало и конец представления
     if has_key(cformat, "begin")
-        let r=cformat.begin("", normalspec, 0, 0, "", opts,
-                    \       cformat.stylestr).r
+        call insert(r, cformat.begin("", normalspec, 0, 0, "", opts,
+                    \                cformat.stylestr))
     endif
     if has_key(cformat, "end")
-        let r.=cformat.end("", normalspec, endline, 0, "", opts,
-                \          cformat.stylestr)
+        call add(r, cformat.end("", normalspec, endline, 0, "", opts,
+                \               cformat.stylestr))
     endif
     "{{{4 Восстановление старых значений
     let &magic=oldmagic
@@ -1192,7 +1196,7 @@ function s:F.mng.main(startline, endline, action, ...)
     if action==#"format"
         let result=call(s:F.fmt.format, [args[1], a:startline, a:endline], {})
         new ++enc=utf-8
-        call setline(1, split(result, "\n"))
+        call setline(1, result)
     endif
     "}}}4
 endfunction
