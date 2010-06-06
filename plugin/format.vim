@@ -789,7 +789,9 @@ let s:g.chk.format=[
             \                            "leadingspace", "fold", "linenr"]],
             \                    ["type", type("")]],
             \                   [["equal", "strlen"], ["type", 2]],
-            \                   [["equal", "columns"], ["num", 0]]]]]],
+            \                   [["equal", "columns"], ["num", 0]],
+            \                   [["equal", "haslf"],  ["bool", 1]],
+            \                   [["equal", "nolf"],   ["bool", 1]]]]]],
         \]
 let s:g.chk.ff[0][2].required[1]=s:g.chk.format
 "}}}5
@@ -1175,6 +1177,16 @@ function s:F.fmt.format(type, startline, endline)
         call setwinvar(0, '&statusline', oldstatusline)
     endif
     "}}}4
+    if has_key(cformat, "nolf") && cformat.nolf
+        let r=[join(r, "")]
+    endif
+    if has_key(cformat, "haslf") && cformat.haslf
+        let oldr=r
+        let r=[]
+        for item in oldr
+            let r+=split(item, "\n")
+        endfor
+    endif
     return r
 endfunction
 "{{{3 fmt.add

@@ -235,9 +235,23 @@ strlen                                              *format-spec-key-strlen*
         for "%_" and "%-" formats and "@=@" argument. Can be accessed inside
         %=...=% via @_strlen@. May be removed in future versions.
 
+nolf                                                  *format-spec-key-nolf*
+        Bool. Normally, new item in list returned by |format-func-format| 
+        starts after each lineend, difffiller, collapsedfiller and fold, but 
+        if this option is present and not zero then all items are joined and 
+        the list of one item is returned. Makes the script halt for some time 
+        at 100% progress (~30s on 1 MiB file), so be patient.
+
+haslf                                                    *format-spec-haslf*
+        Bool. Causes script to additionaly split each item in list returned by 
+        |format-func-format| on "\n" character. It is the only way to include 
+        line breaks inside format items. This option is applied after nolf, so 
+        set both nolf and haslf to 1 if you want to have line breaks defined 
+        only by your format specification.
+
 Note that after each lineend, difffiller, collapsedfiller and fold a newline 
-will be added: using "{range}FormatCommand format {formatName}" is equivalent 
-to: >
+will be added unless nolf option is present: using "{range}FormatCommand 
+format {formatName}" is equivalent to: >
 
     let Format=LoadFuncDict().getfunctions("format").format
     let lines=Format({formatName}, {rangeStart}, {rangeEnd})
