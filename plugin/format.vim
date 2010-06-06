@@ -93,6 +93,7 @@ let s:g.defaultOptions={
             \"IgnoreFolds":   0,
             \"IgnoreList":    0,
             \"NoLineNR":      0,
+            \"AllFolds":      0,
             \"ShowProgress":  0,
             \"CollapsFiller": 0,
         \}
@@ -102,6 +103,7 @@ let s:g.chk.options={
             \"IgnoreFolds":   ["bool", ""],
             \"IgnoreList":    ["bool", ""],
             \"NoLineNR":      ["bool", ""],
+            \"AllFolds":      ["bool", ""],
             \"ShowProgress":  ["num", [0, 2]],
             \"CollapsFiller": ["num", [0]],
         \}
@@ -649,7 +651,8 @@ function s:F.fmt.prepare(format, startline, endline)
     "{{{4 «Компиляция» некоторых ключей
     let cformat={}
     for key in  ["linestart", "line", "lineend", "begin", "end", "style",
-                \"linenr", "fold", "difffiller", "collapsedfiller"]
+                \"linenr", "fold", "difffiller", "collapsedfiller",
+                \"foldstart", "foldend"]
         if has_key(a:format, key)
             let [cformat[key], cformat["r_".key]]=s:F.fmt.compile(a:format[key],
                         \                                         opts)
@@ -741,24 +744,50 @@ let s:g.fmt.formats.html={
             \                        "white-space: nowrap; ".
             \                        "margin: 0; padding: 0; border: 0; } ".
             \                "div { margin: 0; padding: 0; border: 0; } ".
+            \                ".open-fold   > .fulltext { display: block; }".
+            \                ".closed-fold > .fulltext { display: none;  }".
+            \                ".open-fold   > .toggle-open   { display: none;  }".
+            \                ".open-fold   > .toggle-closed { display: block; }".
+            \                ".closed-fold > .toggle-open   { display: block; }".
+            \                ".closed-fold > .toggle-closed { display: none;  }".
+            \                ".closed-fold:hover > .fulltext { display: block; }".
+            \                ".closed-fold:hover > .toggle-filler { display: none; }".
+            \                '%''((@_allfolds@)?(".Fold {display:none;}"):(""))''%'.
             \                "%:</style>".
             \                '<title>%''substitute(expand("%:p:~%"), '.
             \                '''[<>"&]'', '.
             \                '''\\="&#".char2nr(submatch(0)).";"'', "g")''%'.
-            \                '</title></head>'.
-            \                "<body class='s%S'>",
+            \                '</title>'.
+            \                '%''((@_allfolds@)?("'.
+            \                   '<script type=\"text/javascript\">'.
+            \                       'function toggleFold(objID) {'.
+            \                           'var fold;'.
+            \                           'fold=document.getElementById(objID);'.
+            \                           'if(fold.className==\"closed-fold\")'.
+            \                               '{fold.className=\"open-fold\";}'.
+            \                           'else {fold.className=\"closed-fold\";}'.
+            \                  '}</script>"'.
+            \                '):(""))''%'.
+            \                "</head><body class='s%S'>",
             \"end":          "</body></html>",
             \"linestart":    "<div class='s%S'>",
             \"linenr":       "<span class='s%S'>%#% </span>",
             \"line":         "<span class='s%S'>".s:g.fmt.escapehtml."</span>",
             \"lineend":      "</div>",
-            \"fold":         "<div class='s%S'><span class='s%S'>%#%^".
+            \"fold":         "<div class='s%S Fold'><span class='s%S'>%#%^".
             \                s:g.fmt.escapehtml."% %-</span></div>",
             \"difffiller":   "<div>%_%^".
             \                "<span class='s%S'>%-</span></div>",
             \"collapsedfiller": "<div>%_%^<span class='s%S'>".
             \                   '%~ Deleted lines: %s %-</span></div>',
             \"leadingspace": "&nbsp;",
+            \"foldstart":    "<div id='fold%N' class='closed-fold'>".
+            \                   "<div class='toggle-open s%S' id='cf%N'>".
+            \                   "<a href='javascript:toggleFold(\"fold%N\")'>".
+            \                       s:g.fmt.escapehtml."</a></div>".
+            \                "<div class='fulltext' ".
+            \                   "onclick='toggleFold(\"fold%N\")'>",
+            \"foldend":      "</div></div>",
             \"strlen":       s:F.stuf.htmlstrlen,
         \}
 "{{{5 BBcode(unixforum)/not_numbered
@@ -786,7 +815,8 @@ let s:g.chk.format=[
             \                             "lineend"]]],
             \         ["dict", [[["in", ["linestart", "line", "lineend",
             \                            "begin", "end", "difffiller",
-            \                            "leadingspace", "fold", "linenr"]],
+            \                            "leadingspace", "fold", "linenr",
+            \                            "foldstart", "foldend"]],
             \                    ["type", type("")]],
             \                   [["equal", "strlen"], ["type", 2]],
             \                   [["equal", "columns"], ["num", 0]],
@@ -801,52 +831,62 @@ function s:F.fmt.format(type, startline, endline)
     "{{{4 Объявление переменных
     let oldmagic=&magic
     set magic
-    let startline=a:startline
-    let endline=a:endline
+    let [startline, endline]=sort([a:startline, a:endline])
+    let formatfunction=[
+\"function! s:F.fmt.compiledformat()"]
     "{{{5 cformat, opts
+    let quotedtype=s:F.plug.stuf.squote(a:type)
+    call extend(formatfunction, [
+    \"let cformat=s:g.fmt.compiled[".quotedtype."]",
+    \"let opts=cformat.opts",])
     if has_key(s:g.fmt.compiled, a:type)
         let cformat=s:g.fmt.compiled[a:type]
-        let opts=cformat.opts
-        unlockvar! opts
-        let opts.linenumlen=len(endline)
-        let opts.columns=(has_key(s:g.fmt.formats[a:type], 'columns')?
-                    \(s:g.fmt.formats[a:type]):
-                    \(&columns))
+        call extend(formatfunction, [
+        \"let opts.linenumlen=".len(endline),
+        \"let opts.columns=".
+        \   (has_key(s:g.fmt.formats[a:type], 'columns')?
+        \           (s:g.fmt.formats[a:type]):
+        \           (&columns)),])
     else
-        let cformat=s:F.fmt.prepare(s:g.fmt.formats[a:type], startline, endline)
-        let opts=cformat.opts
-        unlockvar! opts
-        let s:g.fmt.compiled[a:type]=cformat
+        let cformat=s:F.fmt.prepare(s:g.fmt.formats[a:type], startline,
+                    \                                          endline)
+        let s:g.fmt.compiled[a:type]=cformat"
+        let cformat.stylestr=""
         if s:F.main.option("UseStyleCache")
             let cformat.cache={}
         endif
-        let cformat.stylestr=""
     endif
+    let opts=cformat.opts
+    unlockvar! opts
     "}}}5
     " Складки игнорируются, если истинна настройка «IgnoreFolds», отсутствует 
     " ключ «fold» или Vim собран без поддержки складок
     let ignorefolds=s:F.main.option("IgnoreFolds") ||
-                \!has_key(cformat, "fold") ||
                 \!has("folding")
-    let opts.ignorefolds=ignorefolds
+    let allfolds=!ignorefolds && s:F.main.option("AllFolds") &&
+                \(has_key(cformat, "foldstart") ||
+                \ has_key(cformat, "foldend"))
+    let ignorefolds=ignorefolds || !has_key(cformat, "fold")
+    call add(formatfunction, "let opts.ignorefolds=".ignorefolds)
+    call add(formatfunction, "let opts.allfolds=".allfolds)
     let npregex='\t\|\p\@!.'
-    let cformat.hasstyles={} " Здесь содержится список определённых стилей. 
-                             " Используется словарь для ускорения
-    let r=[]                 " Список строк с возвращаемыми значениями
-    let curline=startline    " Номер преобразовываемой линии
+    " Здесь содержится список определённых стилей. Используется словарь для 
+    " ускорения
+    let cformat.hasstyles={}
+    " Список строк с возвращаемыми значениями
+    call add(formatfunction, "let r=[]")
+    " Номер преобразовываемой линии
+    call add(formatfunction, "let curline=".startline)
     "{{{5 Progress bar
-    let showprogress=s:F.main.option("ShowProgress") " Показывать progress bar
     if !has("statusline")
         let showprogress=0
+    else
+        let showprogress=s:F.main.option("ShowProgress")
     endif
     if showprogress
-        " Сохраненённое значения настройки 'statusline'
+        " Сохранённое значения настройки 'statusline'
         let oldstatusline=getwinvar(0, "&statusline")
         let oldlaststatus=&laststatus " Сохранённое значение 'laststatus'
-        let oldprogress=0        " Старое значение % сделанного
-        let oldcolnum=0          " Старое значение длины строки из '='
-        let barstart="["         " Первая часть progress bar’а со строкой =
-        set laststatus=2
         " Вторая часть прогресс бара
         let barlen=((winwidth(0))-
                     \((showprogress==2)?
@@ -855,28 +895,49 @@ function s:F.fmt.format(type, startline, endline)
         if barlen<0
             let showprogress=0
         endif
-        let barend=repeat(" ", barlen)."] "
+        " Старые значения % сделанного и длины строки из '='; первая часть 
+        " progress bar’а со строкой =
+        call extend(formatfunction, [
+        \"let oldprogress=0",
+        \"let oldcolnum=0",
+        \"let barstart=\"[\"",
+        \"let barlen=".barlen,
+        \'let barend=repeat(" ", barlen)."] "'
+        \])
+        set laststatus=2
     endif
     "{{{5 Форматы
-    let normalspec  = s:F.fmt.spec(cformat, "Normal")     " Формат по умолчанию
-    let specialspec = s:F.fmt.spec(cformat, "SpecialKey") " Для спецсимволов, 
-                                                          " в т.ч. для lcs=tab 
-                                                          " и lcs=trail
-    let ntspec      = s:F.fmt.spec(cformat, "NonText")    " Для lcs=eol
+    "normalspec  — Формат по умолчанию
+    "specialspec — Для спецсимволов, в т.ч. для lcs=tab и lcs=trail
+    "ntspec      — Для lcs=eol и lcs=nbsp
+    "foldspec    — Формат складок
+    "nrspec      — Для номеров строк
+    "fillspec    — Для удалённых строк
+    call extend(formatfunction, [
+    \'let normalspec  = s:F.fmt.spec(cformat, "Normal")',
+    \'let specialspec = s:F.fmt.spec(cformat, "SpecialKey")',
+    \'let ntspec      = s:F.fmt.spec(cformat, "NonText")',
+    \])
     if !ignorefolds
-        let foldspec    = s:F.fmt.spec(cformat, "Folded") " Формат складок
+        call add(formatfunction,
+        \'let foldspec=s:F.fmt.spec(cformat, "Folded")')
     endif
-    let opts.donr=0
+    if allfolds
+        let foldspec=s:F.fmt.spec(cformat, "Folded")
+    endif
+    let donr=0
     if has_key(cformat, "linenr") && !s:F.main.option("NoLineNR")
-        let nrspec      = s:F.fmt.spec(cformat, "LineNr") " Для номеров строк
-        let opts.donr=1
+        call add(formatfunction,
+        \'let nrspec=s:F.fmt.spec(cformat, "LineNr")')
+        let donr=1
     endif
-    let donr=opts.donr
+    let opts.donr=donr
+    call add(formatfunction, "let opts.donr=".donr)
     if &diff
-        let fillspec    = s:F.fmt.spec(cformat, "DiffDelete") " Для удалённых 
-                                                              " строк
+        call add(formatfunction,
+        \'let fillspec=s:F.fmt.spec(cformat, "DiffDelete")')
+        let fillspec=s:F.fmt.spec(cformat, "DiffDelete")
     endif
-    lockvar! opts
     "{{{5 Удалённая строка: предсоздание, если возможно
     if &diff
         let persistentfiller=0
@@ -889,7 +950,7 @@ function s:F.fmt.format(type, startline, endline)
             let fillerstr=cformat.difffiller(opts.difffillchar, fillspec, 0, 0,
                         \                    "", opts, "")
             for requirement in cformat.r_difffiller
-                if requirement=~'^a:line\|a:style$'
+                if requirement=~'^a:line\|a:style\|a:char$'
                     let persistentfiller=0
                     break
                 endif
@@ -912,274 +973,475 @@ function s:F.fmt.format(type, startline, endline)
             endif
         endfor
     endif
+    let npregex=s:F.plug.stuf.squote(npregex)
+    "{{{4 Складки
+    if allfolds
+        let closedfolds={}
+        let closedfoldslist=[]
+        let fcurline=startline
+        "{{{5 Складки, закрытые в данный момент
+        while fcurline<=endline
+            if foldclosed(fcurline)>-1
+                call add(closedfoldslist, fcurline)
+                let closedfolds[fcurline]=
+                            \cformat.fold(foldtextresult(fcurline),
+                            \           foldspec, "", 0, "",
+                            \           opts, cformat.stylestr)
+                let fcurline=foldclosedend(fcurline)
+            endif
+            let fcurline+=1
+        endwhile
+        let opts.closedfoldslist=closedfoldslist
+        "{{{5 Остальные складки
+        let possiblefolds={}
+        let &foldlevel=0
+        let oldfoldnumber=-1
+        let foldnumber=0
+        while oldfoldnumber!=foldnumber
+            let oldfoldnumber=foldnumber
+            let fcurline=startline
+            while fcurline<=endline
+                if foldclosed(fcurline)>-1
+                    let foldend=foldclosedend(fcurline)
+                    let foldtext=foldtextresult(fcurline)
+                    if has_key(cformat, "foldstart")
+                        if !has_key(possiblefolds, fcurline)
+                            let possiblefolds[fcurline]={}
+                        endif
+                        if !has_key(possiblefolds[fcurline], "start")
+                            let possiblefolds[fcurline].start=[]
+                        endif
+                        call add(possiblefolds[fcurline].start,
+                                    \cformat.foldstart(foldtext, foldspec,
+                                    \                  fcurline,
+                                    \                  &foldlevel, "", opts,
+                                    \                  cformat.stylestr))
+                    endif
+                    if has_key(cformat, "foldend")
+                        if !has_key(possiblefolds, foldend+1)
+                            let possiblefolds[foldend+1]={}
+                        endif
+                        if !has_key(possiblefolds[foldend+1], "end")
+                            let possiblefolds[foldend+1].end=[]
+                        endif
+                        call add(possiblefolds[foldend+1].end,
+                                    \cformat.foldend(foldtext, foldspec,
+                                    \                foldend,
+                                    \                &foldlevel, "", opts,
+                                    \                cformat.stylestr))
+                    endif
+                    let fcurline=foldend
+                    let foldnumber+=1
+                endif
+                let fcurline+=1
+            endwhile
+            let &foldlevel+=1
+        endwhile
+        let opts.closedfolds=closedfolds
+        let opts.possiblefolds=possiblefolds
+        " call system('echo '.shellescape(string(opts)).' > /home/zyx/tmp/vim/opts')
+    endif
     "{{{4 Основной цикл: создание указанного представления
-    while curline<=endline
-        let curstr=""
+    call extend(formatfunction, [
+    \'while curline<='.endline,
+        \'let curstr=""',])
         "{{{5 Progress bar
         if showprogress
-            let progress=100*curline/endline
-            let colnum=barlen*curline/endline
-            if showprogress==2 || progress!=oldprogress || colnum!=oldcolnum
-                if colnum!=oldcolnum
-                    let barstart.="="
-                    let barend=barend[1:]
-                endif
-                let bar=((barstart).">".(barend).
-                            \((showprogress==2)?
-                            \   (repeat(" ", opts.linenumlen-
-                            \                len(curline)).
-                            \    curline."/".endline." "):
-                            \   ("")).
-                            \(repeat(" ", 3-len(progress)).progress)."%%")
-                call setwinvar(0, "&statusline", bar)
-                redrawstatus
+            call extend(formatfunction, [
+            \'let progress=100*curline/'.endline,
+            \'let colnum='.barlen.'*curline/'.endline,])
+            if showprogress!=2
+                call add(formatfunction,
+                \'if progress!=oldprogress || colnum!=oldcolnum')
             endif
-            let oldprogress=progress
-            let oldcolnum=colnum
+            call extend(formatfunction, [
+            \'if colnum!=oldcolnum',
+            \'    let barstart.="="',
+            \'    let barend=barend[1:]',
+            \'endif',
+            \'let bar=((barstart).">".(barend)).'.
+            \   ((showprogress==2)?
+            \       ('repeat(" ", '.opts.linenumlen.'-len(curline)).curline.'.
+            \        '"/'.endline.' ".'):
+            \       ("")).
+            \   'repeat(" ", 3-len(progress)).progress."%%"',
+            \'call setwinvar(0, "&statusline", bar)',
+            \'redrawstatus',])
+            if showprogress!=2
+                call add(formatfunction, 'endif')
+            endif
+            call extend(formatfunction, [
+            \'let oldprogress=progress',
+            \'let oldcolnum=colnum'])
         endif
         "{{{5 Обработка удалённых строк
         " Если не включён режим разности, то никаких удалённых строк быть не 
         " может
         if &diff
-            let filler=diff_filler(curline)
-            if filler>0
+            call extend(formatfunction, [
+            \'let filler=diff_filler(curline)',
+            \'if filler>0',])
                 if !persistentfiller
-                    if !collapsafter || filler<collapsafter
-                        let curfil=filler
-                        while curfil
-                            call add(r, cformat.difffiller(opts.difffillchar,
-                                        \                  fillspec, curline, 0,
-                                        \                  "", opts,
-                                        \                  cformat.stylestr))
-                            let curfil-=1
-                        endwhile
-                    else
-                        call add(cformat.collapsedfiller(filler, fillspec,
-                                    \                    curline, 0, "", opts,
-                                    \                    cformat.stylestr))
+                    if collapsafter
+                        call add(formatfunction, 'if filler<collapsedfiller')
+                    endif
+                    call extend(formatfunction, [
+                    \'let curfil=filler',
+                    \'while curfil',
+                    \'    call add(r, cformat.difffiller('.
+                    \       s:F.plug.stuf.squote(opts.difffillchar).", ".
+                    \       "fillspec, curline, curfil, '', opts, ".
+                    \       "cformat.stylestr))",
+                    \'    let curfil-=1',
+                    \'endwhile'
+                    \])
+                    if collapsafter
+                        call extend(formatfunction, [
+                        \'else',
+                        \'call add(r, cformat.collapsedfiller(filler, fillspec, '.
+                        \            'curline, 0, "", opts, cformat.stylestr))',
+                        \'endif',
+                        \])
                     endif
                 " Удалённая строка уже предсоздана
                 else
-                    let r+=repeat([fillerstr], filler)
+                    call add(formatfunction,
+                    \'let r+=repeat(['.s:F.plug.stuf.squote(fillerstr).'], '.
+                    \               'filler)')
                 endif
-                let curline+=1
-                continue
-            endif
+            call extend(formatfunction, [
+            \'endif'])
         endif
         "{{{5 Обработка складок
-        if foldclosed(curline)>-1 && !ignorefolds
-            let curstr.=cformat.fold(foldtextresult(curline), foldspec,
-                        \            curline, 0, curstr, opts, cformat.stylestr)
-            let curline=foldclosedend(curline)
+        if !ignorefolds
+            if !allfolds
+                call extend(formatfunction, [
+                \'if foldclosed(curline)>-1',
+                \'    call add(r, cformat.fold(foldtextresult(curline), '.
+                \                              'foldspec, '.
+                \                              'curline, 0, curstr, opts, '.
+                \                              'cformat.stylestr))',
+                \'    let curline=foldclosedend(curline)+1',
+                \'    continue',
+                \'else',
+                \])
+            endif
+        endif
+        if allfolds
+            call extend(formatfunction, [
+            \'if has_key(opts.possiblefolds, curline)',
+            \'    let pf=opts.possiblefolds[curline]',
+            \'    if has_key(pf, "end")',
+            \'        call extend(r, pf.end)',
+            \'    endif',
+            \'    if has_key(pf, "start")',
+            \'        call extend(r, pf.start)',
+            \'    endif',
+            \'endif',
+            \'if len(opts.closedfoldslist) && curline==opts.closedfoldslist[0]',
+            \'    let opts.closedfoldslist=opts.closedfoldslist[1:]',
+            \'    call add(r, opts.closedfolds[curline])',
+            \'endif',
+            \])
+        endif
         "{{{5 Обработка нормальных строк
-        else
-            "{{{6 Объявление переменных
-            let linestr=getline(curline)                " Текст строки целиком
-            let linelen=len(linestr)                    " Длина строки
-            let curcol=1                                " Номер текущего символа
-            let diffattr=(&diff && diff_hlID(curline, 1)) " Наличие отличий
-            "{{{7 Если есть отличия в строке (от другого буфера с &diff)
-            if diffattr
-                " diffid берётся для символа за пределами строки, так как если 
-                " строка частично отличается, то она подсвечивается 
-                " [фиолетовым], но сами отличия подсвечиваются [красным]. Символ 
-                " за пределами строки подсвечивается как вся строка
-                let diffid=diff_hlID(curline, linelen+1)
-                let diffhlname=synIDattr(synIDtrans(diffid), "name",
-                            \            s:g.fmt.whatterm)
+        "{{{6 Объявление переменных
+        " linestr  — текст строки целиком
+        " linelen  — длина строки
+        " curcol   — номер текущего символа
+        " diffattr — указывает на наличие отличий
+        call extend(formatfunction, [
+        \'let linestr=getline(curline)',
+        \'let linelen=len(linestr)',
+        \'let curcol=1',
+        \'let diffattr='.((&diff)?('diff_hlID(curline, 1)'):(0)),
+        \])
+        "{{{7 Если есть отличия в строке (от другого буфера с &diff)
+        " diffid берётся для символа за пределами строки, так как если строка 
+        " частично отличается, то она подсвечивается [фиолетовым], но сами 
+        " отличия подсвечиваются [красным]. Символ за пределами строки 
+        " подсвечивается как вся строка.
+        "
+        " Для отличающихся строк подсветка линии складывается из цвета 
+        " символа, определённого файлом подсветки синтаксиса и цвета фона, 
+        " определённого наличием отличий. dspec — спецификация стиля обычных 
+        " символов
+        if &diff
+            call extend(formatfunction, [
+            \'if diffattr',
+            \'    let diffid=diff_hlID(curline, linelen+1)',
+            \'    let diffhlname=synIDattr(synIDtrans(diffid), "name", '.
+            \                             's:g.fmt.whatterm)',
+            \'    let dspec=s:F.fmt.spec(cformat, "Normal", diffhlname)',
+            \'endif',])
+        endif
+        "{{{7 Пробелы в конце строки
+        if has_key(listchars, "trail")
+            call extend(formatfunction, [
+            \'let trail=len(matchstr(linestr, ''\s\+$''))',
+            \'if trail',
+            \'    let linelen-=trail',
+            \'    let linestr=linestr[:(linelen-1)].'.
+            \                'substitute(linestr[(linelen):], " ", '.
+            \                   s:F.plug.stuf.squote(escape(listchars.trail[0],
+            \                                               '&~\')).', "g")',
+            \'endif',
+            \])
+        endif
+        "{{{6 Начало строки
+        call add(formatfunction,
+        \'let curstr.=cformat.linestart("", '.
+        \   ((&diff)?('((diffattr)?(dspec):(normalspec))'):('normalspec')).
+        \   ', curline, 0, curstr, opts, cformat.stylestr)')
+        "{{{7 Номер
+        if donr
+            call add(formatfunction,
+            \'let curstr.=cformat.linenr(curline, nrspec, curline, 0, curstr,'.
+            \                           'opts, cformat.stylestr)')
+        endif
+        "{{{6 Обработка остальной строки
+        call extend(formatfunction, [
+        \'let id=0',
+        \'while curcol<=linelen',
+        \'    let startcol=curcol',
+        \])
+            "{{{7 Получение длины зоны с идентичной подсветкой
+            "{{{8 Строка отличается
+            if &diff
                 " Для отличающихся строк подсветка линии складывается из цвета 
                 " символа, определённого файлом подсветки синтаксиса и цвета 
-                " фона, определённого наличием отличий. dspec — спецификация 
-                " стиля обычных символов
-                let dspec=s:F.fmt.spec(cformat, "Normal", diffhlname)
+                " фона, определённого наличием отличий. ddspec — спецификация 
+                " стиля обычных символов, но не для всей строки, как dspec, 
+                " а для текущего региона (нужно для форматирования спецсимволов)
+                call extend(formatfunction, [
+                \'if diffattr',
+                \'    let diffid=diff_hlID(curline, curcol)',
+                \'    let id=synID(curline, curcol, 1)',
+                \'    while id==synID(curline, curcol, 1) && '.
+                \          'diffid==diff_hlID(curline, curcol) && '.
+                \          'curcol<=linelen',
+                \'        let curcol+=1',
+                \'    endwhile',
+                \'else',
+                \])
             endif
-            "{{{7 Пробелы в конце строки
-            let trail=0
+            "{{{8 Строка не отличается или не включен режим различий
+            call extend(formatfunction, [
+            \'let id=synID(curline, curcol, 1)',
+            \'let curcol+=1',
+            \'while id==synID(curline, curcol, 1) && '.
+            \       'curcol<=linelen',
+            \'    let curcol+=1',
+            \'endwhile',
+            \])
+            if &diff
+                call add(formatfunction, "endif")
+            endif
+            "{{{7 Форматирование части строки с идентичной подсветкой
+            " cstr — текст найденной части
+            call add(formatfunction,
+            \'let cstr=strpart(linestr, startcol-1, curcol-startcol)')
+            "{{{8 Получение спецификации подсветки найденной части
             if has_key(listchars, "trail")
-                let trail=len(matchstr(linestr, '\s\+$'))
-                if trail
-                    " Мы не будем обрабатывать пробельные символы в конце строки 
-                    " обычным способом
-                    let linelen-=trail
-                    let linestr=linestr[:(linelen-1)].
-                                \substitute(linestr[(linelen):], ' ',
-                                \           escape(listchars.trail[0], '&~\'),
-                                \           'g')
-                endif
+                call extend(formatfunction, [
+                \'if trail==-1',
+                \'    let hlname="SpecialKey"',
+                \'else',
+                \])
             endif
-            "{{{6 Начало строки
-            let curstr.=cformat.linestart("",
-                        \((diffattr)?(dspec):(normalspec)), curline, 0, curstr,
-                        \                 opts, cformat.stylestr)
-            "{{{7 Номер
-            if donr
-                let curstr.=cformat.linenr(curline, nrspec, curline, 0, curstr,
-                            \              opts, cformat.stylestr)
+            call add(formatfunction,
+            \'    let hlname=synIDattr(synIDtrans(id), "name", "'.
+            \                          s:g.fmt.whatterm.'")')
+            if has_key(listchars, "trail")
+                call add(formatfunction, "endif")
             endif
-            "{{{6 Обработка остальной строки
-            let id=0
-            while curcol<=linelen || (curcol==1 && diffattr)
-                let startcol=curcol
-                "{{{7 Получение длины зоны с идентичной подсветкой
-                "{{{8 Строка отличается
-                if diffattr
-                    " Для отличающихся строк подсветка линии складывается из 
-                    " цвета символа, определённого файлом подсветки синтаксиса 
-                    " и цвета фона, определённого наличием отличий
-                    let diffid=diff_hlID(curline, curcol)
-                    let diffhlname=synIDattr(synIDtrans(diffid), "name",
-                                \            s:g.fmt.whatterm)
-                    " Для отличающихся строк подсветка линии складывается из цвета 
-                    " символа, определённого файлом подсветки синтаксиса и цвета 
-                    " фона, определённого наличием отличий. ddspec — 
-                    " спецификация стиля обычных символов, но не для всей 
-                    " строки, как dspec, а для текущего региона (нужно для 
-                    " форматирования спецсимволов)
-                    let ddspec=s:F.fmt.spec(cformat, "Normal", diffhlname)
-                    let id=synID(curline, curcol, 1)
-                    while id==synID(curline, curcol, 1) &&
-                                \diffid==diff_hlID(curline, curcol) &&
-                                \curcol<=linelen
-                        let curcol+=1
-                    endwhile
-                "{{{8 Строка не отличается или не включен режим различий
-                else
-                    let id=synID(curline, curcol, 1)
-                    let curcol+=1
-                    while id==synID(curline, curcol, 1) &&
-                                \curcol<=linelen
-                        let curcol+=1
-                    endwhile
-                endif
-                "{{{7 Форматирование части строки с идентичной подсветкой
-                " cstr — текст найденной части
-                let cstr=strpart(linestr, startcol-1, curcol-startcol)
-                "{{{8 Получение спецификации подсветки найденной части
-                if trail!=-1
-                    let hlname=synIDattr(synIDtrans(id), "name",
-                                \        s:g.fmt.whatterm)
-                else
-                    let hlname="SpecialKey"
-                endif
-                if diffattr
-                    let diffhlname=synIDattr(synIDtrans(diffid), "name",
-                                \s:g.fmt.whatterm)
-                    let spec=s:F.fmt.spec(cformat, hlname, diffhlname)
-                else
-                    let spec=s:F.fmt.spec(cformat, hlname)
-                endif
-                "{{{8 Обработка табуляции и непечатных символов
-                let idx=match(cstr, npregex)
-                if idx!=-1
-                    " rstartcol — длина обработанной части строки с учётом
-                    "             возможного наличия многобайтных символов
-                    let rstartcol=(s:F.stuf.strlen(linestr[:(startcol-1)]))
-                    while idx!=-1
-                        "{{{9 Объявление переменных
-                        " fcstr — часть текущей подстроки до табуляции
-                        " ridx  — Длина fcstr с учётом возможного наличия
-                        "         многобайтных символов
-                        let fcstr=((idx)?(cstr[:(idx-1)]):(""))
-                        let ridx=(s:F.stuf.strlen(fcstr))
-                        let istab=(cstr[idx]==#"\t")
-                        "{{{9 Форматирование строки до табуляции
-                        if (!istab || has_key(listchars, "tab"))
-                            if fcstr!=""
-                                let curstr.=cformat.line(fcstr,
-                                            \((diffattr)?(ddspec):(spec)),
-                                            \            curline, curcol,
-                                            \            curstr, opts,
-                                            \            cformat.stylestr)
-                            endif
-                        endif
-                        "{{{9 Представление табуляции
-                        if istab
-                            " i — видимая длина символа табуляции
-                            let i=&tabstop-((rstartcol+ridx-1)%(&tabstop))
-                            "{{{10 Есть ключ «tab» у настройки 'listchars'
-                            if has_key(listchars, "tab")
-                                "{{{11 Представление символа «\t»
-                                let tabstr=listchars.tab[0]
-                                let tabstr.=repeat(listchars.tab[1], i-1)
-                                "{{{11 Форматирование табуляции
-                                let curstr.=cformat.line(tabstr,
-                                            \((diffattr)?(ddspec):(specialspec)),
-                                            \            curline, curcol,
-                                            \            curstr, opts,
-                                            \            cformat.stylestr)
-                                "}}}11
-                                let cstr=cstr[(idx+1):]
-                            "{{{10 Указанного ключа нет
-                            else
-                                let tabstr=repeat(" ", i)
-                                let cstr=fcstr.tabstr.cstr[(idx+1):]
-                            endif
-                        "{{{9 Представление спецсимвола
+            if &diff
+                call extend(formatfunction, [
+                \'if diffattr',
+                \'    let diffhlname=synIDattr(synIDtrans(diffid), "name", "'.
+                \                               s:g.fmt.whatterm.'")',
+                \'    let spec=s:F.fmt.spec(cformat, hlname, diffhlname)',
+                \'    let ddspec=s:F.fmt.spec(cformat, "Normal", diffhlname)',
+                \'else'
+                \])
+            endif
+            call add(formatfunction,
+            \'let spec=s:F.fmt.spec(cformat, hlname)')
+            if &diff
+                call add(formatfunction, "endif")
+            endif
+            "{{{8 Обработка табуляции и непечатных символов
+            " rstartcol — длина обработанной части строки с учётом
+            "             возможного наличия многобайтных символов
+            call extend(formatfunction, [
+            \'let idx=match(cstr, '.npregex.')',
+            \'if idx!=-1',
+            \'    let rstartcol=(s:F.stuf.strlen(linestr[:(startcol-1)]))',
+            \'    while idx!=-1',])
+                    "{{{9 Объявление переменных
+                    " fcstr — часть текущей подстроки до табуляции
+                    " ridx  — Длина fcstr с учётом возможного наличия
+                    "         многобайтных символов
+                    call extend(formatfunction, [
+                    \'let fcstr=((idx)?(cstr[:(idx-1)]):(""))',
+                    \'let ridx=(s:F.stuf.strlen(fcstr))',
+                    \'let istab=(cstr[idx]==#"\t")',])
+                    "{{{9 Форматирование строки до табуляции
+                    if !has_key(listchars, "tab")
+                        call add(formatfunction, 'if !istab')
+                    endif
+                    call extend(formatfunction, [
+                    \'if fcstr!=""',
+                    \'    let curstr.=cformat.line(fcstr, '.
+                    \           ((&diff)?
+                    \               ('((diffattr)?(ddspec):(spec))'):
+                    \               ('(spec)')).', '.
+                    \           'curline, curcol, curstr, opts, '.
+                    \           'cformat.stylestr)',
+                    \'endif',])
+                    if !has_key(listchars, "tab")
+                        call add(formatfunction, 'endif')
+                    endif
+                    "{{{9 Представление табуляции
+                    " i — видимая длина символа табуляции
+                    call extend(formatfunction, [
+                    \'if istab',
+                    \'    let i='.&tabstop.'-'.
+                    \           '((rstartcol+ridx-1)%('.&tabstop.'))',])
+                        "{{{10 Есть ключ «tab» у настройки 'listchars'
+                        if has_key(listchars, "tab")
+                            " tabstr — Представление символа «\t»
+                            call extend(formatfunction, [
+                            \'let tabstr='.
+                            \   s:F.plug.stuf.squote(listchars.tab[0]),
+                            \'let tabstr.=repeat('.
+                            \   s:F.plug.stuf.squote(listchars.tab[1]).', i-1)',
+                            \'let curstr.=cformat.line(tabstr, '.
+                            \       ((&diff)?
+                            \           ('((diffattr)?(ddspec):(specialspec))'):
+                            \           ('specialspec')).", ".
+                            \       'curline, curcol, curstr, opts, '.
+                            \       'cformat.stylestr)',
+                            \'let cstr=cstr[(idx+1):]',])
+                        "{{{10 Указанного ключа нет
                         else
-                            let cstr=cstr[(len(fcstr)):]
-                            let char=matchstr(cstr, '^.')
-                            let cstr=cstr[(len(char)):]
-                            if char==#" "
-                                let curstr.=cformat.line(listchars.nbsp[0],
-                                            \((diffattr)?(ddspec):(ntspec)),
-                                            \            curline, curcol, curstr,
-                                            \            opts, cformat.stylestr)
-                            else
-                                let curstr.=cformat.line(strtrans(char),
-                                            \((diffattr)?(ddspec):(ntspec)),
-                                            \            curline, curcol, curstr,
-                                            \            opts, cformat.stylestr)
-                            endif
+                            call extend(formatfunction, [
+                            \'let tabstr=repeat(" ", i)',
+                            \'let cstr=fcstr.tabstr.cstr[(idx+1):]',])
                         endif
-                        "}}}9
-                        let idx=match(cstr, npregex) " Следующий символ
-                    endwhile
-                endif
-                "{{{8 Сброс trail
-                if trail>0 && curcol>linelen
-                    let linelen+=trail
-                    let trail=-1
-                endif
-                "{{{8 Включение отформатированной части
-                if cstr!=""
-                    let curstr.=cformat.line(cstr, spec, curline, curcol,
-                                \            curstr, opts, cformat.stylestr)
-                endif
-                "}}}7
-            endwhile
-            "{{{7 Форматирование символа конца строки
-            if has_key(listchars, "eol")
-                let curstr.=cformat.line(listchars.eol[0],
-                            \((diffattr)?(dspec):(ntspec)), curline,
-                            \            curcol, curstr, opts, cformat.stylestr)
+                    "{{{9 Представление спецсимвола
+                    call extend(formatfunction, [
+                    \'else',
+                    \'    let cstr=cstr[(len(fcstr)):]',
+                    \'    let char=matchstr(cstr, "^.")',
+                    \'    let cstr=cstr[(len(char)):]',])
+                    if has_key(listchars, "nbsp")
+                        call extend(formatfunction, [
+                        \'if char==#" "',
+                        \'    let curstr.=cformat.line('.
+                        \   s:F.plug.stuf.squote(listchars.nbsp[0]).', '.
+                        \       ((&diff)?
+                        \           ('((diffattr)?(ddspec):(specialspec))'):
+                        \           ('specialspec')).", ".
+                        \       'curline, curcol, curstr, opts, '.
+                        \       'cformat.stylestr)',
+                        \'else',])
+                    endif
+                    call add(formatfunction,
+                    \'let curstr.=cformat.line(strtrans(char), '.
+                    \       ((&diff)?
+                    \           ('((diffattr)?(ddspec):(ntspec))'):
+                    \           ('ntspec')).", ".
+                    \       'curline, curcol, curstr, opts, '.
+                    \       'cformat.stylestr)')
+                    if has_key(listchars, "tab")
+                        call add(formatfunction, "endif")
+                    endif
+                    call add(formatfunction, "endif")
+                    "}}}9
+                    " Следующий символ
+                    call extend(formatfunction, [
+            \'        let idx=match(cstr, '.npregex.')',
+            \'    endwhile',
+            \'endif'])
+            "{{{8 Сброс trail
+            if has_key(listchars, 'trail')
+                call extend(formatfunction, [
+                \'if trail>0 && curcol>linelen',
+                \'    let linelen+=trail',
+                \'    let trail=-1',
+                \'endif',])
             endif
-            "{{{7 Конец строки
-            let curstr.=cformat.lineend("", normalspec, curline, curcol, curstr,
-                        \               opts, cformat.stylestr)
+            "{{{8 Включение отформатированной части
+            call extend(formatfunction, [
+            \'if cstr!=""',
+            \'    let curstr.=cformat.line(cstr, spec, curline, curcol, '.
+            \                             'curstr, opts, cformat.stylestr)',
+            \'endif',])
             "}}}7
+        call add(formatfunction, 'endwhile')
+        "{{{7 Форматирование символа конца строки
+        if has_key(listchars, "eol")
+            call add(formatfunction,
+            \'let curstr.=cformat.line('.
+            \       s:F.plug.stuf.squote(listchars.eol[0]).', '
+            \       ((&diff)?
+            \           ('((diffattr)?(dspec):(ntspec))'):
+            \           ('ntspec')).", ".
+            \       'curline, curcol, curstr, opts, cformat.stylestr)')
         endif
-        call add(r, curstr)
-        let curline+=1
-    endwhile
+        "{{{7 Конец строки
+        call add(formatfunction,
+        \'let curstr.=cformat.lineend("", normalspec, curline, curcol, curstr,'.
+        \                       'opts, cformat.stylestr)')
+        "}}}7
+        if !ignorefolds && !allfolds
+            call add(formatfunction, "endif")
+        endif
+        call extend(formatfunction, [
+    \'    call add(r, curstr)',
+    \'    let curline+=1',
+    \'endwhile'
+    \])
     "{{{4 Начало и конец представления
+    if allfolds
+        call extend(formatfunction, [
+        \'if has_key(opts.possiblefolds, curline)',
+        \'    let pf=opts.possiblefolds[curline]',
+        \'    if has_key(pf, "end")',
+        \'        call extend(r, pf.end)',
+        \'    endif',
+        \'    if has_key(pf, "start")',
+        \'        call extend(r, pf.start)',
+        \'    endif',
+        \'endif',
+        \])
+    endif
     if has_key(cformat, "begin")
-        call insert(r, cformat.begin("", normalspec, 0, 0, "", opts,
-                    \                cformat.stylestr))
+        call add(formatfunction,
+        \'call insert(r, cformat.begin("", normalspec, 0, 0, "", opts, '.
+        \            'cformat.stylestr))')
     endif
     if has_key(cformat, "end")
-        call add(r, cformat.end("", normalspec, endline, 0, "", opts,
-                \               cformat.stylestr))
+        call add(formatfunction,
+        \'call add(r, cformat.end("", normalspec, '.endline.', 0, "", opts, '.
+        \          'cformat.stylestr))')
     endif
+    call add(formatfunction, "return r")
+call add(formatfunction, "endfunction")
+    execute join(formatfunction, "\n")
+    let r=s:F.fmt.compiledformat()
     "{{{4 Восстановление старых значений
     let &magic=oldmagic
     if showprogress
         let &laststatus=oldlaststatus
         call setwinvar(0, '&statusline', oldstatusline)
     endif
-    "}}}4
+    "{{{4 cformat.nolf
     if has_key(cformat, "nolf") && cformat.nolf
         let r=[join(r, "")]
     endif
+    "{{{4 cformat.haslf
     if has_key(cformat, "haslf") && cformat.haslf
         let oldr=r
         let r=[]
@@ -1187,6 +1449,7 @@ function s:F.fmt.format(type, startline, endline)
             let r+=split(item, "\n")
         endfor
     endif
+    "}}}4
     return r
 endfunction
 "{{{3 fmt.add

@@ -88,6 +88,11 @@ IgnoreFolds :: Bold                                 *format-opt-IgnoreFolds*
         specification does not provide "fold" key then folds will be ignored 
         even if IgnoreFolds is set to 0 .
 
+AllFolds :: Bool                                       *format-opt-AllFolds*
+        If IgnoreFolds is not true and current format has either foldstart or 
+        foldend keys (or both), then collect all possible folds and call 
+        foldstart at each fold start and foldend at each foldend.
+
 IgnoreList :: Bool                                   *format-opt-IgnoreList*
         If IgnoreList is true, then ignore 'list' and 'listchars' options.
         Now plugin supports only tab, trail and eol 'listchars' 
@@ -169,13 +174,34 @@ fold                                                  *format-spec-key-fold*
         @.@         0 (zero)
         @{stspec}@  Specification derived from "Folded" highlight group
 
+foldstart                                        *format-spec-key-foldstart*
+        String, describes start of each possible fold. Used only if 
+        |format-opt-AllFolds| is true. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Value returned by |foldtextresult()|
+        @.@         Fold level
+        @{stspec}@  Specification derived from "Folded" highlight group
+
+foldend                                            *format-spec-key-foldend*
+        String, describes end of each possible fold. Used only if 
+        |format-opt-AllFolds| is true. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Value returned by |foldtextresult()|
+        @.@         Fold level
+        @{stspec}@  Specification derived from "Folded" highlight group
+
 difffiller                                      *format-spec-key-difffiller*
         String, describes difffiller. Arguments (see 
         |format-spec-description|) (listed only arguments with non-standart 
         values):
         Argument    Value ~
         @@@         @_difffillchar@
-        @.@         0 (zero)
+        @.@         (Total number of filler lines)-(Number of filler lines 
+                                                    already created)
         @{stspec}@  Specification derived from "DiffDelete" highlight group
 
 collapsedfiller                            *format-spec-key-collapsedfiller*
@@ -237,10 +263,11 @@ strlen                                              *format-spec-key-strlen*
 
 nolf                                                  *format-spec-key-nolf*
         Bool. Normally, new item in list returned by |format-func-format| 
-        starts after each lineend, difffiller, collapsedfiller and fold, but 
-        if this option is present and not zero then all items are joined and 
-        the list of one item is returned. Makes the script halt for some time 
-        at 100% progress (~30s on 1 MiB file), so be patient.
+        starts after each lineend, difffiller, collapsedfiller, fold, 
+        foldstart and foldend, but if this option is present and not zero then 
+        all items are joined and the list of one item is returned. Makes the 
+        script halt for some time at 100% progress (~30s on 1 MiB file), so be 
+        patient.
 
 haslf                                                    *format-spec-haslf*
         Bool. Causes script to additionaly split each item in list returned by 
@@ -249,9 +276,9 @@ haslf                                                    *format-spec-haslf*
         set both nolf and haslf to 1 if you want to have line breaks defined 
         only by your format specification.
 
-Note that after each lineend, difffiller, collapsedfiller and fold a newline 
-will be added unless nolf option is present: using "{range}FormatCommand 
-format {formatName}" is equivalent to: >
+Note that after each lineend, difffiller, collapsedfiller, fold, foldstart and 
+foldend a newline will be added unless nolf option is present: using 
+"{range}FormatCommand format {formatName}" is equivalent to: >
 
     let Format=LoadFuncDict().getfunctions("format").format
     let lines=Format({formatName}, {rangeStart}, {rangeEnd})
@@ -358,6 +385,7 @@ sequences (use them in place of ordinary variables):
         linenumlen    Length of the number of the last line.
         ignorefolds   1 if folds are ignored, 0 otherwise.
         donr          1 if lines will be numbered, 0 otherwise.
+        allfolds      1 if AllFolds is on, 0 otherwise
 
 vim: ft=help:tw=78
 
