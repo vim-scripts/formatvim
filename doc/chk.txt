@@ -12,14 +12,16 @@ CONTENTS                                                      *chk-contents*
 ==============================================================================
 1. Intro                                                         *chk-intro*
 
-This plugin provides the ability to load JSON encoded data from files and dump 
-Vim variables to files. Data loaded is cached in order to speed up the 
-plugin.
+This plugin provides the ability to check whether function or command 
+arguments match specific model or whether some value matches specific model.
 
-Plugin requires chk, stuf and load plugins. It is also recommended having Vim 
-compiled with |+python| feature. In order to load JSON files using Python you 
-should install demchk plugin. Note that vimscript alternative to 
-Python+demchk is too slow and does not support surrogate pairs.
+Features:
+    ∙ Checks a list of arguments against specified model
+    ∙ Checks a single value against specified model
+    ∙ Provides a way to specify default values for optional arguments
+    ∙ Provides a way to check a single value, convert it, and check again
+
+Plugin requires load plugin to work.
 
 ==============================================================================
 2. Functionality provided                                *chk-functionality*
@@ -153,6 +155,10 @@ dict        [(Check, Check)] (list of lists of two checks)
 map         ({CheckName}, [ {CheckArgument} ])
             For every {CheckArgument} in list {checkargument}[1] check whether 
             {argument} matches check [{CheckName}, {CheckArgument}].
+                                                         *chk-check-allorno*
+allorno     [ Check ] (list of checks)
+            Check succeeds either if {argument} matches all Checks in 
+            {checkargument} or none of Checks in {checkargument}.
                                                              *chk-check-not*
 not         Check
             Check, whether {argument} does not match {checkargument}.
@@ -178,14 +184,14 @@ simple    Required keys: "required" :: [ ArgTrans ] (list of transformations)
                    in {arguments}, all must be successfully 
                    transformed by appropriate ArgTrans.
           Examples:
-              If we need to check arguments to the |pow()| function:
+              If we need to check arguments to the |pow()| function: >
               pow(Float, Float) -> Float
                   {    "model": "simple",
                     "required": [["or", ["type", type(0.0)],
                                         ["type", type(0)]],
                                  ["or", ["type", type(0.0)],
                                         ["type", type(0)]]] }
-
+<
                                                         *chk-model-optional*
 optional  Required keys: no
           Optional keys: "required" :: [ ArgTrans ] and
@@ -200,13 +206,14 @@ optional  Required keys: no
                    third value in list is transformed using the second 
                    ArgTrans.
           Example:
-              If we need to check arguments to the |matchstr()| function:
+              If we need to check arguments to the |matchstr()| function: >
               matchstr(String, Regex[, UInteger[, UInteger]])
                   {   "model": "optional",
                    "required": [["type", type("")],
                                 ["isreg", ""]],
                    "optional": [[["num", [0]], {}, 0],
                                 [["num", [0]], {}, 0]] }
+<
                                                         *chk-model-prefixed*
 prefixed  Required keys: no
           Optional keys: "required" :: [ ArgTrans ]
@@ -222,11 +229,12 @@ prefixed  Required keys: no
                                                    strings)
                          "allowtrun" :: Bool
           Meaning:
-              Command must look like that:
+              Command must look like that: >
                    Command [required_arguments]
                          \ [optional_arguments]
                          \ [{prefix} {argument}]
                          \ [{prefixFromPreflist} [arguments]]
+<
               Here [required_arguments] are described in "required" key and 
               are handled just like in |chk-model-simple|; 
               [optional_arguments] are described in "optional" key and are 
@@ -247,7 +255,7 @@ prefixed  Required keys: no
               “print” then if reducing is allowed “columns” may be reduced to 
               “col”, “count” to “cou” and “print” to “p”. Presence of either 
               "optional" or "preflist" keys denies reducing.
-              Examples:
+              Examples: >
                   {"model": "prefixed",
                    "required": [{}],
                    "optional": [[{}, {}, "def"]],
@@ -282,6 +290,7 @@ prefixed  Required keys: no
                                                  "in": ["I1", "I2"],
                                                  "using": "U",
                                                  "list": ["L1", "L2"]}]
+<
                                                          *chk-model-actions*
 actions   Required keys: "actions" :: {action: Model}
           Optional keys: "allowtrun" :: Bool
@@ -292,6 +301,9 @@ actions   Required keys: "actions" :: {action: Model}
                    “stop” and “restart” then if reducing is allowed “start” 
                    may be reduced to “sta”, “stop” to “sto” and “restart” to 
                    “r”.
+                                                          *chk-model-aslist*
+aslist    Required keys: "check" :: ArgTrans
+          Meaning: check argument list as a single argument
 
 ------------------------------------------------------------------------------
 2.4. Transformations                                             *chk-trans*

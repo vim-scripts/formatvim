@@ -25,8 +25,8 @@ elseif !exists("s:g.pluginloaded")
     let s:g.chk.id=["type", type("")]
     let s:g.chk.id_comp=["and", [s:g.chk.id,
                 \                ["not", ["keyof", s:g.out]]]]
-    let s:g.load.scriptname=expand("<sfile>")
-    let s:g.srccmd="source ".(s:g.load.scriptname)
+    let s:g.load.scriptfile=expand("<sfile>")
+    let s:g.srccmd="source ".(s:g.load.scriptfile)
     let s:g.chk.f=[
                 \["ccomp",     "out.constructcompletion",
                 \       {   "model": "simple",
@@ -36,7 +36,7 @@ elseif !exists("s:g.pluginloaded")
                 \       {   "model": "simple",
                 \        "required": [["keyof", s:g.out]]}],
             \]
-    let s:g.plugname=fnamemodify(s:g.load.scriptname, ":t:r")
+    let s:g.plugname=fnamemodify(s:g.load.scriptfile, ":t:r")
     "{{{3 sid
     function s:SID()
         return matchstr(expand('<sfile>'), '\d\+\ze_SID$')
@@ -45,8 +45,15 @@ elseif !exists("s:g.pluginloaded")
     delfunction s:SID
     "}}}2
     let s:F.plug.load=load#LoadFuncdict()
-    let s:g.reginfo=s:F.plug.load.registerplugin(s:g.chk.f, "Comp", "Comp",
-                \"comp", s:F, s:g, {}, [], s:g.scriptid, s:g.load.scriptname, 0)
+    let s:g.reginfo=s:F.plug.load.registerplugin({
+                \     "funcdict": s:F,
+                \     "globdict": s:g,
+                \      "oprefix": "comp",
+                \          "sid": s:g.scriptid,
+                \   "scriptfile": s:g.load.scriptfile,
+                \"dictfunctions": s:g.chk.f,
+                \   "apiversion": "0.0",
+            \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
     finish
 endif
@@ -148,10 +155,14 @@ let s:g.comp.list={
             \"func": "call(Arg, [a:arglead], {})",
             \"list": "Arg",
             \"keyof": "keys(Arg)",
-            \"file": 'split(glob(a:arglead."*".Arg), "\n")',
+            \"file": 'split(glob(a:arglead."*".Arg)."\n".glob(a:arglead."*"), '.
+            \              '"\n")',
         \}
 "{{{3 comp.toarglead
 function s:F.comp.toarglead(arglead, list)
+    if type(a:list)!=type([])
+        return []
+    endif
     let results=[[], [], [], [], a:list]
     let reg=s:F.plug.stuf.regescape(a:arglead)
     for item in a:list

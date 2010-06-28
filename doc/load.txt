@@ -70,10 +70,8 @@ be altered, but this is a very bad idea). This function returns a dictionary
 with the following keys (each value is a function reference):
 
                                                   *load-func-registerplugin*
-registerplugin({dictfunctions}, {defaultFuncPrefix}, {defaultCmdPrefix},
-               {optionPrefix}, {functionDictionary}, {globalDictionary}, 
-               {commands}, {functions}, {scriptid}, {scriptfile}, {oneload})
-            Register plugin. For the meaning of the arguments see |load-reg|. 
+registerplugin({regdict})
+            Register plugin. For the meaning of the argument see |load-reg|. 
             Returns a dictionary with following keys:
             Key        Value ~
             name       Name of the plugin. Now it is the filename without path 
@@ -125,10 +123,11 @@ getfunctions(plugname)                              *load-func-getfunctions*
 -----------------------------------------------------------------------------
 2.3. Plugin registration                                          *load-reg*
 
-Registration is done via calling |load-func-register| function with the 
-following arguments:
+Registration is done via calling |load-func-register| function with a single 
+dictionary as an argument. The following keys are required: oprefix, funcdict, 
+globdict, sid, scriptfile, apiversion. Possible keys:
                                                     *load-reg-dictfunctions*
-{dictfunctions} :: [({dictname}, {internalname}, {check})]
+dictfunctions :: [({dictname}, {internalname}, {check})]
         List of lists of three items:
         {dictiname}    any string, which will be the function name in the
                        dictionary returned by |load-func-getfunctions|.
@@ -139,30 +138,33 @@ following arguments:
         {check}        Argument check for a function or an empty dictionary if
                        no check is required. See |chk-func-checkarguments| for 
                        more details.
-{defaultFuncPrefix} :: String                   *load-reg-defaultFuncPrefix*
+fprefix :: String                                         *load-reg-fprefix*
         String which starts either with g: or with uppercase latin letter and 
         contains any number of latin letters, digits and underscores. It is 
-        the default function prefix for plugin being registered.
-{defaultCmdPrefix} :: String                     *load-reg-defaultCmdPrefix*
+        the default function prefix for plugin being registered. You must not 
+        use this key unless `functions' key is present.
+cprefix :: String                                         *load-reg-cprefix*
         String which starts with uppercase latin letter and contains any 
         number of latin letters, digits and underscores. It is the default 
-        command prefix for plugin being registered.
-{optionPrefix} :: String                             *load-reg-optionPrefix*
+        command prefix for plugin being registered. You must not use this key 
+        unless `commands' key is present.
+oprefix :: String                                         *load-reg-oprefix*
         String, which contains any number of latin letters, digits and 
         underscores. It is used to construct option dictionary name 
-        (g:{optionPrefix}Options), which is used to get custom command (from 
-        g:{optionPrefix}Options.CmdPrefix) and function (from 
-        g:{optionPrefix}Options.FuncPrefix) prefixes.
+        (g:{oprefix}Options), which is used to get custom command (from 
+        g:{oprefix}Options.CmdPrefix) and function (from 
+        g:{oprefix}Options.FuncPrefix) prefixes, and also to get options by an 
+        option function (see |load-func-registerplugin|).
                                                                 *load-reg-F*
-{functionDictionary} :: Dictionary             *load-reg-functionDictionary*
+funcdict :: Dictionary                                   *load-reg-funcdict*
         Dictionary with plugin functions. The load plugin assumes that all 
         functions are declared as dictionary functions inside this 
         dictionary.
                                                                 *load-reg-g*
-{globalDictionary} :: Dictionary                 *load-reg-globalDictionary*
+globdict :: Dictionary                                   *load-reg-globdict*
         Dictionary with global script variables. The load plugin assumes that 
         this dictionary is the only s: variable declared in the plugin.
-{commands} :: Dictionary                                 *load-reg-commands*
+commands :: Dictionary                                   *load-reg-commands*
         Dictionary {{CmdTail}: {Arguments}}, where arguments is a dictionary 
         with the following keys:
         Key       Value ~
@@ -170,9 +172,9 @@ following arguments:
                   underscores and dots, where dot does neither start nor end 
                   the string. Dictionary function with name 
                   |load-reg-F|.{internalname} must exist. This function is 
-                  called when the command {CmdPrefix}{CmdTail} is run. 
-                  Arguments of the function (depending on other keys, some of 
-                  them may not be present):
+                  called when the command {cprefix}{CmdTail} is run. Arguments 
+                  of the function (depending on other keys, some of them may 
+                  not be present):
                   '<bang>', '<reg>', <LINE1>, <LINE2>, <count>, <f-args>.
         nargs     “+”, “?”, “*”, “0”, natural number or an empty string.
                   See |:command-nargs|. Adds <f-args> to the function 
@@ -191,15 +193,17 @@ following arguments:
                   values. Note that for custom completion function it must be 
                   equal either to custom=s:{FunctionName} or 
                   customlist=s:{FunctionName}. In both cases 
-                  |load-reg-F|.{FunctionName} function must exist because it 
-                  will be silently (see |:silent|) called instead of 
+                  |load-reg-F|.comp.{FunctionName} function must exist because 
+                  it will be silently (see |:silent|) called instead of 
                   s:{FunctionName}.
+        This key is used to construct plugin's commands. Note that existing 
+        commands will not be redefined. Key `cprefix' must also be present.
                                                         *load-reg-functions*
-{functions} :: [({functiontail}, {internalname}, {check})]
+functions :: [({functiontail}, {internalname}, {check})]
         List of lists of three items:
         {functiontail} string, which consist of any number of latin letters,
                        digits and underscores. It is used to construct plugin 
-                       global function's name ({FuncPrefix}{functiontail}).
+                       global function's name ({fprefix}{functiontail}).
         {internalname} string, which consist of alphanumeric characters,
                        underscores and dots, where dot does neither start nor 
                        end the string. Dictionary function with name 
@@ -207,18 +211,25 @@ following arguments:
         {check}        Argument check for a function or an empty dictionary if
                        no check is required. See |chk-func-checkarguments| for 
                        more details.
-        This option is used to construct plugin's global functions.
-{scriptid} :: String                                     *load-reg-scriptid*
+        This key is used to construct plugin's global functions. Note that 
+        existing functions will not be redefined. Key `fprefix' must also be 
+        present.
+sid :: String                                            *load-reg-scriptid*
         The script id obtained by s:SID function called in the plugin. See 
         |<SID>| for more details.
                                                              *load-reg-name*
-{scriptfile} :: String                                 *load-reg-scriptfile*
+scriptfile :: String                                   *load-reg-scriptfile*
         The script filename. It is used to autoload plugin and also to get 
-        a plugin name using fnamemodify(a:scriptfile, ":t:r") (filename 
-        without extension and path).
-{oneload} :: Bool                                         *load-reg-oneload*
+        a plugin name using |fnamemodify|(a:scriptfile, ":t:r") (filename 
+        without extension and path). Must end with `.vim'.
+plugname :: String                                       *load-reg-plugname*
+        String, overrides the plugin name.
+oneload :: Bool                                           *load-reg-oneload*
         Defines whether plugin needs to be autoloaded (defines whether plugin 
         file needs to be sourced twice before plugin is actually ready to 
         work).
+apiversion :: String                                   *load-reg-apiversion*
+        String, defines the api version. Must consist of a number followed by 
+        a dot and another number. Everything after this is ignored.
 
 vim: ft=help:tw=78

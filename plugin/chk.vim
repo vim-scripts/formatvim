@@ -23,8 +23,8 @@ elseif !exists("s:g.pluginloaded")
     let s:g={}
     let s:g.load={}
     let s:g.pluginloaded=0
-    let s:g.load.scriptname=expand("<sfile>")
-    let s:g.srccmd="source ".(s:g.load.scriptname)
+    let s:g.load.scriptfile=expand("<sfile>")
+    let s:g.srccmd="source ".(s:g.load.scriptfile)
     let s:g.load.f=[
                 \["checkargument",  "achk._main", {}],
                 \["checkarguments", "cchk._main", {}]]
@@ -36,8 +36,15 @@ elseif !exists("s:g.pluginloaded")
     delfunction s:SID
     "{{{2 Регистрация плагина
     let s:F.plug.load=load#LoadFuncdict()
-    let s:g.reginfo=s:F.plug.load.registerplugin(s:g.load.f, "Chk", "Chk",
-                \"chk", s:F, s:g, {}, [], s:g.load.sid, s:g.load.scriptname, 0)
+    let s:g.reginfo=s:F.plug.load.registerplugin({
+                \     "funcdict": s:F,
+                \     "globdict": s:g,
+                \      "oprefix": "chk",
+                \"dictfunctions": s:g.load.f,
+                \          "sid": s:g.load.sid,
+                \   "scriptfile": s:g.load.scriptfile,
+                \   "apiversion": "0.0",
+            \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
     "}}}2
     finish
@@ -97,6 +104,7 @@ let s:g.p={
             \   "eexpr": "Expression resulted in error",
             \   "evalf": "Eval failed",
             \    "chkf": "Check #%u failed",
+            \    "chks": "Check #%u succeed, but some previous check failed",
             \     "amb": "Ambigious argument",
             \    "pmis": "Some required keys are missing",
             \   "nfull": "Full version not found",
@@ -105,6 +113,7 @@ let s:g.p={
             \"etype": {
             \     "value": "InvalidValue",
             \       "chk": "InvalidCheck",
+            \       "mod": "InvalidModel",
             \     "trans": "InvalidTransformation",
             \},
         \}
@@ -232,7 +241,7 @@ function s:F.tran._main(trans, Arg)
     "}}}4
     return call(s:F.tran[ttrans], [Trans, a:Arg], {})
 endfunction
-"{{{2 mod: simple, optional, prefixed, actions
+"{{{2 mod: simple, optional, prefixed, actions, aslist
 "{{{3 s:g.mod
 let s:g.mod={}
 "{{{3 mod.actions: Проверка в зависимости от первого аргумента
@@ -284,7 +293,7 @@ function s:F.mod.simple(chk, args, shift)
     "{{{4 Проверяем количество аргументов
     if (len(a:args)-a:shift)!=len(a:chk.required)
         return s:F.main.eerror(selfname, "value", ["ilen"],
-                    \(len(a:args)-a:shift)."/=".len(a:chk.required))
+                    \(len(a:args)-a:shift)."≠".len(a:chk.required))
     endif
     "{{{4 Получение аргументов
     let result=s:F.cchk.getrequired(a:chk, a:args, a:shift)
@@ -315,7 +324,7 @@ function s:F.mod.optional(chk, args, shift)
     let args+=result.result
     if (result.last)!=(len(a:args)-1)
         return s:F.main.eerror(selfname, "value", ["ilen"],
-                    \(result.last)."/=".(len(a:args)-1))
+                    \(result.last)."≠".(len(a:args)-1))
     endif
     "}}}4
     return args
@@ -425,9 +434,8 @@ function s:F.mod.prefixed(chk, args, shift)
             endif
             if type(gres)!=type({})
                 return s:F.main.eerror(selfname, "value", ["ival"], i+1)
-            endif
             "{{{7 Запись полученного значения
-            if has_key(gres, "result")
+            elseif has_key(gres, "result")
                 if inlist
                     call add(result[pref], gres.result)
                 else
@@ -452,8 +460,7 @@ function s:F.mod.prefixed(chk, args, shift)
             let gres=s:F.comm.getarg(ochk[pref][1], ochk[pref][2])
             if type(gres)!=type({})
                 return s:F.main.eerror(selfname, "value", ["ival"], i)
-            endif
-            if has_key(gres, "result")
+            elseif has_key(gres, "result")
                 let result[pref]=gres.result
             endif
         endfor
@@ -464,7 +471,23 @@ function s:F.mod.prefixed(chk, args, shift)
     return args
 endfunction
 let s:g.mod.atcheck=["bool", "", s:g.p.emsg.kbool]
-"{{{2 cchk: _main
+"{{{3 mod.aslist Проверить оставшиеся аргументы как один аргумент
+function s:F.mod.aslist(chk, args, shift)
+    let selfname="mod.aslist"
+    let args=a:args[(a:shift):]
+    if !s:F.achk._main(["hkey", "check"], a:chk)
+        return 0
+    endif
+    let gres=s:F.comm.getarg(a:chk.check, args)
+    if type(gres)!=type({})
+        return s:F.main.eerror(selfname, "value", ["ival"],
+                    \          a:shift.":".len(a:args))
+    elseif has_key(gres, "result")
+        return gres.result
+    endif
+    return []
+endfunction
+"{{{2 cchk: _main, gettrun, getoptional, getrequired
 "{{{3 cchk.gettrun
 function s:F.cchk.gettrun(trun, fulls)
     let selfname="cchk.gettrun"
@@ -510,7 +533,7 @@ function s:F.cchk.getoptional(chk, args, reqlen, ...)
     for check in a:chk.optional
         "{{{5 Проверяем длину check
         if len(check)!=3
-            return s:F.main.eerror(selfname, "chk", ["ilen"], len(check)."/=3")
+            return s:F.main.eerror(selfname, "mod", ["ilen"], len(check)."≠3")
         endif
         "{{{5 Остановка (если требуется)
         silent if i!=-1 && i<largs && exists("stop") &&
@@ -530,8 +553,7 @@ function s:F.cchk.getoptional(chk, args, reqlen, ...)
         let gres=s:F.comm.getarg(gachk, Gaarg)
         if type(gres)!=type({})
             return s:F.main.eerror(selfname, "value", ["ival"], i)
-        endif
-        if has_key(gres, "result")
+        elseif has_key(gres, "result")
             call add(args, gres.result)
         endif
         unlet gres
@@ -565,8 +587,7 @@ function s:F.cchk.getrequired(chk, args, shift)
         let gres=s:F.comm.getarg(check, a:args[i])
         if type(gres)!=type({})
             return s:F.main.eerror(selfname, "value", ["ival"], i)
-        endif
-        if has_key(gres, "result")
+        elseif has_key(gres, "result")
             call add(args, gres.result)
         endif
         let i+=1
@@ -602,23 +623,22 @@ let s:g.achk.error=""
 "{{{4 Простые проверки:
 let s:g.achk.simplechecks={
             \   "in": ["index(a:Chk, a:Arg)!=-1",
-            \          "printf(s:g.p.emsg.notin, s:F.stuf.string(a:Chk)), ".
-            \          "s:F.stuf.string(a:Arg)"
-            \         ],
+            \          "['notin', s:F.stuf.string(a:Chk)], ".
+            \          "s:F.stuf.string(a:Arg)"],
             \"regex": ["type(a:Arg)==type('') && a:Arg=~#a:Chk",
-            \          "printf(s:g.p.emsg.nreg, a:Chk), s:F.stuf.string(a:Arg)"
-            \         ],
+            \          "['nreg', s:F.stuf.string(a:Chk)], ".
+            \          "s:F.stuf.string(a:Arg)"],
             \ "func": ["!!call(a:Chk, [a:Arg], {})",
-            \          "printf(s:g.p.emsg.nfunc, s:F.stuf.string(a:Chk))"],
+            \          "['nfunc', s:F.stuf.string(a:Chk)]"],
             \ "type": ["type(a:Arg)==a:Chk",
-            \          "s:g.p.emsg.type, type(a:Arg).'/='.a:Chk"],
-            \ "bool": ["index([0, 1], a:Arg)!=-1", "s:g.p.emsg.bool"],
+            \          "['type'], type(a:Arg).'≠'.a:Chk"],
+            \ "bool": ["index([0, 1], a:Arg)!=-1", "['bool']"],
             \"keyof": ["type(a:Arg)==type('') && has_key(a:Chk, a:Arg)",
-            \          "printf(s:g.p.emsg.nkey, s:F.stuf.string(a:Arg))"],
+            \          "['nkey', s:F.stuf.string(a:Arg)]"],
             \ "hkey": ["type(a:Arg)==type({}) && has_key(a:Arg, a:Chk)",
-            \          "printf(s:g.p.emsg.key, a:Chk)"],
+            \          "['key', a:Chk]"],
             \"equal": ["type(a:Arg)==type(a:Chk) && a:Arg==#a:Chk",
-            \          "printf(s:g.p.emsg.neq, s:F.stuf.string(a:Chk))"],
+            \          "['neq', s:F.stuf.string(a:Chk)]"],
         \}
 for s:C in keys(s:g.achk.simplechecks)
     execute      "function s:F.achk.".s:C."(Chk, Arg)\n".
@@ -644,7 +664,7 @@ endfunction
 function s:F.achk.map(chk, Arg)
     let selfname="achk.map"
     if len(a:chk)!=2
-        return s:F.main.eerror(selfname, "chk", ["ilen"], len(a:Arg)."/=2")
+        return s:F.main.eerror(selfname, "chk", ["ilen"], len(a:Arg)."≠2")
     elseif type(a:chk[1])!=type([])
         return s:F.main.eerror(selfname, "chk", ["dict"])
     endif
@@ -654,6 +674,28 @@ function s:F.achk.map(chk, Arg)
             return s:F.main.eerror(selfname, "chk", ["chkf", i])
         endif
         let i+=1
+    endfor
+    return 1
+endfunction
+"{{{3 achk.allorno
+function s:F.achk.allorno(chk, Arg)
+    let selfname="achk.allorno"
+    let matchcount=0
+    let curcheck=0
+    for Check in a:chk
+        let curcheck+=1
+        silent if !s:F.achk._main(Check, a:Arg)
+            if matchcount
+                return s:F.main.eerror(selfname, "value",
+                            \          ["chkf", curcheck])
+            endif
+        else
+            let matchcount+=1
+            if matchcount < curcheck
+                return s:F.main.eerror(selfname, "value",
+                            \          ["chks", curcheck])
+            endif
+        endif
     endfor
     return 1
 endfunction
@@ -744,7 +786,7 @@ function s:F.achk.chklst(chk, Arg)
         return s:F.main.eerror(selfname, "value", ["list"])
     elseif len(a:Arg)!=len(a:chk)
         return s:F.main.eerror(selfname, "value", ["ilen"],
-                    \len(a:Arg)."/=".len(a:chk))
+                    \len(a:Arg)."≠".len(a:chk))
     endif
     "{{{4 Проверка значения
     let i=0
@@ -858,7 +900,7 @@ function s:F.achk.dict(chk, Arg)
         for check in a:chk
             if len(check)!=2
                 return s:F.main.eerror(selfname, "chk", ["ilen"],
-                            \len(check)."/=2")
+                            \len(check)."≠2")
             endif
             silent if s:F.achk._main(check[0], key)
                 if !s:F.achk._main(check[1], a:Arg[key])
@@ -908,32 +950,33 @@ endfunction
 "{{{3 achk._main:  Проверить значение
 "{{{4 Проверка проверок
 let s:g.achk.chkchecks={
-            \   "map": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \    "in": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \   "and": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \    "or": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \   "not": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \   "num": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \  "nums": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \"chklst": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \"alllst": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \  "dict": ["type(Chk)==type([])", s:g.p.emsg.list           ],
-            \   "len": ["type(Chk)==type([]) && len(Chk) && len(Chk)<=2",
-            \                                  s:g.p.emsg.list           ],
-            \ "regex": ["s:F.achk.isreg('', Chk)",
-            \                                  s:g.p.emsg.str            ],
-            \  "eval": ["type(Chk)==type('')", s:g.p.emsg.str            ],
-            \  "hkey": ["type(Chk)==type('')", s:g.p.emsg.str            ],
-            \   "var": ["type(Chk)==type('')", s:g.p.emsg.str            ],
-            \  "file": ["type(Chk)==type('')", s:g.p.emsg.str            ],
-            \ "keyof": ["type(Chk)==type({})", s:g.p.emsg.dict           ],
-            \  "func": ["type(Chk)==2",        s:g.p.emsg.func           ],
-            \  "type": ["type(Chk)==type(0) && Chk>=0 && Chk<=5",
-            \                                  s:g.p.emsg.int            ],
-            \  "bool": ["1",                   ""                        ],
-            \   "any": ["1",                   ""                        ],
-            \ "equal": ["1",                   ""                        ],
-            \ "isreg": ["1",                   ""                        ],
+            \"allorno": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \    "map": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \     "in": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \    "and": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \     "or": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \    "not": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \    "num": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \   "nums": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \ "chklst": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \ "alllst": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \   "dict": ["type(Chk)==type([])", s:g.p.emsg.list           ],
+            \    "len": ["type(Chk)==type([]) && len(Chk) && len(Chk)<=2",
+            \                                   s:g.p.emsg.list           ],
+            \  "regex": ["s:F.achk.isreg('', Chk)",
+            \                                   s:g.p.emsg.str            ],
+            \   "eval": ["type(Chk)==type('')", s:g.p.emsg.str            ],
+            \   "hkey": ["type(Chk)==type('')", s:g.p.emsg.str            ],
+            \    "var": ["type(Chk)==type('')", s:g.p.emsg.str            ],
+            \   "file": ["type(Chk)==type('')", s:g.p.emsg.str            ],
+            \  "keyof": ["type(Chk)==type({})", s:g.p.emsg.dict           ],
+            \   "func": ["type(Chk)==2",        s:g.p.emsg.func           ],
+            \   "type": ["type(Chk)==type(0) && Chk>=0 && Chk<=5",
+            \                                   s:g.p.emsg.int            ],
+            \   "bool": ["1",                   ""                        ],
+            \    "any": ["1",                   ""                        ],
+            \  "equal": ["1",                   ""                        ],
+            \  "isreg": ["1",                   ""                        ],
         \}
 let s:g.achk.chkroot=[["type(a:chk)==type([])",          s:g.p.emsg.list],
             \         ["len(a:chk)==2 || len(a:chk)==3", s:g.p.emsg.ilen],
@@ -947,7 +990,8 @@ function s:F.achk._main(chk, Arg)
     "{{{4 Проверка проверки
     for check in s:g.achk.chkroot
         if !eval(check[0])
-            return s:F.main.eerror(selfname, "chk", check[1], a:chk)
+            return s:F.main.eerror(selfname, "chk", check[1],
+                        \          s:F.stuf.string(a:chk))
         endif
     endfor
     "{{{4 Объявление переменных

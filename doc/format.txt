@@ -10,6 +10,7 @@ CONTENTS                                                   *format-contents*
     4. Format specification description           |format-spec|
         4.1. Dictionary keys                      |format-spec-keys|
         4.2. String descriptions                  |format-spec-description|
+    5. List of built-in format specifications     |format-formats|
 
 ==============================================================================
 1. Intro                                                      *format-intro*
@@ -43,10 +44,15 @@ via dictionary returned by |load-func-getfunctions| function.
             The only command provided by this plugin. If variable 
             g:formatOptions exists and has key CmdPrefix, then prefix Format 
             is altered.
-:{range}FormatCommand format [{formatName}]
+:{range}FormatCommand format [{formatName}]           *format-action-format*
             Create a new buffer which contains lines formatted using the 
             specification named {formatName} ("html" by default). If {range} 
-            is not given, format the whole file.
+            is not given, format the whole file. For list of built-in formats 
+            see |format-formats|.
+:FormatCommand delete [{formatName}]                  *format-action-delete*
+            Delete format specification named {formatName}.
+:FormatCommand list                                     *format-action-list*
+            Print a list of format specifications.
 
 ------------------------------------------------------------------------------
 2.2. Functions                                            *format-functions*
@@ -62,7 +68,7 @@ FormatAdd({formatName}, {specification})                       *FormatAdd()*
             {specification} see |format-spec|.
                                                        *format-func-Delete*
 FormatDelete({formatName})                                 *FormatDelete()*
-            Delete format named {formatName}.
+            Delete format specification named {formatName}.
 
 
 Function, accessed via dictionary returned by |load-func-getfunctions| 
@@ -250,7 +256,9 @@ difffillchar                                  *format-spec-key-difffillchar*
 
 leadingspace                                  *format-spec-key-leadingspace*
         String, specifies the character(s) for "%#", "%_" and "% " formats. 
-        Can be accessed inside %=...=% via @_leadingspace@.
+        Can be accessed inside %=...=% via @_leadingspace@. In future, indent 
+        spaces and tabs may be replaced with leadingspace, but now they are 
+        not.
 
 columns                                            *format-spec-key-columns*
         Number of columns. If it is not specified, 'columns' option is used 
@@ -386,6 +394,22 @@ sequences (use them in place of ordinary variables):
         ignorefolds   1 if folds are ignored, 0 otherwise.
         donr          1 if lines will be numbered, 0 otherwise.
         allfolds      1 if AllFolds is on, 0 otherwise
+
+==============================================================================
+5. List of built-in format specifications                   *format-formats*
+
+html                                                    *format-format-html*
+        Specification for html format. Supports numbered lines, currently 
+        closed folds, AllFolds option. Uses CSS styles; CSS :hover and 
+        JavaScript for AllFolds.
+html-vimwiki                                    *format-format-html-vimwiki*
+        Specification for html format that can be pasted to vim.wikia.com 
+        without any modifications. Supports numbered lines, currently closed 
+        folds. Uses CSS in `style' attribute of <div> and <span> tags.
+bbcode-unixforum                            *format-format-bbcode-unixforum*
+        Specification for BBcode used on unixforum.org. Supports numbered 
+        lines. Does not support background color, because changing background 
+        is not available on this forum.
 
 vim: ft=help:tw=78
 

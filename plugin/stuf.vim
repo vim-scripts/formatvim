@@ -21,8 +21,8 @@ elseif !exists("s:g.pluginloaded")
     let s:g={}
     let s:g.load={}
     let s:g.pluginloaded=0
-    let s:g.load.scriptname=expand("<sfile>")
-    let s:g.srccmd="source ".(s:g.load.scriptname)
+    let s:g.load.scriptfile=expand("<sfile>")
+    let s:g.srccmd="source ".(s:g.load.scriptfile)
     let s:g.reg={}
     let s:g.reg.oprefix='^[[:alnum:]_]\+$'
     let s:g.reg.intname='^\([[:alnum:]_]\+.\)*[[:alnum:]_]\+$'
@@ -76,9 +76,15 @@ elseif !exists("s:g.pluginloaded")
     delfunction s:SID
     "{{{2 Регистрация плагина
     let s:F.plug.load=load#LoadFuncdict()
-    let s:g.reginfo=s:F.plug.load.registerplugin(s:g.c.functions, "Stuf",
-                \"Stuf", "stuf", s:F, s:g, {}, [], s:g.scriptid,
-                \s:g.load.scriptname, 0)
+    let s:g.reginfo=s:F.plug.load.registerplugin({
+                \     "funcdict": s:F,
+                \     "globdict": s:g,
+                \      "oprefix": "stuf",
+                \          "sid": s:g.scriptid,
+                \   "scriptfile": s:g.load.scriptfile,
+                \"dictfunctions": s:g.c.functions,
+                \   "apiversion": "0.0",
+            \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
     "}}}2
     finish

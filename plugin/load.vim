@@ -71,6 +71,8 @@ let s:g.p={
             \    "iarg": "Invalid argument",
             \    "iopt": "Invalid option",
             \    "uopt": "Unknown option",
+            \   "cexst": "Command “%s” already exists",
+            \   "fexst": "Function “%s” already exists",
             \},
             \"etype": {
             \    "value": "InvalidValue",
@@ -106,7 +108,7 @@ function s:F.cons.eerror(plugin, from, type, ...)
     endif
     for e in args
         if type(e)==type([])
-            if type(e[0])==type("") && has_key(emsg, e[0])
+            if e!=[] && type(e[0])==type("") && has_key(emsg, e[0])
                 if len(e)>1
                     call add(outmsgs, call("printf",
                                 \[s:F.stuf.string(emsg[e[0]])]+e[1:]))
@@ -114,7 +116,7 @@ function s:F.cons.eerror(plugin, from, type, ...)
                     call add(outmsgs, emsg[e[0]])
                 endif
             else
-                call add(outmsgs, s:F.stuf.string(e[0]))
+                call add(outmsgs, s:F.stuf.string(e))
             endif
         elseif type(e)==type("")
             call add(outmsgs, e)
@@ -325,6 +327,7 @@ let s:g.reg.lazyload={}
 let s:g.reg.registered={}
 let s:g.reg.plugsids={}
 let s:g.reg.unnamedfunctions={}
+let s:g.reg.mapdict={}
 lockvar 1 s:g.reg
 "{{{3 reg.getprefix: Получить префикс
 function s:F.reg.getprefix(oprefix, type, default)
@@ -351,11 +354,27 @@ function s:F.reg.getprefix(oprefix, type, default)
     return a:default
 endfunction
 "{{{3 reg.register:  Зарегистрировать плагин
-function s:F.reg.register(dictfunctions, fprefix, cprefix, oprefix,
-            \funcdict, globdict, commands, functions, sid, scriptfile, oneload)
+"{{{4 s:g.reg.mapdict
+call extend(s:g.reg.mapdict, {
+            \     "commands": ["commands", 'a:regdict.commands'],
+            \      "cprefix": ["commandprefix",
+            \                  's:F.reg.getprefix(a:regdict.oprefix, "Cmd", '.
+            \                                    'a:regdict.cprefix)'],
+            \      "fprefix": ["functionprefix",
+            \                  's:F.reg.getprefix(a:regdict.oprefix, "Func", '.
+            \                                    'a:regdict.fprefix)'],
+            \    "functions": ["functions", 'a:regdict.functions'],
+            \"dictfunctions": ["dictfunctions", 'a:regdict.dictfunctions'],
+        \})
+lockvar! s:g.reg.mapdict
+"}}}4
+function s:F.reg.register(regdict)
     let selfname="reg.register"
     "{{{4 Проверка аргументов
-    let plugname=fnamemodify(a:scriptfile, ":t:r")
+    let plugname=fnamemodify(a:regdict.scriptfile, ":t:r")
+    if has_key(a:regdict, "plugname")
+        let plugname=a:regdict.plugname
+    endif
     "{{{5 Если проверяющее дополнение не загружено
     if !has_key(s:g.reg.registered, "chk") && plugname!=#"load"
         runtime plugin/chk.vim
@@ -365,35 +384,38 @@ function s:F.reg.register(dictfunctions, fprefix, cprefix, oprefix,
         if !has_key(s:F.plug, "chk")
             let s:F.plug.chk=s:F.comm.getfunctions("chk")
         endif
-        for [a, c] in s:g.chk.register
-            if !s:F.plug.chk.checkargument(c, eval("a:".a))
-                return s:F.main.eerror(selfname, "value", 1, ["iarg"], a)
-            endif
-        endfor
+        if !s:F.plug.chk.checkargument(s:g.chk.register, a:regdict)
+            return s:F.main.eerror(selfname, "value", 1, ["iarg"])
+        endif
     endif
     if has_key(s:g.reg.registered, plugname)
         return s:F.main.eerror(selfname, "perm", ["preg"], plugname)
     endif
     "{{{4 Построение записи
     let entry={
-                \        "status": ((a:oneload)?("loaded"):("registered")),
-                \             "F": a:funcdict,
-                \             "g": a:globdict,
-                \      "scriptid": a:sid,
-                \          "file": a:scriptfile,
+                \        "status": ((has_key(a:regdict, "oneload") &&
+                \                    a:regdict.oneload)?
+                \                           ("loaded"):
+                \                           ("registered")),
+                \             "F": a:regdict.funcdict,
+                \             "g": a:regdict.globdict,
+                \      "scriptid": a:regdict.sid,
+                \          "file": a:regdict.scriptfile,
                 \  "extfunctions": [],
                 \   "extcommands": [],
-                \     "functions": a:functions,
-                \      "commands": a:commands,
-                \  "optionprefix": a:oprefix,
-                \"functionprefix": s:F.reg.getprefix(a:oprefix, "Func",
-                \                                    a:fprefix),
-                \ "commandprefix": s:F.reg.getprefix(a:oprefix, "Cmd",
-                \                                    a:cprefix),
+                \  "optionprefix": a:regdict.oprefix,
                 \          "name": plugname,
                 \    "quotedname": "'".substitute(plugname, "'", "''", "g")."'",
-                \ "dictfunctions": a:dictfunctions,
+                \    "apiversion": map(split(matchstr(a:regdict.apiversion,
+                \                                     '^\d\+\.\d\+'), '\.'),
+                \                      'v:val+0'),
             \}
+    for [regdictkey, value] in items(s:g.reg.mapdict)
+        if has_key(a:regdict, regdictkey)
+            let [entrykey, expression]=value
+            let entry[entrykey]=eval(expression)
+        endif
+    endfor
     let entry.intfuncprefix='s:g.reg.registered['.entry.quotedname.'].F'
     let locks={}
     call map(["F", "g"], 'extend(locks, {(v:val): islocked("entry.".v:val)})')
@@ -404,7 +426,7 @@ function s:F.reg.register(dictfunctions, fprefix, cprefix, oprefix,
         endif
     endfor
     let s:g.reg.registered[plugname]=entry
-    let s:g.reg.plugsids[plugname]=a:sid
+    let s:g.reg.plugsids[plugname]=a:regdict.sid
     "{{{4 Создание функций
     let F={}
     for fname in keys(s:F.cons)
@@ -464,25 +486,47 @@ let s:g.chk.comdict=[[["equal", "nargs" ],   ["or", [["in", ['*',
             \                                        ["regex",
             \                                 '^custom\(list\)\=,s:.*']]]],
             \        [["equal", "func"], ["regex", s:g.chk.reg.rf]]]
-"}}}5
-let s:g.chk.register=[
-            \["dictfunctions",
+"{{{5 s:g.chk.register
+let s:g.chk.register=["and", [
+            \["map", ["hkey", ["oprefix",
+            \                  "funcdict",
+            \                  "globdict",
+            \                  "sid",
+            \                  "scriptfile",
+            \                  "apiversion",]]],
+            \["allorno", [["hkey", "fprefix"],
+            \             ["hkey", "functions"]]],
+            \["allorno", [["hkey", "cprefix"],
+            \             ["hkey", "commands"]]],
+            \["dict", [
+            \   [["equal", "dictfunctions"],
             \             ["alllst", ["chklst", [["type", type("")],
             \                                    ["regex", s:g.chk.reg.rf],
             \                                    ["type",  type({})]]]]],
-            \["fprefix",  ["regex", s:g.chk.reg.func]],
-            \["cprefix",  ["regex", s:g.chk.reg.cmd]],
-            \["oprefix",  ["regex", s:g.chk.reg.tf]],
-            \["funcdict", [ "type", type({})]],
-            \["commands", [ "dict", [[["type", type("")],
-            \                         ["dict", s:g.chk.comdict]]]]],
-            \["functions",["alllst", ["chklst", [["regex", s:g.chk.reg.tf],
-            \                                    ["regex", s:g.chk.reg.rf],
-            \                                    ["type",  type({})]]]]],
-            \["sid",      ["regex", '^[1-9][0-9]*$']],
-            \["scriptfile", ["file", "r"]],
-            \["oneload", ["bool", ""]],
-        \]
+            \   [["equal", "fprefix"],  ["regex", s:g.chk.reg.func]],
+            \   [["equal", "cprefix"],  ["regex", s:g.chk.reg.cmd]],
+            \   [["equal", "oprefix"],  ["regex", s:g.chk.reg.tf]],
+            \   [["equal", "funcdict"], [ "type", type({})]],
+            \   [["equal", "globdict"], [ "type", type({})]],
+            \   [["equal", "commands"], [ "dict", [[["type", type("")],
+            \                                       ["dict", s:g.chk.comdict]]]]
+            \   ],
+            \   [["equal", "functions"],["alllst", ["chklst", [
+            \                                         ["regex", s:g.chk.reg.tf],
+            \                                         ["regex", s:g.chk.reg.rf],
+            \                                         ["type",  type({})]]]]],
+            \   [["equal", "oneload"],  ["bool", ""]],
+            \   [["equal", "plugname"], ["type", type("")]],
+            \   [["equal", "sid"],      ["regex", '^[1-9][0-9]*$']],
+            \   [["equal", "scriptfile"], ["and", [["file", "r"],
+            \                                      ["regex", '\.vim$']]]],
+            \   [["equal", "apiversion"], ["regex", '^\d\+\.\d\+']],
+            \   [["equal", "requires"],   ["alllst", ["dict", [[["any", ""],
+            \                                                   ["regex",
+            \                                                    '^\d\+']]]]]],
+            \ ]
+            \],
+        \]]
 "{{{3 reg.unreg:     Удалить команды и функции
 function s:F.reg.unreg(plugname)
     let plugdict=s:g.reg.registered[a:plugname]
@@ -552,6 +596,7 @@ function s:F.comm.cmdadd(key, value, cmdargs, plugdict, command)
 endfunction
 "{{{3 comm.mkcmd:        Создать команду
 function s:F.comm.mkcmd(cmd, plugdict)
+    let selfname="comm.mkcmd"
     "{{{4 Объявление переменных
     let cmdargs=[]
     let fargs=[]
@@ -569,8 +614,16 @@ function s:F.comm.mkcmd(cmd, plugdict)
             endif
         endif
     endfor
+    "{{{4 Удаление старой команды
+    if exists(':'.cmd)
+        if index(a:plugdict.extcommands, cmd)!=-1
+            execute "delcommand ".cmd
+        else
+            return s:F.main.eerror(selfname, "perm", ["cexst", cmd])
+        endif
+    endif
     "{{{4 Создание команды
-    execute "command! ".join(cmdargs, " ")." ".cmd." ".
+    execute "command ".join(cmdargs, " ")." ".cmd." ".
                 \((a:plugdict.status==#"loaded")?(""):(loadcmd." | ")).
                 \"call ".(intfuncprefix.".".(cmddescr.func)).
                 \"(".join(sort(fargs), ", ").")"
@@ -578,6 +631,7 @@ function s:F.comm.mkcmd(cmd, plugdict)
     if a:plugdict.status==#"registered"
         call add(a:plugdict.extcommands, cmd)
     endif
+    return 1
     "}}}4
 endfunction
 "{{{4 Аргументы для command
@@ -607,12 +661,20 @@ endfunction
 " Создать функции или события FuncUndefined. Событие создаётся, если 
 " plugdict.status!="loaded"
 function s:F.comm.mkfuncs(plugdict)
+    let selfname='comm.mkfuncs'
+    if !has_key(a:plugdict, "functions")
+        return 0
+    endif
     let plugname=a:plugdict.quotedname
     let loadcmd="call s:F.comm.load(".plugname.")"
     let i=0
     for [extname, intname, acheck] in a:plugdict.functions
         let intfuncprefix=a:plugdict.intfuncprefix
         let extname=(a:plugdict.functionprefix).extname
+        if exists('*'.extname)
+            call s:F.main.eerror(selfname, "perm", ["fexst", extname])
+            continue
+        endif
         let checkstr='s:g.reg.registered['.plugname.'].functions['.i.'][2]'
         let check=s:F.comm.getcheck(acheck, checkstr)
         if a:plugdict.status==#"loaded"
@@ -630,6 +692,7 @@ function s:F.comm.mkfuncs(plugdict)
         endif
         let i+=1
     endfor
+    return 1
 endfunction
 "{{{3 comm.load:         Загрузить плагин
 function s:F.comm.load(plugname)
@@ -650,6 +713,9 @@ function s:F.comm.load(plugname)
 endfunction
 "{{{3 comm.cdict:        Создать словарь с функциями
 function s:F.comm.cdict(plugdict)
+    if !has_key(a:plugdict, "dictfunctions")
+        return {}
+    endif
     let plugname=a:plugdict.quotedname
     let intfuncprefix=a:plugdict.intfuncprefix
     let r={}
@@ -672,7 +738,9 @@ function s:F.comm.cdict(plugdict)
 endfunction
 "{{{3 comm.cf:           Создать команды и функции
 function s:F.comm.cf(plugdict)
-    call map(keys(a:plugdict.commands), 's:F.comm.mkcmd(v:val, a:plugdict)')
+    if has_key(a:plugdict, "commands")
+        call map(keys(a:plugdict.commands), 's:F.comm.mkcmd(v:val, a:plugdict)')
+    endif
     call s:F.comm.mkfuncs(a:plugdict)
 endfunction
 "{{{3 comm.getpldict:    Получить словарь, связанный с плагином
@@ -879,9 +947,23 @@ let s:g.comp.a.actions.nrof={"model": "simple",
             \              "arguments": [["func", s:F.comp.nrof]]}
 let s:g.comp._cname="load"
 "{{{1
-let s:g.reginfo=s:F.reg.register(s:g.comm.f, "Load", "Load", "load", s:F, s:g,
-            \s:g.load.commands, s:g.load.functions, s:g.scriptid,
-            \s:g.load.scriptfile, 1)
+let s:g.reginfo=s:F.reg.register({
+            \     "funcdict": s:F,
+            \     "globdict": s:g,
+            \      "fprefix": "Load",
+            \      "cprefix": "Load",
+            \      "oprefix": "load",
+            \     "commands": s:g.load.commands,
+            \    "functions": s:g.load.functions,
+            \          "sid": s:g.scriptid,
+            \   "scriptfile": s:g.load.scriptfile,
+            \      "oneload": 1,
+            \"dictfunctions": s:g.comm.f,
+            \   "apiversion": "0.0",
+        \})
+            "s:g.comm.f, "Load", "Load", "load", s:F, s:g,
+            "s:g.load.commands, s:g.load.functions, s:g.scriptid,
+            "s:g.load.scriptfile, 1)
 lockvar! s:g.reginfo
 let s:F.main.eerror=s:g.reginfo.functions.eerror
 unlet s:g.load

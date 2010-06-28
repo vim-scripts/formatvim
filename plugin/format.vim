@@ -24,8 +24,8 @@ elseif !exists("s:g.pluginloaded")
     let s:g.fmt.formats={}
     let s:g.pluginloaded=0
     let s:g.chk={}
-    let s:g.load.scriptname=expand("<sfile>")
-    let s:g.srccmd="source ".(s:g.load.scriptname)
+    let s:g.load.scriptfile=expand("<sfile>")
+    let s:g.srccmd="source ".(s:g.load.scriptfile)
     let s:g.chk.f=[
                 \["format", "fmt.format", {
                 \       "model": "optional",
@@ -36,7 +36,7 @@ elseif !exists("s:g.pluginloaded")
                 \   }
                 \]
             \]
-    let s:g.plugname=fnamemodify(s:g.load.scriptname, ":t:r")
+    let s:g.plugname=fnamemodify(s:g.load.scriptfile, ":t:r")
     "{{{3 Команды и функции
     " Определяет команды. Для значений ключей словаря см. :h :command. Если 
     " некоторому ключу «key» соответствует непустая строка «str», то в аргументы 
@@ -75,11 +75,21 @@ elseif !exists("s:g.pluginloaded")
     endfun
     let s:g.scriptid=s:SID()
     delfunction s:SID
-    "}}}2
+    "{{{2 Регистрация дополнения
     let s:F.plug.load=load#LoadFuncdict()
-    let s:g.reginfo=s:F.plug.load.registerplugin(s:g.chk.f, 'Format',
-                \'Format', 'format', s:F, s:g, s:g.load.commands, s:g.chk.ff,
-                \s:g.scriptid, s:g.load.scriptname, 0)
+    let s:g.reginfo=s:F.plug.load.registerplugin({
+                \     "funcdict": s:F,
+                \     "globdict": s:g,
+                \      "oprefix": "format",
+                \      "cprefix": "Format",
+                \      "fprefix": "Format",
+                \          "sid": s:g.scriptid,
+                \   "scriptfile": s:g.load.scriptfile,
+                \     "commands": s:g.load.commands,
+                \    "functions": s:g.chk.ff,
+                \"dictfunctions": s:g.chk.f,
+                \   "apiversion": '0.0',
+            \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
     let s:F.main.option=s:g.reginfo.functions.option
     finish
@@ -705,15 +715,12 @@ function s:F.fmt.spec(cformat, hlname, ...)
     endif
     return r
 endfunction
-"{{{3 fmt.format
-"{{{4 s:g.fmt.formats
-"{{{5 HTML/numbered
+"{{{3 s:g.fmt.formats
+"{{{4 HTML
 let s:g.fmt.escapehtml="%'substitute(substitute(@@@, '[<>\"&]', ".
             \          "'\\=\"&#\".char2nr(submatch(0)).\";\"', 'g'), ".
-            \          "' ', '\\&nbsp;', 'g')'%"
-let s:g.fmt.formats.html={
-            \"style":        '%>((@styleid@!="")?'.
-            \                   '(".s".@styleid@." {".'.
+            \          "' ', '\\=@_leadingspace@', 'g')'%"
+let s:g.fmt.stylestr=
             \                     '((@inverse@)?("color: ".'.
             \                       '((@bgcolor@!="")?'.
             \                         '(@bgcolor@):'.
@@ -735,12 +742,17 @@ let s:g.fmt.formats.html={
             \                       '("")).'.
             \                     '((@underline@)?'.
             \                       '("text-decoration: underline;"):'.
-            \                       '("")).'.
-            \                   '"} "):'.
+            \                       '(""))'
+let s:g.fmt.formats.html={
+            \"style":        '%>((@styleid@!="")?'.
+            \                   '(".s".@styleid@." {".'.
+            \                     s:g.fmt.stylestr.
+            \                   '."} "):'.
             \                   '(""))',
             \"begin":        "<html><head>".
             \                "<meta http-equiv=\"content-type\" ".
             \                       "content=\"text/hmtl; charset=UTF-8\" />".
+            \                '<meta name="generator" content="format.vim" />'.
             \                "<style> ".
             \                "body { font-family: monospace; ".
             \                        "white-space: nowrap; ".
@@ -748,13 +760,16 @@ let s:g.fmt.formats.html={
             \                "div { margin: 0; padding: 0; border: 0; } ".
             \                ".open-fold   > .fulltext { display: block; }".
             \                ".closed-fold > .fulltext { display: none;  }".
-            \                ".open-fold   > .toggle-open   { display: none;  }".
-            \                ".open-fold   > .toggle-closed { display: block; }".
-            \                ".closed-fold > .toggle-open   { display: block; }".
-            \                ".closed-fold > .toggle-closed { display: none;  }".
-            \                ".closed-fold:hover > .fulltext { display: block; }".
-            \                ".closed-fold:hover > .toggle-filler { display: none; }".
-            \                '%''((@_allfolds@)?(".Fold {display:none;}"):(""))''%'.
+            \                ".open-fold   > .toggle-open   {display: none; }".
+            \                ".open-fold   > .toggle-closed {display: block;}".
+            \                ".closed-fold > .toggle-open   {display: block;}".
+            \                ".closed-fold > .toggle-closed {display: none; }".
+            \                ".closed-fold:hover > .fulltext{display: block;}".
+            \                ".closed-fold:hover > .toggle-filler ".
+            \                                              "{display: none;}".
+            \                '%''((@_allfolds@)?'.
+            \                    '(".Fold {display:none;}"):'.
+            \                    '(""))''%'.
             \                "%:</style>".
             \                '<title>%''substitute(expand("%:p:~%"), '.
             \                '''[<>"&]'', '.
@@ -792,25 +807,51 @@ let s:g.fmt.formats.html={
             \"foldend":      "</div></div>",
             \"strlen":       s:F.stuf.htmlstrlen,
         \}
-"{{{5 BBcode(unixforum)/not_numbered
-let s:g.fmt.formats.bbcode_unixforum_nonr={
-            \"begin": '[font="Courier New"][spoiler]',
-            \"end":   '[/spoiler][/font]',
-            \"linestart": "",
-            \"line": '[color=%''((@fgcolor@!="")?(@fgcolor@."]"):'.
-            \           '("White]")).'.
-            \           '((@bold@)?("[b]"):("")).'.
-            \           '((@italic@)?("[i]"):("")).'.
-            \           'substitute(substitute(@@@, ''[&\[\]]'', '.
-            \                   '''\="&#".char2nr(submatch(0)).";"'', "g"),'.
-            \           '" ", ''\&#160;'', "g").'.
-            \           '((@italic@)?("[/i]"):("")).'.
-            \           '((@bold@)?("[/b]"):(""))''%[/color]',
-            \"lineend": "",
-            \"leadingspace": "&#160;",
-            \"strlen": s:F.stuf.bbstrlen,
+let s:g.fmt.styleattr="%'((@styleid@!=#\"\")?".
+            \            "(' style=\"'.".s:g.fmt.stylestr.".'\"'):".
+            \            "(''))'%"
+let s:g.fmt.formats["html-vimwiki"]={
+            \"begin":           "<div style=\"font-family: monospace; %'".
+            \                           s:g.fmt.stylestr."'%\">",
+            \"end":             "</div>",
+            \"linestart":       "<div".s:g.fmt.styleattr.">",
+            \"linenr":          "<span".s:g.fmt.styleattr.">%#% </span>",
+            \"lineend":         "</div>",
+            \"fold":            "<div".s:g.fmt.styleattr.">%#%^".
+            \                   s:g.fmt.escapehtml."% %-</div>",
+            \"difffiller":      "<div>%_%^".
+            \                   "<span".s:g.fmt.styleattr.">%-</span></div>",
+            \"collapsedfiller": "<div>%_%^<span".s:g.fmt.styleattr.">".
+            \                           '%~ Deleted lines: %s %-</span></div>',
+            \"leadingspace":    "&nbsp;",
+            \"strlen":          s:F.stuf.htmlstrlen,
+            \"line":            "<span".s:g.fmt.styleattr.">".
+            \                       s:g.fmt.escapehtml."</span>",
         \}
-"{{{5 s:g.chk.format
+"{{{4 BBcode (unixforum)
+let s:g.fmt.bbufostylestart='%'''.
+            \'((@inverse@)?'.
+            \   '("[/spoiler][color=".((@bgcolor@!="")?(@bgcolor@):("Black"))):'.
+            \             '("[color=".((@fgcolor@!="")?(@fgcolor@):("White"))))."]".'.
+            \'((@bold@)?("[b]"):("")).((@italic@)?("[i]"):(""))''%'
+let s:g.fmt.bbufostyleend='%''((@italic@)?("[/i]"):("")).'.
+            \'((@bold@)?("[/b]"):(""))."[/color]".'.
+            \'((@inverse@)?("[spoiler]"):(""))''%'
+let s:g.fmt.formats["bbcode-unixforum"]={
+            \"begin":        '[font="Courier New"]',
+            \"end":          '[/font]',
+            \"linestart":    "[spoiler]%#%^",
+            \"line":         s:g.fmt.bbufostylestart.
+            \                '%''substitute(substitute(@@@, ''[&\[\]]'', '.
+            \                      '''\="&#".char2nr(submatch(0)).";"'', "g"),'.
+            \                      '" ", ''\&#160;'', "g")''%'.
+            \                s:g.fmt.bbufostyleend,
+            \"lineend":      "[/spoiler]",
+            \"leadingspace": "&#160;",
+            \"strlen":       s:F.stuf.bbstrlen,
+        \}
+"{{{3 fmt.format
+"{{{4 s:g.chk.format
 let s:g.chk.format=[
             \["and", [["map", ["haskey", ["linestart",
             \                             "line",
@@ -826,9 +867,8 @@ let s:g.chk.format=[
             \                   [["equal", "nolf"],   ["bool", 1]]]]]],
         \]
 let s:g.chk.ff[0][2].required[1]=s:g.chk.format
-"}}}5
-let s:g.fmt.compiled={}
 "}}}4
+let s:g.fmt.compiled={}
 function s:F.fmt.format(type, startline, endline)
     "{{{4 Объявление переменных
     let oldmagic=&magic
@@ -1028,7 +1068,7 @@ function s:F.fmt.format(type, startline, endline)
                         if !has_key(possiblefolds[foldend+1], "end")
                             let possiblefolds[foldend+1].end=[]
                         endif
-                        call add(possiblefolds[foldend+1].end,
+                        call insert(possiblefolds[foldend+1].end,
                                     \cformat.foldend(foldtext, foldspec,
                                     \                foldend,
                                     \                &foldlevel, "", opts,
@@ -1464,14 +1504,19 @@ function s:F.fmt.add(type, format)
 endfunction
 "{{{3 fmt.del
 function s:F.fmt.del(type)
-    unlet s:g.fmt.formats[a:type]
-    if has_key(s:g.fmt.compiled, a:type)
-        unlet s:g.fmt.compiled[a:type]
+    if has_key(s:g.fmt.formats, a:type)
+        unlet s:g.fmt.formats[a:type]
+        if has_key(s:g.fmt.compiled, a:type)
+            unlet s:g.fmt.compiled[a:type]
+            return 2
+        endif
+        return 1
     endif
-    return 1
+    return 0
 endfunction
 "{{{2 mng: main
 "{{{3 mng.main
+"{{{4 s:g.chk.cmd
 let s:g.chk.cmd={
             \"model": "actions",
             \"actions": {
@@ -1481,8 +1526,14 @@ let s:g.chk.cmd={
             \                     {"trans": ["call", ["DefaultFormat"]]},
             \                     s:F.main.option]],
             \   },
+            \   "delete": {
+            \       "model": "simple",
+            \       "required": [["keyof", s:g.fmt.formats]],
+            \   },
+            \   "list": {"model": "optional",}
             \},
         \}
+"}}}4
 function s:F.mng.main(startline, endline, action, ...)
     let action=tolower(a:action)
     "{{{4 Проверка ввода
@@ -1496,8 +1547,15 @@ function s:F.mng.main(startline, endline, action, ...)
         let result=call(s:F.fmt.format, [args[1], a:startline, a:endline], {})
         new ++enc=utf-8
         call setline(1, result)
+        return 1
+    elseif action==#"delete"
+        return s:F.fmt.del(args[1])
+    elseif action==#"list"
+        echo join(keys(s:g.fmt.formats), "\n")
+        return 1
     endif
     "}}}4
+    return 0
 endfunction
 "{{{2 comp
 let s:g.comp={}
@@ -1507,6 +1565,14 @@ let s:g.comp.a.actions={}
 let s:g.comp.a.actions.format={
             \"model": "simple",
             \"arguments": [["keyof", s:g.fmt.formats]],
+        \}
+let s:g.comp.a.actions.delete={
+            \"model": "simple",
+            \"arguments": [["keyof", s:g.fmt.formats]],
+        \}
+let s:g.comp.a.actions.list={
+            \"model": "simple",
+            \"arguments": [],
         \}
 let s:F.comp._complete=s:F.plug.comp.ccomp(s:g.comp._cname, s:g.comp.a)
 "{{{1
