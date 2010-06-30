@@ -562,7 +562,7 @@ function s:F.fmt.getexpr(str, opts)
     elseif a:str=~'^='
         let str=a:str
         let str=substitute(str, "''", "'", 'g')
-        let str=substitute(str, '\\\(.\)', '\1', 'g')
+        let str=substitute(str, '\\\([\\%]\)', '\1', 'g')
         let str=substitute(str, '^=\|=%$', '', 'g')
         return str
     elseif a:str=~"^'"
@@ -662,9 +662,9 @@ function s:F.fmt.prepare(format, startline, endline, options)
                 \(s:F.stuf.strlen))
     let opts.linenumlen=len(a:endline)
     let opts.donr=has_key(a:format, "linenr") &&
-                \((a:options.nonr==-1)?
-                \   (s:F.main.option("NoLineNR")):
-                \   (a:options.nonr))
+                \!((a:options.nonr==-1)?
+                \    (s:F.main.option("NoLineNR")):
+                \    (a:options.nonr))
     let id=hlID("normal")
     let opts.fgcolor=s:F.fmt.getcolor(synIDattr(id, "fg#", s:g.fmt.whatterm))
     let opts.bgcolor=s:F.fmt.getcolor(synIDattr(id, "bg#", s:g.fmt.whatterm))
@@ -734,29 +734,29 @@ endfunction
 let s:g.fmt.escapehtml="%'substitute(substitute(@@@, '[<>\"&]', ".
             \          "'\\=\"&#\".char2nr(submatch(0)).\";\"', 'g'), ".
             \          "' ', '\\=@_leadingspace@', 'g')'%"
-let s:g.fmt.stylestr=
-            \                     '((@inverse@)?("color: ".'.
-            \                       '((@bgcolor@!="")?'.
-            \                         '(@bgcolor@):'.
-            \                         '(@_bgcolor@))."; background-color: ".'.
-            \                       '((@fgcolor@!="")?'.
-            \                         '(@fgcolor@):'.
-            \                         '(@_fgcolor@)).";"):'.
-            \                     '(((@fgcolor@!="")?'.
-            \                       '("color: ".@fgcolor@.";"):'.
-            \                       '("color: ".@_fgcolor@.";")).'.
-            \                      '((@bgcolor@!="")?'.
-            \                       '("background-color: ".@bgcolor@.";"):'.
-            \                       '("background-color: ".@_bgcolor@.";")))).'.
-            \                     '((@bold@)?'.
-            \                       '("font-weight: bold;"):'.
-            \                       '("")).'.
-            \                     '((@italic@)?'.
-            \                       '("font-style: italic;"):'.
-            \                       '("")).'.
-            \                     '((@underline@)?'.
-            \                       '("text-decoration: underline;"):'.
-            \                       '(""))'
+let s:g.fmt.stylestr='((@inverse@)?'.
+            \          '("color: ".'.
+            \           '((@bgcolor@!="")?'.
+            \             '(@bgcolor@):'.
+            \             '(@_bgcolor@))."; background-color: ".'.
+            \           '((@fgcolor@!="")?'.
+            \             '(@fgcolor@):'.
+            \             '(@_fgcolor@))."; "):'.
+            \          '(((@fgcolor@!="")?'.
+            \            '("color: ".@fgcolor@."; "):'.
+            \            '("color: ".@_fgcolor@."; ")).'.
+            \           '((@bgcolor@!="")?'.
+            \            '("background-color: ".@bgcolor@."; "):'.
+            \            '("background-color: ".@_bgcolor@."; ")))).'.
+            \        '((@bold@)?'.
+            \          '("font-weight: bold; "):'.
+            \          '("")).'.
+            \        '((@italic@)?'.
+            \          '("font-style: italic; "):'.
+            \          '("")).'.
+            \        '((@underline@)?'.
+            \          '("text-decoration: underline; "):'.
+            \          '(""))'
 let s:g.fmt.formats.html={
             \"style":        '%>((@styleid@!="")?'.
             \                   '(".s".@styleid@." {".'.
@@ -799,25 +799,27 @@ let s:g.fmt.formats.html={
             \                           'else {fold.className=\"closed-fold\";}'.
             \                  '}</script>"'.
             \                '):(""))''%'.
-            \                "</head><body class='s%S'>",
-            \"end":          "</body></html>",
-            \"linestart":    "<div class='s%S'>",
-            \"linenr":       "<span class='s%S'>%#% </span>",
-            \"line":         "<span class='s%S'>".s:g.fmt.escapehtml."</span>",
+            \                '</head><body class="s%S">',
+            \"end":          '</body></html>',
+            \"linestart":    '<div class="s%S Line" id="line%N">',
+            \"linenr":       '<span class="s%S LineNR">%#% </span>',
+            \"line":         '<span class="s%S">'.s:g.fmt.escapehtml."</span>",
             \"lineend":      "</div>",
-            \"fold":         "<div class='s%S Fold'><span class='s%S'>%#%^".
+            \"fold":         '<div class="s%S Fold" id="fold%N">'.
+            \                '<span class="s%S">%#%^'.
             \                s:g.fmt.escapehtml."% %-</span></div>",
-            \"difffiller":   "<div>%_%^".
-            \                "<span class='s%S'>%-</span></div>",
-            \"collapsedfiller": "<div>%_%^<span class='s%S'>".
+            \"difffiller":   '<div class="DiffFiller">%_%^'.
+            \                '<span class="s%S">%-</span></div>',
+            \"collapsedfiller": '<div class="CollapsedFiller">'.
+            \                   '%_%^<span class="s%S">'.
             \                   '%~ Deleted lines: %s %-</span></div>',
             \"leadingspace": "&nbsp;",
-            \"foldstart":    "<div id='fold%N' class='closed-fold'>".
-            \                   "<div class='toggle-open s%S' id='cf%N'>".
-            \                   "<a href='javascript:toggleFold(\"fold%N\")'>".
+            \"foldstart":    '<div id="fold%N" class="closed-fold">'.
+            \                   '<div class="toggle-open s%S" id="cf%N">'.
+            \                   '<a href="javascript:toggleFold(''fold%N'')">'.
             \                       s:g.fmt.escapehtml."</a></div>".
-            \                "<div class='fulltext' ".
-            \                   "onclick='toggleFold(\"fold%N\")'>",
+            \                '<div class="fulltext" '.
+            \                   'onclick="toggleFold(''fold%N'')">',
             \"foldend":      "</div></div>",
             \"strlen":       s:F.stuf.htmlstrlen,
         \}
@@ -856,22 +858,20 @@ let s:g.fmt.formats["bbcode-unixforum"]={
             \                '''\="&#".char2nr(submatch(0)).";"'', "g")''% '.
             \                '(Created by format.vim)]',
             \"end":          '[/sh]',
-            \"linestart":    "%#%^",
+            \"linenr":       s:g.fmt.bbufostylestart."%#% ".
+            \                s:g.fmt.bbufostyleend,
             \"line":         s:g.fmt.bbufostylestart.
             \                '%''substitute(substitute(@@@, ''[&\[\]]'', '.
             \                      '''\="&#".char2nr(submatch(0)).";"'', "g"),'.
             \                      '" ", ''\&#160;'', "g")''%'.
             \                s:g.fmt.bbufostyleend,
-            \"lineend":      "",
             \"leadingspace": "&#160;",
             \"strlen":       s:F.stuf.bbstrlen,
         \}
 "{{{3 fmt.format
 "{{{4 s:g.chk.format
 let s:g.chk.format=[
-            \["and", [["map", ["haskey", ["linestart",
-            \                             "line",
-            \                             "lineend"]]],
+            \["and", [["haskey", "line"],
             \         ["dict", [[["in", ["linestart", "line", "lineend",
             \                            "begin", "end", "difffiller",
             \                            "leadingspace", "fold", "linenr",
@@ -1049,72 +1049,76 @@ function s:F.fmt.format(type, startline, endline, options)
     let npregex=s:F.plug.stuf.squote(npregex)
     "{{{4 Складки
     if allfolds
-        let closedfolds={}
-        let closedfoldslist=[]
-        let fcurline=startline
+        "{{{5 Объявление переменных
+        call extend(formatfunction, [
+        \"let closedfolds={}",
+        \"let closedfoldslist=[]",
+        \"let fcurline=".startline,])
         "{{{5 Складки, закрытые в данный момент
-        if has_key(cformat, "fold")
-            while fcurline<=endline
-                if foldclosed(fcurline)>-1
-                    call add(closedfoldslist, fcurline)
-                    let closedfolds[fcurline]=
-                                \cformat.fold(foldtextresult(fcurline),
-                                \           foldspec, "", 0, "",
-                                \           opts, cformat.stylestr)
-                    let fcurline=foldclosedend(fcurline)
-                endif
-                let fcurline+=1
-            endwhile
+        if has_key(cformat, "fold") && !ignorefolds
+            call extend(formatfunction, [
+            \"while fcurline<=".endline,
+            \"    if foldclosed(fcurline)>-1",
+            \"        call add(closedfoldslist, fcurline)",
+            \"        let closedfolds[fcurline]=".
+            \                    "cformat.fold(foldtextresult(fcurline), ".
+            \                                 "foldspec, '', 0, '', ".
+            \                                 "opts, cformat.stylestr)",
+            \"        let fcurline=foldclosedend(fcurline)",
+            \"    endif",
+            \"    let fcurline+=1",
+            \"endwhile",])
         endif
-        let opts.closedfoldslist=closedfoldslist
         "{{{5 Остальные складки
-        let possiblefolds={}
-        let &foldlevel=0
-        let oldfoldnumber=-1
-        let foldnumber=0
-        while oldfoldnumber!=foldnumber
-            let oldfoldnumber=foldnumber
-            let fcurline=startline
-            while fcurline<=endline
-                if foldclosed(fcurline)>-1
-                    let foldend=foldclosedend(fcurline)
-                    let foldtext=foldtextresult(fcurline)
+        call extend(formatfunction, [
+        \"let possiblefolds={}",
+        \"let &foldlevel=0",
+        \"let oldfoldnumber=-1",
+        \"let foldnumber=0",
+        \"while oldfoldnumber!=foldnumber",
+        \"    let oldfoldnumber=foldnumber",
+        \"    let fcurline=".startline,
+        \"    while fcurline<=".endline,
+        \"        if foldclosed(fcurline)>-1",
+        \"            let foldend=foldclosedend(fcurline)",
+        \"            let foldtext=foldtextresult(fcurline)",])
                     if has_key(cformat, "foldstart")
-                        if !has_key(possiblefolds, fcurline)
-                            let possiblefolds[fcurline]={}
-                        endif
-                        if !has_key(possiblefolds[fcurline], "start")
-                            let possiblefolds[fcurline].start=[]
-                        endif
-                        call add(possiblefolds[fcurline].start,
-                                    \cformat.foldstart(foldtext, foldspec,
-                                    \                  fcurline,
-                                    \                  &foldlevel, "", opts,
-                                    \                  cformat.stylestr))
+                        call extend(formatfunction, [
+                        \"if !has_key(possiblefolds, fcurline)",
+                        \"    let possiblefolds[fcurline]={}",
+                        \"endif",
+                        \"if !has_key(possiblefolds[fcurline], 'start')",
+                        \"    let possiblefolds[fcurline].start=[]",
+                        \"endif",
+                        \"call add(possiblefolds[fcurline].start, ".
+                        \            "cformat.foldstart(foldtext, foldspec, ".
+                        \                              "fcurline, ".
+                        \                              "&foldlevel, '', opts, ".
+                        \                              "cformat.stylestr))",])
                     endif
                     if has_key(cformat, "foldend")
-                        if !has_key(possiblefolds, foldend+1)
-                            let possiblefolds[foldend+1]={}
-                        endif
-                        if !has_key(possiblefolds[foldend+1], "end")
-                            let possiblefolds[foldend+1].end=[]
-                        endif
-                        call insert(possiblefolds[foldend+1].end,
-                                    \cformat.foldend(foldtext, foldspec,
-                                    \                foldend,
-                                    \                &foldlevel, "", opts,
-                                    \                cformat.stylestr))
+                        call extend(formatfunction, [
+                        \"let foldinsbefore=foldend+1",
+                        \"if !has_key(possiblefolds, foldinsbefore)",
+                        \"    let possiblefolds[foldinsbefore]={}",
+                        \"endif",
+                        \"if !has_key(possiblefolds[foldinsbefore], 'end')",
+                        \"    let possiblefolds[foldinsbefore].end=[]",
+                        \"endif",
+                        \"call insert(possiblefolds[foldinsbefore].end, ".
+                        \            "cformat.foldend(foldtext, foldspec, ".
+                        \                            "foldend, ".
+                        \                            "&foldlevel, '', opts, ".
+                        \                            "cformat.stylestr))"])
                     endif
-                    let fcurline=foldend
-                    let foldnumber+=1
-                endif
-                let fcurline+=1
-            endwhile
-            let &foldlevel+=1
-        endwhile
-        let opts.closedfolds=closedfolds
-        let opts.possiblefolds=possiblefolds
-        " call system('echo '.shellescape(string(opts)).' > /home/zyx/tmp/vim/opts')
+                    call extend(formatfunction, [
+                    \"let fcurline=foldend",
+                    \"let foldnumber+=1",
+                \"endif",
+                \"let fcurline+=1",
+            \"endwhile",
+            \"let &foldlevel+=1",
+        \"endwhile",])
     endif
     "{{{4 Основной цикл: создание указанного представления
     call extend(formatfunction, [
@@ -1204,8 +1208,8 @@ function s:F.fmt.format(type, startline, endline, options)
         endif
         if allfolds
             call extend(formatfunction, [
-            \'if has_key(opts.possiblefolds, curline)',
-            \'    let pf=opts.possiblefolds[curline]',
+            \'if has_key(possiblefolds, curline)',
+            \'    let pf=possiblefolds[curline]',
             \'    if has_key(pf, "end")',
             \'        call extend(r, pf.end)',
             \'    endif',
@@ -1213,9 +1217,9 @@ function s:F.fmt.format(type, startline, endline, options)
             \'        call extend(r, pf.start)',
             \'    endif',
             \'endif',
-            \'if len(opts.closedfoldslist) && curline==opts.closedfoldslist[0]',
-            \'    let opts.closedfoldslist=opts.closedfoldslist[1:]',
-            \'    call add(r, opts.closedfolds[curline])',
+            \'if len(closedfoldslist) && curline==closedfoldslist[0]',
+            \'    let closedfoldslist=closedfoldslist[1:]',
+            \'    call add(r, closedfolds[curline])',
             \'endif',
             \])
         endif
@@ -1264,10 +1268,12 @@ function s:F.fmt.format(type, startline, endline, options)
             \])
         endif
         "{{{6 Начало строки
-        call add(formatfunction,
-        \'let curstr.=cformat.linestart("", '.
-        \   ((&diff)?('((diffattr)?(dspec):(normalspec))'):('normalspec')).
-        \   ', curline, 0, curstr, opts, cformat.stylestr)')
+        if has_key(cformat, "linestart")
+            call add(formatfunction,
+            \'let curstr.=cformat.linestart("", '.
+            \   ((&diff)?('((diffattr)?(dspec):(normalspec))'):('normalspec')).
+            \   ', curline, 0, curstr, opts, cformat.stylestr)')
+        endif
         "{{{7 Номер
         if donr
             call add(formatfunction,
@@ -1466,9 +1472,11 @@ function s:F.fmt.format(type, startline, endline, options)
             \       'curline, curcol, curstr, opts, cformat.stylestr)')
         endif
         "{{{7 Конец строки
-        call add(formatfunction,
-        \'let curstr.=cformat.lineend("", normalspec, curline, curcol, curstr,'.
-        \                       'opts, cformat.stylestr)')
+        if has_key(cformat, "lineend")
+            call add(formatfunction,
+            \'let curstr.=cformat.lineend("", normalspec, curline, curcol, '.
+            \                            'curstr, opts, cformat.stylestr)')
+        endif
         "}}}7
         if !ignorefolds && !allfolds
             call add(formatfunction, "endif")
@@ -1481,8 +1489,8 @@ function s:F.fmt.format(type, startline, endline, options)
     "{{{4 Начало и конец представления
     if allfolds
         call extend(formatfunction, [
-        \'if has_key(opts.possiblefolds, curline)',
-        \'    let pf=opts.possiblefolds[curline]',
+        \'if has_key(possiblefolds, curline)',
+        \'    let pf=possiblefolds[curline]',
         \'    if has_key(pf, "end")',
         \'        call extend(r, pf.end)',
         \'    endif',

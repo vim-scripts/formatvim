@@ -154,7 +154,7 @@ Format specification is the dictionary with the following keys:
 4.1. Dictionary keys                                      *format-spec-keys*
 
 linestart                                        *format-spec-key-linestart*
-        String, describes each start of line. Required. Arguments (see 
+        String, describes each start of line. Arguments (see 
         |format-spec-description|) (listed only arguments with non-standart 
         values):
         Argument    Value ~
@@ -173,11 +173,11 @@ linenr                                              *format-spec-key-linenr*
 
 line                                                  *format-spec-key-line*
         String, describes each differently highlighted group of characters. 
-        Required. Arguments take only standart values (see 
-        |format-spec-description|).
+        Arguments take only standart values (see |format-spec-description|). 
+        Note that this the only required key.
 
 lineend                                            *format-spec-key-lineend*
-        String, describes each line end. Required. Arguments (see 
+        String, describes each line end. Arguments (see 
         |format-spec-description|) (listed only arguments with non-standart 
         values):
         Argument    Value ~
@@ -335,14 +335,16 @@ inside the |format-spec-expression|.
         (yes, beginning of the document is formatted only before its end and 
         the latter is the last thing that is being formatted).
 %#                                                          *format-spec-%#*
-        Line number, padded to the right with @_leadingspace@.
+        Line number padded to the right with @_leadingspace@ if @_donr@ is 
+        true or an empty string otherwise.
 %_                                                          *format-spec-%_*
-        @_leadingspace@ repeated @_linenumlen@ times.
+        @_leadingspace@ repeated @_linenumlen@ times if @_donr@ is true or an 
+        empty string otherwise.
 %<SPACE>                                               *format-spec-%SPACE*
         A single @_leadingspace@. Just the same as %=@_leadingspace@=%, but 
         computed only once.
 %^                                                          *format-spec-%^*
-        A single @_leadingspace@ if @_donr@ is true and an empty string 
+        A single @_leadingspace@ if @_donr@ is true or an empty string 
         otherwise.
 %-                                                          *format-spec-%-*
         @_difffillchar@ repeated enough times for the line length to be less 
