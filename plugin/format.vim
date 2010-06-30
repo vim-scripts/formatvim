@@ -108,23 +108,23 @@ let s:g.pluginloaded=1
 "{{{2 Настройки
 let s:g.defaultOptions={
             \"DefaultFormat": "html",
-            \"UseStyleCache": 1,
-            \"IgnoreFolds":   0,
-            \"IgnoreList":    0,
-            \"NoLineNR":      0,
-            \"AllFolds":      0,
-            \"ShowProgress":  0,
-            \"CollapsFiller": 0,
+            \"KeepColorCache": 1,
+            \"IgnoreFolds":    0,
+            \"IgnoreList":     0,
+            \"NoLineNR":       0,
+            \"AllFolds":       0,
+            \"ShowProgress":   0,
+            \"CollapsFiller":  0,
         \}
 let s:g.chk.options={
-            \"DefaultFormat": ["keyof", s:g.fmt.formats],
-            \"UseStyleCache": ["bool", ""],
-            \"IgnoreFolds":   ["bool", ""],
-            \"IgnoreList":    ["bool", ""],
-            \"NoLineNR":      ["bool", ""],
-            \"AllFolds":      ["bool", ""],
-            \"ShowProgress":  ["num", [0, 2]],
-            \"CollapsFiller": ["num", [0]],
+            \"DefaultFormat":  ["keyof", s:g.fmt.formats],
+            \"KeepColorCache": ["bool", ""],
+            \"IgnoreFolds":    ["bool", ""],
+            \"IgnoreList":     ["bool", ""],
+            \"NoLineNR":       ["bool", ""],
+            \"AllFolds":       ["bool", ""],
+            \"ShowProgress":   ["num", [0, 2]],
+            \"CollapsFiller":  ["num", [0]],
         \}
 "{{{2 Чистка
 unlet s:g.load
@@ -701,7 +701,7 @@ function s:F.fmt.spec(cformat, hlname, ...)
         let diffid=hlID(a:000[0])
         let id.="_".diffid
     endif
-    if has_key(a:cformat, "cache") && has_key(a:cformat.cache, id)
+    if has_key(a:cformat.cache, id)
         return a:cformat.cache[id]
     endif
     let r={
@@ -719,9 +719,7 @@ function s:F.fmt.spec(cformat, hlname, ...)
         let r.bgcolor=s:F.fmt.getcolor(synIDattr(diffid, "bg#",
                     \                            s:g.fmt.whatterm))
     endif
-    if has_key(a:cformat, "cache")
-        let a:cformat.cache[id]=r
-    endif
+    let a:cformat.cache[id]=r
     if !has_key(a:cformat.hasstyles, id) && has_key(a:cformat, "style")
         let a:cformat.stylestr.=a:cformat.style(id, r, 0, 0, "", a:cformat.opts,
                     \                           a:cformat.stylestr)
@@ -734,33 +732,33 @@ endfunction
 let s:g.fmt.escapehtml="%'substitute(substitute(@@@, '[<>\"&]', ".
             \          "'\\=\"&#\".char2nr(submatch(0)).\";\"', 'g'), ".
             \          "' ', '\\=@_leadingspace@', 'g')'%"
-let s:g.fmt.stylestr='((@inverse@)?'.
-            \          '("color: ".'.
-            \           '((@bgcolor@!="")?'.
-            \             '(@bgcolor@):'.
-            \             '(@_bgcolor@))."; background-color: ".'.
-            \           '((@fgcolor@!="")?'.
-            \             '(@fgcolor@):'.
-            \             '(@_fgcolor@))."; "):'.
-            \          '(((@fgcolor@!="")?'.
-            \            '("color: ".@fgcolor@."; "):'.
-            \            '("color: ".@_fgcolor@."; ")).'.
-            \           '((@bgcolor@!="")?'.
-            \            '("background-color: ".@bgcolor@."; "):'.
-            \            '("background-color: ".@_bgcolor@."; ")))).'.
-            \        '((@bold@)?'.
-            \          '("font-weight: bold; "):'.
-            \          '("")).'.
-            \        '((@italic@)?'.
-            \          '("font-style: italic; "):'.
-            \          '("")).'.
-            \        '((@underline@)?'.
-            \          '("text-decoration: underline; "):'.
-            \          '(""))'
+let s:g.fmt.htmlstylestr='((@inverse@)?'.
+            \             '("color: ".'.
+            \              '((@bgcolor@!=#"")?'.
+            \                '(@bgcolor@):'.
+            \                '(@_bgcolor@))."; background-color: ".'.
+            \              '((@fgcolor@!=#"")?'.
+            \                '(@fgcolor@):'.
+            \                '(@_fgcolor@))."; "):'.
+            \             '(((@fgcolor@!=#"")?'.
+            \               '("color: ".@fgcolor@."; "):'.
+            \               '("color: ".@_fgcolor@."; ")).'.
+            \              '((@bgcolor@!=#"")?'.
+            \               '("background-color: ".@bgcolor@."; "):'.
+            \               '("background-color: ".@_bgcolor@."; ")))).'.
+            \           '((@bold@)?'.
+            \             '("font-weight: bold; "):'.
+            \             '("")).'.
+            \           '((@italic@)?'.
+            \             '("font-style: italic; "):'.
+            \             '("")).'.
+            \           '((@underline@)?'.
+            \             '("text-decoration: underline; "):'.
+            \             '(""))'
 let s:g.fmt.formats.html={
-            \"style":        '%>((@styleid@!="")?'.
+            \"style":        '%>((@styleid@!=#"")?'.
             \                   '(".s".@styleid@." {".'.
-            \                     s:g.fmt.stylestr.
+            \                     s:g.fmt.htmlstylestr.
             \                   '."} "):'.
             \                   '(""))',
             \"begin":        "<html><head>".
@@ -824,11 +822,11 @@ let s:g.fmt.formats.html={
             \"strlen":       s:F.stuf.htmlstrlen,
         \}
 let s:g.fmt.styleattr="%'((@styleid@!=#\"\")?".
-            \            "(' style=\"'.".s:g.fmt.stylestr.".'\"'):".
+            \            "(' style=\"'.".s:g.fmt.htmlstylestr.".'\"'):".
             \            "(''))'%"
 let s:g.fmt.formats["html-vimwiki"]={
             \"begin":           "<div style=\"font-family: monospace; %'".
-            \                           s:g.fmt.stylestr."'%\">",
+            \                           s:g.fmt.htmlstylestr."'%\">",
             \"end":             "</div>",
             \"linestart":       "<div".s:g.fmt.styleattr.">",
             \"linenr":          "<span".s:g.fmt.styleattr.">%#% </span>",
@@ -847,17 +845,21 @@ let s:g.fmt.formats["html-vimwiki"]={
 "{{{4 BBcode (unixforum)
 let s:g.fmt.bbufostylestart='%'''.
             \'((@inverse@)?'.
-            \   '("[color=".((@bgcolor@!="")?(@bgcolor@):("Black"))):'.
-            \   '("[color=".((@fgcolor@!="")?(@fgcolor@):("White"))))."]".'.
+            \   '("[color=".((@bgcolor@!=#"")?(@bgcolor@):(@_bgcolor@))):'.
+            \   '("[color=".((@fgcolor@!=#"")?(@fgcolor@):(@_fgcolor@))))."]".'.
             \'((@bold@)?("[b]"):("")).((@italic@)?("[i]"):(""))''%'
 let s:g.fmt.bbufostyleend='%''((@italic@)?("[/i]"):("")).'.
             \'((@bold@)?("[/b]"):(""))."[/color]".'.
             \'((@inverse@)?(""):(""))''%'
 let s:g.fmt.formats["bbcode-unixforum"]={
-            \"begin":        '[sh=%''substitute(expand("%:p:~%"), ''[]'', '.
-            \                '''\="&#".char2nr(submatch(0)).";"'', "g")''% '.
-            \                '(Created by format.vim)]',
-            \"end":          '[/sh]',
+            \"begin":        '%>((&background==#"dark")?'.
+            \                   '("[sh=".substitute(expand("%:p:~%"), ''[]'', '.
+            \                   '''\="&#".char2nr(submatch(0)).";"'', "g")." '.
+            \                   '(Created by format.vim)]"):'.
+            \                   '("[codebox]"))',
+            \"end":          '%>((&background==#"dark")?'.
+            \                   '("[/sh]"):'.
+            \                   '("[/codebox]"))',
             \"linenr":       s:g.fmt.bbufostylestart."%#% ".
             \                s:g.fmt.bbufostyleend,
             \"line":         s:g.fmt.bbufostylestart.
@@ -890,8 +892,7 @@ function s:F.fmt.format(type, startline, endline, options)
     let oldmagic=&magic
     set magic
     let [startline, endline]=sort([a:startline, a:endline])
-    let formatfunction=[
-\"function! s:F.fmt.compiledformat()"]
+let formatfunction=["function! s:F.fmt.compiledformat()"]
     "{{{5 cformat, opts
     let quotedtype=s:F.plug.stuf.squote(a:type)
     call extend(formatfunction, [
@@ -911,15 +912,26 @@ function s:F.fmt.format(type, startline, endline, options)
         let cformat=s:F.fmt.prepare(s:g.fmt.formats[a:type], startline,
                     \                                          endline,
                     \               a:options)
-        let s:g.fmt.compiled[a:type]=cformat"
+        let s:g.fmt.compiled[a:type]=cformat
+        let cformat.cache={}
+        " Здесь содержится список определённых стилей. Используется словарь для 
+        " ускорения
+        let cformat.hasstyles={}
+        " Строка, в которой содержатся сами стили
         let cformat.stylestr=""
-        if s:F.main.option("UseStyleCache")
-            let cformat.cache={}
-        endif
     endif
+    "{{{5 Убеждаемся, что ранее запущенное форматирование завершилось успешно
+    " Если нет, то мы не можем полагаться на кэш
+    if has_key(cformat, "frunning")
+        unlet cformat.frunning
+        let cformat.cache={}
+        let cformat.hasstyles={}
+        let cformat.stylestr=""
+    endif
+    let cformat.frunning=1
+    "}}}5
     let opts=cformat.opts
     unlockvar! opts
-    "}}}5
     " Складки игнорируются, если истинна настройка «IgnoreFolds», отсутствует 
     " ключ «fold» или Vim собран без поддержки складок
     let ignorefolds=((a:options.ignorefolds==-1)?
@@ -935,9 +947,6 @@ function s:F.fmt.format(type, startline, endline, options)
     call add(formatfunction, "let opts.ignorefolds=".ignorefolds)
     call add(formatfunction, "let opts.allfolds=".allfolds)
     let npregex='\t\|\p\@!.'
-    " Здесь содержится список определённых стилей. Используется словарь для 
-    " ускорения
-    let cformat.hasstyles={}
     " Список строк с возвращаемыми значениями
     call add(formatfunction, "let r=[]")
     " Номер преобразовываемой линии
@@ -1209,13 +1218,20 @@ function s:F.fmt.format(type, startline, endline, options)
         if allfolds
             call extend(formatfunction, [
             \'if has_key(possiblefolds, curline)',
-            \'    let pf=possiblefolds[curline]',
-            \'    if has_key(pf, "end")',
-            \'        call extend(r, pf.end)',
-            \'    endif',
-            \'    if has_key(pf, "start")',
-            \'        call extend(r, pf.start)',
-            \'    endif',
+            \'    let pf=possiblefolds[curline]',])
+            if has_key(cformat, "foldend")
+                call extend(formatfunction, [
+                \'    if has_key(pf, "end")',
+                \'        call extend(r, pf.end)',
+                \'    endif',])
+            endif
+            if has_key(cformat, "foldstart")
+                call extend(formatfunction, [
+                \'    if has_key(pf, "start")',
+                \'        call extend(r, pf.start)',
+                \'    endif',])
+            endif
+            call extend(formatfunction, [
             \'endif',
             \'if len(closedfoldslist) && curline==closedfoldslist[0]',
             \'    let closedfoldslist=closedfoldslist[1:]',
@@ -1532,7 +1548,14 @@ call add(formatfunction, "endfunction")
             let r+=split(item, "\n")
         endfor
     endif
+    "{{{4 Удалить кэш, если это требуется
+    if !s:F.main.option("KeepColorCache")
+        let cformat.cache={}
+        let cformat.stylestr=""
+        let cformat.hasstyles={}
+    endif
     "}}}4
+    unlet cformat.frunning
     return r
 endfunction
 "{{{3 fmt.add
@@ -1552,6 +1575,18 @@ function s:F.fmt.del(type)
     endif
     return 0
 endfunction
+"{{{3 fmt.purgecolorcaches
+function s:F.fmt.purgecolorcaches()
+    for cformat in values(s:g.fmt.compiled)
+        let cformat.cache={}
+        let cformat.stylestr=""
+        let cformat.hasstyles={}
+    endfor
+endfunction
+augroup FormatPurgeColorCaches
+    autocmd!
+    autocmd ColorScheme * call s:F.fmt.purgecolorcaches()
+augroup END
 "{{{2 mng: main
 "{{{3 mng.main
 "{{{4 s:g.chk.cmd
@@ -1577,7 +1612,8 @@ let s:g.chk.cmd={
             \       "model": "simple",
             \       "required": [["keyof", s:g.fmt.formats]],
             \   },
-            \   "list": {"model": "optional",}
+            \   "list": {"model": "optional",},
+            \   "purgecolorcaches": {"model": "optional",},
             \},
         \}
 "}}}4
@@ -1601,6 +1637,8 @@ function s:F.mng.main(startline, endline, action, ...)
     elseif action==#"list"
         echo join(keys(s:g.fmt.formats), "\n")
         return 1
+    elseif action==#"purgecolorcaches"
+        call s:F.fmt.purgecolorcaches()
     endif
     "}}}4
     return 0
@@ -1631,6 +1669,10 @@ let s:g.comp.a.actions.delete={
             \"arguments": [["keyof", s:g.fmt.formats]],
         \}
 let s:g.comp.a.actions.list={
+            \"model": "simple",
+            \"arguments": [],
+        \}
+let s:g.comp.a.actions.purgecolorcaches={
             \"model": "simple",
             \"arguments": [],
         \}

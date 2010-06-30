@@ -65,6 +65,12 @@ via dictionary returned by |load-func-getfunctions| function.
             Delete format specification named {formatName}.
 :FormatCommand list                                     *format-action-list*
             Print a list of format specifications.
+:FormatCommand purgecolorcaches             *format-action-purgecolorcaches*
+            Purge color caches. Useful if you change the value of 'background' 
+            option since changing colorschemes triggers |ColorScheme| event 
+            which also causes purging color caches. You may also want to do 
+            this if you do not want to have styles from previously formatted 
+            documents. Useless if |format-opt-KeepColorCache| is false.
 
 ------------------------------------------------------------------------------
 2.2. Functions                                            *format-functions*
@@ -97,10 +103,13 @@ format({formatName}, [{startline}, [{endline}, [{option1}, {value1}, ...]]])
                                          *b:formatOptions* *g:formatOptions*
 All options are located in b:formatOptions and g:formatOptions dictionaries.
 
+KeepColorCache :: Bool                           *format-opt-KeepColorCache*
+        Keep color cache after formatting is done. True by default.
+
 DefaultFormat :: String                           *format-opt-DefaultFormat*
         Default format specification's name.
 
-IgnoreFolds :: Bold                                 *format-opt-IgnoreFolds*
+IgnoreFolds :: Bool                                 *format-opt-IgnoreFolds*
         If IgnoreFolds is true, then act as if there were no text folds. See 
         |fold.txt| for more information about folding. Note that if format 
         specification does not provide "fold" key then folds will be ignored 
@@ -301,8 +310,8 @@ Note that after each lineend, difffiller, collapsedfiller, fold, foldstart and
 foldend a newline will be added unless nolf option is present: using 
 "{range}FormatCommand format {formatName}" is equivalent to: >
 
-    let Format=LoadFuncDict().getfunctions("format").format
-    let lines=Format({formatName}, {rangeStart}, {rangeEnd})
+    let Format=LoadFuncdict().getfunctions("format").format
+    let lines=call(Format, [{formatName}, {rangeStart}, {rangeEnd}], {})
     new ++enc=utf-8
     call setline(1, lines)
 
