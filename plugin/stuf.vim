@@ -45,6 +45,9 @@ elseif !exists("s:g.pluginloaded")
                 \["iscombining", "str.iscombining",
                 \       {   "model": "simple",
                 \        "required": [["type", type("")]]}],
+                \["strlen",      "str.strlen",
+                \       {   "model": "simple",
+                \        "required": [["type", type("")]]}],
                 \["nextchar",    "str.nextchar",
                 \       {   "model": "simple",
                 \        "required": [["type", type("")]]}],
@@ -60,7 +63,7 @@ elseif !exists("s:g.pluginloaded")
                 \        "required": [["alllst", ["type", type("")]],
                 \                     ["alllst", ["alllst", ["type", type("")]]]
                 \                    ]}],
-                \["string", "str.string", {}],
+                \["string",      "str.string", {}],
                 \["iswriteable", "file.checkwr",
                 \       {   "model": "simple",
                 \        "required": [["type", type("")]]}],

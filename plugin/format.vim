@@ -28,11 +28,20 @@ elseif !exists("s:g.pluginloaded")
     let s:g.srccmd="source ".(s:g.load.scriptfile)
     let s:g.chk.f=[
                 \["format", "fmt.format", {
-                \       "model": "optional",
+                \       "model": "prefixed",
                 \       "required": [["keyof", s:g.fmt.formats]],
                 \       "optional": [[["num", [0]], {}, 0],
                 \                    [["num", [1]], {"trans": ["earg", ""]},
                 \                     "line('$')"]],
+                \       "prefoptional": {
+                \           "columns":       [["num", [1]],      {}, 0],
+                \           "collapsfiller": [["num", [1]],      {}, 0],
+                \           "nonr":          [["in", [0, 1]],    {}, 0],
+                \           "allfolds":      [["in", [0, 1]],    {}, 0],
+                \           "ignorefolds":   [["in", [0, 1]],    {}, 0],
+                \           "ignorelist":    [["in", [0, 1]],    {}, 0],
+                \           "progress":      [["in", [0, 1, 2]], {}, 0],
+                \       },
                 \   }
                 \]
             \]
@@ -72,7 +81,7 @@ elseif !exists("s:g.pluginloaded")
     "{{{3 sid
     function s:SID()
         return matchstr(expand('<sfile>'), '\d\+\ze_SID$')
-    endfun
+    endfunction
     let s:g.scriptid=s:SID()
     delfunction s:SID
     "{{{2 Регистрация дополнения
@@ -619,7 +628,7 @@ function s:F.fmt.compile(Str, opts)
     endif
 endfunction
 "{{{3 fmt.prepare
-function s:F.fmt.prepare(format, startline, endline)
+function s:F.fmt.prepare(format, startline, endline, options)
     let selfname="fmt.prepare"
     "{{{4 s:F.fmt.getcolor
     if !has_key(s:F.fmt, "getcolor")
@@ -643,14 +652,19 @@ function s:F.fmt.prepare(format, startline, endline)
     let opts.difffillchar=(has_key(a:format, 'difffillchar')?
                 \(a:format.difffillchar):
                 \("-"))
-    let opts.columns=(has_key(a:format, 'columns')?
-                \(a:format.columns):
-                \(&columns))
+    let opts.columns=
+                \((a:options.columns+0)?(a:options.columns+0):
+                \   (has_key(a:format, 'columns')?
+                \       (a:format.columns):
+                \       (&columns)))
     let opts.strlen=(has_key(a:format, 'strlen')?
                 \(a:format.strlen):
                 \(s:F.stuf.strlen))
     let opts.linenumlen=len(a:endline)
-    let opts.donr=has_key(a:format, "linenr") && !s:F.main.option("NoLineNR")
+    let opts.donr=has_key(a:format, "linenr") &&
+                \((a:options.nonr==-1)?
+                \   (s:F.main.option("NoLineNR")):
+                \   (a:options.nonr))
     let id=hlID("normal")
     let opts.fgcolor=s:F.fmt.getcolor(synIDattr(id, "fg#", s:g.fmt.whatterm))
     let opts.bgcolor=s:F.fmt.getcolor(synIDattr(id, "bg#", s:g.fmt.whatterm))
@@ -773,7 +787,7 @@ let s:g.fmt.formats.html={
             \                "%:</style>".
             \                '<title>%''substitute(expand("%:p:~%"), '.
             \                '''[<>"&]'', '.
-            \                '''\\="&#".char2nr(submatch(0)).";"'', "g")''%'.
+            \                '''\="&#".char2nr(submatch(0)).";"'', "g")''%'.
             \                '</title>'.
             \                '%''((@_allfolds@)?("'.
             \                   '<script type=\"text/javascript\">'.
@@ -831,22 +845,24 @@ let s:g.fmt.formats["html-vimwiki"]={
 "{{{4 BBcode (unixforum)
 let s:g.fmt.bbufostylestart='%'''.
             \'((@inverse@)?'.
-            \   '("[/spoiler][color=".((@bgcolor@!="")?(@bgcolor@):("Black"))):'.
-            \             '("[color=".((@fgcolor@!="")?(@fgcolor@):("White"))))."]".'.
+            \   '("[color=".((@bgcolor@!="")?(@bgcolor@):("Black"))):'.
+            \   '("[color=".((@fgcolor@!="")?(@fgcolor@):("White"))))."]".'.
             \'((@bold@)?("[b]"):("")).((@italic@)?("[i]"):(""))''%'
 let s:g.fmt.bbufostyleend='%''((@italic@)?("[/i]"):("")).'.
             \'((@bold@)?("[/b]"):(""))."[/color]".'.
-            \'((@inverse@)?("[spoiler]"):(""))''%'
+            \'((@inverse@)?(""):(""))''%'
 let s:g.fmt.formats["bbcode-unixforum"]={
-            \"begin":        '[font="Courier New"]',
-            \"end":          '[/font]',
-            \"linestart":    "[spoiler]%#%^",
+            \"begin":        '[sh=%''substitute(expand("%:p:~%"), ''[]'', '.
+            \                '''\="&#".char2nr(submatch(0)).";"'', "g")''% '.
+            \                '(Created by format.vim)]',
+            \"end":          '[/sh]',
+            \"linestart":    "%#%^",
             \"line":         s:g.fmt.bbufostylestart.
             \                '%''substitute(substitute(@@@, ''[&\[\]]'', '.
             \                      '''\="&#".char2nr(submatch(0)).";"'', "g"),'.
             \                      '" ", ''\&#160;'', "g")''%'.
             \                s:g.fmt.bbufostyleend,
-            \"lineend":      "[/spoiler]",
+            \"lineend":      "",
             \"leadingspace": "&#160;",
             \"strlen":       s:F.stuf.bbstrlen,
         \}
@@ -869,7 +885,7 @@ let s:g.chk.format=[
 let s:g.chk.ff[0][2].required[1]=s:g.chk.format
 "}}}4
 let s:g.fmt.compiled={}
-function s:F.fmt.format(type, startline, endline)
+function s:F.fmt.format(type, startline, endline, options)
     "{{{4 Объявление переменных
     let oldmagic=&magic
     set magic
@@ -886,12 +902,15 @@ function s:F.fmt.format(type, startline, endline)
         call extend(formatfunction, [
         \"let opts.linenumlen=".len(endline),
         \"let opts.columns=".
-        \   (has_key(s:g.fmt.formats[a:type], 'columns')?
+        \   (((a:options.columns)+0)?
+        \       (a:options.columns):
+        \       (has_key(s:g.fmt.formats[a:type], 'columns')?
         \           (s:g.fmt.formats[a:type]):
-        \           (&columns)),])
+        \           (&columns))),])
     else
         let cformat=s:F.fmt.prepare(s:g.fmt.formats[a:type], startline,
-                    \                                          endline)
+                    \                                          endline,
+                    \               a:options)
         let s:g.fmt.compiled[a:type]=cformat"
         let cformat.stylestr=""
         if s:F.main.option("UseStyleCache")
@@ -903,9 +922,13 @@ function s:F.fmt.format(type, startline, endline)
     "}}}5
     " Складки игнорируются, если истинна настройка «IgnoreFolds», отсутствует 
     " ключ «fold» или Vim собран без поддержки складок
-    let ignorefolds=s:F.main.option("IgnoreFolds") ||
+    let ignorefolds=((a:options.ignorefolds==-1)?
+                \       (s:F.main.option("IgnoreFolds")):
+                \       (a:options.ignorefolds)) ||
                 \!has("folding")
-    let allfolds=!ignorefolds && s:F.main.option("AllFolds") &&
+    let allfolds=!ignorefolds && ((a:options.allfolds==-1)?
+                \                   (s:F.main.option("AllFolds")):
+                \                   (a:options.allfolds)) &&
                 \(has_key(cformat, "foldstart") ||
                 \ has_key(cformat, "foldend"))
     let ignorefolds=ignorefolds || !has_key(cformat, "fold")
@@ -923,7 +946,9 @@ function s:F.fmt.format(type, startline, endline)
     if !has("statusline")
         let showprogress=0
     else
-        let showprogress=s:F.main.option("ShowProgress")
+        let showprogress=((a:options.progress==-1)?
+                    \           (s:F.main.option("ShowProgress")):
+                    \           (a:options.progress))
     endif
     if showprogress
         " Сохранённое значения настройки 'statusline'
@@ -968,7 +993,9 @@ function s:F.fmt.format(type, startline, endline)
         let foldspec=s:F.fmt.spec(cformat, "Folded")
     endif
     let donr=0
-    if has_key(cformat, "linenr") && !s:F.main.option("NoLineNR")
+    if has_key(cformat, "linenr") && !((a:options.nonr==-1)?
+                \                           (s:F.main.option("NoLineNR")):
+                \                           (a:options.nonr))
         call add(formatfunction,
         \'let nrspec=s:F.fmt.spec(cformat, "LineNr")')
         let donr=1
@@ -983,7 +1010,9 @@ function s:F.fmt.format(type, startline, endline)
     "{{{5 Удалённая строка: предсоздание, если возможно
     if &diff
         let persistentfiller=0
-        let collapsafter=s:F.main.option("CollapsFiller")
+        let collapsafter=((a:options.collapsfiller==-1)?
+                    \       (s:F.main.option("CollapsFiller")):
+                    \       (a:options.collapsfiller))
         if collapsafter && has_key(cformat, "collapsedfiller")
             let persistentfiller=0
         elseif has_key(cformat, "difffiller")
@@ -1004,7 +1033,9 @@ function s:F.fmt.format(type, startline, endline)
     endif
     "{{{5 listchars: отображение некоторых символов в соответствии с 'listchars'
     let listchars={}
-    if &list && !s:F.main.option("IgnoreList")
+    if &list && !((a:options.ignorelist)?
+                \   (s:F.main.option("IgnoreList")):
+                \   (a:options.ignorelist))
         let lcs=split(&listchars,
                     \',\ze\(eol\|tab\|trail\|extends\|precedes\|nbsp\):')
         for lc in lcs
@@ -1499,7 +1530,6 @@ endfunction
 "{{{3 fmt.add
 function s:F.fmt.add(type, format)
     let s:g.fmt.formats[a:type]=deepcopy(a:format)
-    let s:g.fmt.compiled[a:type]=s:F.fmt.prepare(s:g.fmt.formats[a:type])
     return 1
 endfunction
 "{{{3 fmt.del
@@ -1521,10 +1551,19 @@ let s:g.chk.cmd={
             \"model": "actions",
             \"actions": {
             \   "format": {
-            \       "model": "optional",
+            \       "model": "prefixed",
             \       "optional": [[["keyof", s:g.fmt.formats],
             \                     {"trans": ["call", ["DefaultFormat"]]},
             \                     s:F.main.option]],
+            \       "prefoptional": {
+            \           "columns":       [["nums", [1]],           {},  0],
+            \           "collapsfiller": [["nums", [0]],           {}, -1],
+            \           "nonr":          [["in", ['0', '1']],      {}, -1],
+            \           "allfolds":      [["in", ['0', '1']],      {}, -1],
+            \           "ignorefolds":   [["in", ['0', '1']],      {}, -1],
+            \           "ignorelist":    [["in", ['0', '1']],      {}, -1],
+            \           "progress":      [["in", ['0', '1', '2']], {}, -1],
+            \       },
             \   },
             \   "delete": {
             \       "model": "simple",
@@ -1544,7 +1583,8 @@ function s:F.mng.main(startline, endline, action, ...)
     endif
     "{{{4 Действия
     if action==#"format"
-        let result=call(s:F.fmt.format, [args[1], a:startline, a:endline], {})
+        let result=call(s:F.fmt.format, [args[1], a:startline, a:endline,
+                    \                    args[2]], {})
         new ++enc=utf-8
         call setline(1, result)
         return 1
@@ -1558,13 +1598,25 @@ function s:F.mng.main(startline, endline, action, ...)
     return 0
 endfunction
 "{{{2 comp
+function s:F.comp.getcolumns(arglead)
+    return ['80', "".&columns]
+endfunction
 let s:g.comp={}
 let s:g.comp._cname="format"
 let s:g.comp.a={"model": "actions"}
 let s:g.comp.a.actions={}
 let s:g.comp.a.actions.format={
-            \"model": "simple",
+            \"model": "pref",
             \"arguments": [["keyof", s:g.fmt.formats]],
+            \"prefix": {
+            \   "columns":       ["func", s:F.comp.getcolumns],
+            \   "collapsfiller": ["list", []],
+            \   "nonr":          ["list", ['0', '1']],
+            \   "allfolds":      ["list", ['0', '1']],
+            \   "ignorefolds":   ["list", ['0', '1']],
+            \   "ignorelist":    ["list", ['0', '1']],
+            \   "progress":      ["list", ['0', '1', '2']],
+            \}
         \}
 let s:g.comp.a.actions.delete={
             \"model": "simple",

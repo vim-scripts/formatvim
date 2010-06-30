@@ -44,11 +44,23 @@ via dictionary returned by |load-func-getfunctions| function.
             The only command provided by this plugin. If variable 
             g:formatOptions exists and has key CmdPrefix, then prefix Format 
             is altered.
-:{range}FormatCommand format [{formatName}]           *format-action-format*
+                                                      *format-action-format*
+:{range}FormatCommand format [{formatName} [{option1} {value1}]]
             Create a new buffer which contains lines formatted using the 
             specification named {formatName} ("html" by default). If {range} 
             is not given, format the whole file. For list of built-in formats 
-            see |format-formats|.
+            see |format-formats|. Possible options:
+            Option         Value and description ~
+            columns        Unsigned integer greater then zero. Used to specify 
+                           number of columns (screen width). Overrides 
+                           |format-spec-key-columns|.
+            collapsfiller  Unsigned integer. Overrides 
+                           |format-option-CollapsFiller|.
+            nonr           Bool. Overrides |format-option-NoLineNR|.
+            allfolds       Bool. Overrides |format-option-AllFolds|.
+            ignorefolds    Bool. Overrides |format-option-IgnoreFolds|.
+            ignorelist     Bool. Overrides |format-option-IgnoreList|.
+            progress       0, 1 or 2. Overrides |format-option-ShowProgress|.
 :FormatCommand delete [{formatName}]                  *format-action-delete*
             Delete format specification named {formatName}.
 :FormatCommand list                                     *format-action-list*
@@ -71,14 +83,14 @@ FormatDelete({formatName})                                 *FormatDelete()*
             Delete format specification named {formatName}.
 
 
-Function, accessed via dictionary returned by |load-func-getfunctions| 
+Function accessed via dictionary returned by |load-func-getfunctions| 
 function:
                                                         *format-func-format*
-format({formatName}, [{startline}, [{endline}]])
+format({formatName}, [{startline}, [{endline}, [{option1}, {value1}, ...]]])
             Return the List of lines formatted using the specification named 
             {formatName}. If {startline} is not given, use the whole file. If 
             {endline} is not given, format from the {startline} to the end of 
-            file.
+            file. For possible {option}s see |format-action-format|.
 
 ==============================================================================
 3. Options                                                  *format-options*
@@ -252,13 +264,13 @@ style                                                *format-spec-key-style*
 
 difffillchar                                  *format-spec-key-difffillchar*
         String, specifies the character(s) for "%-" and "%~" formats. Can be 
-        accessed inside %=...=% via @_difffillchar@.
+        accessed inside %=...=% via @_difffillchar@. Default: "-".
 
 leadingspace                                  *format-spec-key-leadingspace*
         String, specifies the character(s) for "%#", "%_" and "% " formats. 
         Can be accessed inside %=...=% via @_leadingspace@. In future, indent 
         spaces and tabs may be replaced with leadingspace, but now they are 
-        not.
+        not. Default: " ".
 
 columns                                            *format-spec-key-columns*
         Number of columns. If it is not specified, 'columns' option is used 
@@ -267,7 +279,8 @@ columns                                            *format-spec-key-columns*
 strlen                                              *format-spec-key-strlen*
         Function reference, specifies the function that counts length of line 
         for "%_" and "%-" formats and "@=@" argument. Can be accessed inside
-        %=...=% via @_strlen@. May be removed in future versions.
+        %=...=% via @_strlen@. May be removed in future versions. Default: >
+            len(split(string, '\zs'))
 
 nolf                                                  *format-spec-key-nolf*
         Bool. Normally, new item in list returned by |format-func-format| 
@@ -275,14 +288,14 @@ nolf                                                  *format-spec-key-nolf*
         foldstart and foldend, but if this option is present and not zero then 
         all items are joined and the list of one item is returned. Makes the 
         script halt for some time at 100% progress (~30s on 1 MiB file), so be 
-        patient.
+        patient. Default: 0.
 
 haslf                                                    *format-spec-haslf*
         Bool. Causes script to additionaly split each item in list returned by 
         |format-func-format| on "\n" character. It is the only way to include 
         line breaks inside format items. This option is applied after nolf, so 
         set both nolf and haslf to 1 if you want to have line breaks defined 
-        only by your format specification.
+        only by your format specification. Default: 0.
 
 Note that after each lineend, difffiller, collapsedfiller, fold, foldstart and 
 foldend a newline will be added unless nolf option is present: using 
@@ -379,9 +392,9 @@ sequences (use them in place of ordinary variables):
         Value of the specified option. Possible {option}s:
         {option}      Value ~
         leadingspace  Value of the "leadingspace" key from format 
-                      specification if it is present.
+                      specification if it is present, " " otherwise.
         difffillchar  Value of the "difffillchar" key from format 
-                      specification if it is present.
+                      specification if it is present, "-" otherwise.
         columns       Value of the "columns" key from format specification or 
                       value of 'columns' option if it is not present.
         fgcolor       Foreground color of "Normal" highlight group. If this 
