@@ -7,6 +7,7 @@ CONTENTS                                                     *load-contents*
         2.1. Commands                             |load-commands|
         2.2. Functions                            |load-functions|
         2.3. Plugin registration                  |load-reg|
+    3. Options                                    |load-options|
 
 =============================================================================
 1. Intro                                                        *load-intro*
@@ -17,6 +18,7 @@ global functions and commands and share plugin's functionality.
 Features:
     ∙ Autoloading plugins on |FuncUndefined| event.
     ∙ Autoloading plugins when their command is called.
+    ∙ Autoloading plugins when their mapping is used.
     ∙ Autoloading plugins when their functionality is required.
     ∙ Displaying plugins' status.
     ∙ Unloading and reloading plugins.
@@ -28,9 +30,8 @@ This plugin requires chk plugin.
 2. Functionality provided                               *load-functionality*
 
 This plugin provides one command and one function. Both command and function 
-names start with Load, but this prefix can be altered by FuncPrefix and 
-CmdPrefix options in g:loadOptions dictionary (Note that it is a very bad 
-idea).
+names start with Load, but this prefix can be altered by _fprefix and _cprefix 
+options in g:loadOptions dictionary (Note that it is a very bad idea).
 
 -----------------------------------------------------------------------------
 2.1. Commands                                                *load-commands*
@@ -38,19 +39,41 @@ idea).
 
 :LoadCommand {action} ...                     *load-:Command* *:LoadCommand*
             The only command provided by this plugin. If variable 
-            g:loadOptions exists and has key CmdPrefix, then prefix Load is 
+            g:loadOptions exists and has key _cprefix, then prefix Load is 
             altered.
 :LoadCommand unload {plugin}                            *load-action-unload*
-            Unload plugin named {plugin}.
+            Unload plugin named {plugin} and all plugins that depend on it.
             Unloading is done in the following order:
-            1. |load-reg-f|.main.destruct function is called. See |load-reg-F| 
+            0. If plugin is not already loaded it is first loaded and only 
+               then unloaded.
+            1. Plugin is unregistered. See |load-func-unreg|.
+            2. |load-reg-F|.main.destruct function is called. See |load-reg-F| 
                for details.
-            2. Unlocking |load-reg-g| and |load-reg-F| variables.
-            3. Deleting all keys in {plugdict}.g and {plugdict}.F.
-            4. Unregistering plugin. See |load-func-unreg|.
+            3. |load-reg-g| and |load-reg-F| variables are unlocked.
+            4. All keys in |load-reg-g| and |load-reg-F| are deleted.
+            In order to be able to be unloaded correctly your plugin must 
+            follow the following rules:
+            1. Put all functions into s:F dictionary and use it as 
+               |load-reg-F|. If some function cannot be put into dictionary 
+               (for example, because you cannot use script variables in 
+               mappings), then this function should be deleted in 
+               s:F.main.destruct function.
+            2. Put all script variables into s:g dictionary and use it as 
+               |load-reg-g|. Use dictionary where keys are buffer numbers 
+               instead of buffer variables. If you still require to modify 
+               external variables, then they should be reset in 
+               s:F.main.destruct function.
+            3. Do other cleanup (like deleting completion function created by 
+               comp.vim plugin) inside s:F.main.destruct.
+            4. Last three lines of s:F.main.destruct must be >
+                    unlet s:g
+                    unlet s:F
+                    return 1
 :LoadCommand reload {plugin}                            *load-action-reload*
             Reload plugin named {plugin}. Just like |load-action-unload|, but 
-            after unloading |load-reg-file| is sourced.
+            after unloading |load-reg-file|s are sourced. Note that reloading 
+            some widely used plugins like vimargumentchec (chk) or even this 
+            (load) plugin itself may render other plugins useless.
 :LoadCommand show                                         *load-action-show*
             Show |load-reg-scriptid|, |load-reg-name|, |load-reg-file| and 
             status for all plugins. Possible statuses: registered and loaded. 
@@ -66,8 +89,9 @@ idea).
 2.2. Functions                                              *load-functions*
                                    *load-func-LoadFuncdict* *LoadFuncdict()*
 This plugin provides only one global function: LoadFuncdict (prefix Load may 
-be altered, but this is a very bad idea). This function returns a dictionary 
-with the following keys (each value is a function reference):
+be altered, but this is a very bad idea). You can also use load#LoadFuncdict() 
+which loads the plugin and then calls LoadFuncdictbb(). This function returns 
+a dictionary with the following keys (each value is a function reference):
 
                                                   *load-func-registerplugin*
 registerplugin({regdict})
@@ -83,17 +107,17 @@ registerplugin({regdict})
                             Here {plugname} stands for plugin name (see the 
                             `name' key above), {srcname} is a string provided 
                             as the first argument, {etypestr} is a string 
-                            obtained from {globalDictionary}.etype[{etype}] 
-                            (or empty string if it does not exist) and {argN} 
-                            are handled in following way:
+                            obtained from |load-reg-g|.etype[{etype}] (or 
+                            empty string if it does not exist) and {argN} are 
+                            handled in following way:
                             1. If {arg1} (only {arg1}, not {argN}) is 
                                a non-zero number then throw error message 
                                after echoing it.
                             2. If {argN} is a list, its first value is 
                                a string and exists 
-                               {globalDictionary}.emsg[{argN}[0]], then add 
-                               printf({globalDictionary}.emsg[{argN}[0]], 
-                               {argN}[1], {argN}[2], ...) to {msgs}.
+                               |load-reg-g|.emsg[{argN}[0]], then add 
+                               printf(|load-reg-g|.emsg[{argN}[0]], {argN}[1], 
+                               {argN}[2], ...) to {msgs}.
                             3. In other cases add {argN} to {msgs}.
                             String {msgs} is a list of strings separated by
                             ": ".
@@ -101,21 +125,22 @@ registerplugin({regdict})
                             Try getting option named {optname} first from 
                             b:{optionPrefix}Options, then from 
                             g:{optionPrefix}Options and finally from 
-                            {globalDictionary}.defaultOptions. Throw an 
-                            exception on failure. If exists 
-                            {globalDictionary}.c.options[{optname}], then use 
-                            it to check obtained option by function 
+                            |load-reg-g|.defaultOptions. Throw an exception on 
+                            failure. If exists 
+                            |load-reg-g|.c.options[{optname}], then use it to 
+                            check obtained option by function 
                             |chk-func-checkargument|. Throw an exception if 
-                            check failed.
+                            check failed. Note that all option names starting 
+                            with underscore are reserved.
 
-unregister(plugname)                                  *load-func-unregister*
+unregister({plugname})                                *load-func-unregister*
         Unregister plugin. For {plugname} argument see |load-reg-name|. 
         “Unregister” means:
         1. delete all global functions;
         2. delete all commands;
         3. remove plugin dictionary.
 
-getfunctions(plugname)                              *load-func-getfunctions*
+getfunctions({plugname})                            *load-func-getfunctions*
         Get the dictionary functions listed in |load-reg-dictfunctions| 
         argument provided when plugin {plugname} was registered. For 
         {plugname} argument see |load-reg-name|.
@@ -129,12 +154,14 @@ globdict, sid, scriptfile, apiversion. Possible keys:
                                                     *load-reg-dictfunctions*
 dictfunctions :: [({dictname}, {internalname}, {check})]
         List of lists of three items:
-        {dictiname}    any string, which will be the function name in the
+        {dictname}     any string, which will be the function name in the
                        dictionary returned by |load-func-getfunctions|.
         {internalname} string, which consist of alphanumeric characters,
                        underscores and dots, where dot does neither start nor 
                        end the string. Dictionary function with name 
-                       |load-reg-F|.{internalname} must exist.
+                       |load-reg-F|.{internalname} must exist. Value returned 
+                       by this function will be returned by {dictname} 
+                       dictionary function.
         {check}        Argument check for a function or an empty dictionary if
                        no check is required. See |chk-func-checkarguments| for 
                        more details.
@@ -152,8 +179,8 @@ oprefix :: String                                         *load-reg-oprefix*
         String, which contains any number of latin letters, digits and 
         underscores. It is used to construct option dictionary name 
         (g:{oprefix}Options), which is used to get custom command (from 
-        g:{oprefix}Options.CmdPrefix) and function (from 
-        g:{oprefix}Options.FuncPrefix) prefixes, and also to get options by an 
+        g:{oprefix}Options._cpferix) and function (from 
+        g:{oprefix}Options._fprefix) prefixes, and also to get options by an 
         option function (see |load-func-registerplugin|).
                                                                 *load-reg-F*
 funcdict :: Dictionary                                   *load-reg-funcdict*
@@ -204,16 +231,48 @@ functions :: [({functiontail}, {internalname}, {check})]
         {functiontail} string, which consist of any number of latin letters,
                        digits and underscores. It is used to construct plugin 
                        global function's name ({fprefix}{functiontail}).
-        {internalname} string, which consist of alphanumeric characters,
-                       underscores and dots, where dot does neither start nor 
-                       end the string. Dictionary function with name 
-                       |load-reg-F|.{internalname} must exist.
+        {internalname} string, which consist of alphanumeric characters, 
+                       underscores and dots, where dot must not start or end 
+                       the string or follow another dot. Dictionary function 
+                       with name |load-reg-F|.{internalname} must exist. Value 
+                       returned by this function will be returned by 
+                       constructed function.
         {check}        Argument check for a function or an empty dictionary if
                        no check is required. See |chk-func-checkarguments| for 
                        more details.
         This key is used to construct plugin's global functions. Note that 
         existing functions will not be redefined. Key `fprefix' must also be 
         present.
+mappings :: {{MapName}: {MapOptions}}                    *load-reg-mappings*
+        Dictionary where keys are map names (names that start with underscore 
+        are reserved, they also must not start with `+') and values are 
+        dictionaries with the following keys:
+        Key       Description ~
+        function  String, which consist of alphanumeric characters, 
+                  underscores and dots, where dot must not start or end the 
+                  string or follow another dot. Required Dictionary function 
+                  with name |load-reg-F|.{function} must exist. Value returned 
+                  by this function is used as {rhs} of the mapping, see 
+                  |:map-<expr>|. This function must take four arguments: type 
+                  of mapping (one character, see below), mapping name, 
+                  sequence of keys which invoked it (mapping string) and 
+                  buffer number, if it was mapping local to buffer or -1 if it 
+                  was not.
+        default   String, defines a default {lhs} of the mapping. May be 
+                  overriden by g:{oprefix}Options._maps.
+        type      Char, defines a type of the mapping. Possible types and 
+                  corresponding commands:
+                  Type        Command ~
+                  " " (space) noremap
+                   !          noremap!
+                  n, v, x, s, o, i, l, c
+                              {Type}noremap
+        silent    Bool. If true, then <silent> argument is added to the map 
+                  command.
+        leader    Bool. If true, then either |load-reg-leader| or 
+                  |load-opt-_leader| is prepended to the default mapping.
+leader :: String                                           *load-reg-leader*
+        Defines the mapping leader.
 sid :: String                                            *load-reg-scriptid*
         The script id obtained by s:SID function called in the plugin. See 
         |<SID>| for more details.
@@ -222,14 +281,55 @@ scriptfile :: String                                   *load-reg-scriptfile*
         The script filename. It is used to autoload plugin and also to get 
         a plugin name using |fnamemodify|(a:scriptfile, ":t:r") (filename 
         without extension and path). Must end with `.vim'.
-plugname :: String                                       *load-reg-plugname*
-        String, overrides the plugin name.
 oneload :: Bool                                           *load-reg-oneload*
         Defines whether plugin needs to be autoloaded (defines whether plugin 
         file needs to be sourced twice before plugin is actually ready to 
         work).
 apiversion :: String                                   *load-reg-apiversion*
-        String, defines the api version. Must consist of a number followed by 
-        a dot and another number. Everything after this is ignored.
+        String, defines the api version. Must consist of a number (unsigned 
+        integer) followed by a dot and another unsigned integer. Everything 
+        after this is ignored.
+requires :: [[{PlugName}, {APIVersion}]]                 *load-reg-requires*
+        List of lists of two items. Defines requirements for the plugin. 
+        Requirements are considered satisfied if {PlugName} was loaded, its 
+        major api version number is equal to the one specified in {APIVersion} 
+        and minor api version number greater then or equal to the one 
+        specified in {APIVersion}. Minor api version number may be omitted. 
+        {APIVersion} has syntax equal to |load-reg-apiversion|.
+
+=============================================================================
+3. Options                                                   *load-options*
+
+Plugin registered by |load-func-registerplugin| automatically gets some 
+options:
+
+_cprefix :: String                                      *load-opt-_cprefix*
+_fprefix :: String                                      *load-opt-_fprefix*
+        Global. This options override command and function prefixes provided 
+        to |load-func-registerplugin|. They have the same restrictions as 
+        |load-reg-cprefix| and |load-reg-fprefix|.
+_maps :: {{MapName}: String}                               *load-opt-_maps*
+        This option provides a way to override default values given in 
+        |load-reg-mappings| either locally (local to buffer) or globally. If 
+        {MapName} starts with `{-' and contains string `-}', then everything 
+        between starting `{-' and first occurence of `-}' is stripped, 
+        providing a way to map several strings to one {MapName}. If {MapName} 
+        starts with `+' then `+' is stripped and plugin mapping leader is 
+        prepended to the string (see |load-opt-_leader| for details). Note 
+        that `{-...-}' is stripped before checking for `+'. Empty string 
+        disables mapping.
+_leader :: String                                        *load-opt-_leader*
+        Overrides plugin mapping leader provided in |load-reg-leader|.
+_disablemaps :: Bool                                *load-opt-_disablemaps*
+        Global. If true then all plugin mappings are disabled. May be set to 
+        1 in |load-reg-g|.defaultOptions in order to disable mappings by
+        default.
+
+This plugin also has its own options:
+
+DisableLoadChecks :: Bool                      *load-opt-DisableLoadChecks*
+        Disables checking of |load-func-registerplugin| argument, speeding up 
+        loading of plugins that use it. On by default, should be turned off by 
+        plugin developers.
 
 vim: ft=help:tw=78

@@ -16,7 +16,7 @@ This plugin makes creating custom completion functions much easier.
 Features:
   ∙ Ability to get variants from list and from dictionary keys
   ∙ Ability to get variants from custom function
-  ∙ Allows modifing the completion description
+  ∙ Allows modifying the completion description
 
 Plugin requires chk, stuf and load plugins.
 
@@ -91,17 +91,33 @@ keyof   Dictionary                                        *comp-descr-keyof*
         Take possible variants from the list of keys of the specified 
         dictionary.
 file    String                                             *comp-descr-file*
-        Take possible variants from the list of files that match either 
-        {ArgLead}*{Argument} or {ArgLead}*, where {ArgLead} is the string that 
-        user has already typed and {Argument} is the description argument.
+        Take possible variants from the list of files created by zsh-like 
+        completion function. {Argument} restricts file ends to match 
+        {Argument} (case ignored) if there are any matches, otherwise 
+        {Argument} is ignored.
+file!   {Check}                                           *comp-descr-file!*
+        Like file, but resulting file list is filtered through 
+        |chk-func-checkargument|. If there are no matches, {Argument} is 
+        ignored. For example, argument description ["file", ".txt"] and 
+        ["file!", ["regex", '\.txt$']] are just the same, but first version is 
+        faster.
+        Note that neither file nor file! support filenames that have newline 
+        characters ("\n") (see |glob()| for more details).
 func    Function reference                                 *comp-descr-func*
         Take possible variants from the returned value of a function provided 
         as {Argument} called with an only argument: {ArgLead}. This function 
         must return a list of Strings, all values that are not Strings are 
-        ignored.
+        ignored. Note that comp.vim will filter resulting list for you, so you 
+        do not need to care about it.
+func!   Function reference                                *comp-descr-func!*
+        Like |comp-descr-func|, but without any filtering.
 merge   [{ListDescription}]                               *comp-descr-merge*
         Merge lists of possible values obtained after processing all 
         {ListDescription}s.
+first   [{ListDescription}]                               *comp-descr-first*
+        Process {ListDescription}s given in {Argument}, return first non-empty 
+        list of possible values or empty list if all descriptions gave an 
+        empty list.
 
 vim: ft=help:tw=78
 

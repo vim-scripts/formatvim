@@ -8,6 +8,7 @@ CONTENTS                                                      *chk-contents*
         2.2. Checks                               |chk-check|
         2.3. Models                               |chk-model|
         2.4. Transformations                      |chk-trans|
+    3. Example usage                              |chk-usage|
 
 ==============================================================================
 1. Intro                                                         *chk-intro*
@@ -84,9 +85,12 @@ equal       a (everything)
             Checks, whether {argument} is identical to {checkargument}.
                                                              *chk-check-var*
 var         String (either empty or contains comma-delimited variable type
-                    names: buffer, window, tabpage, global, vim, any)
-            Checks, whether {argument} is a variable name and this this 
-            variable exists.
+                    names: buffer, window, tabpage, global, vim, option, any)
+            Checks, whether {argument} is a variable name, this 
+            variable exists and has specified type. (`option' variable names must 
+            start with `&', others with `b:', `w:', `t:', `g:' or `v:' for 
+            buffer, window, tabpage, global or vim responsively. See 
+            |internal-variables| for details.)
                                                              *chk-check-any*
 any         _ (argument is ignored)
             Always true.
@@ -121,6 +125,9 @@ nums         (see above)                                    *chk-check-nums*
                                                            *chk-check-isreg*
 isreg       _ (argument is ignored)
             Check whether {argument} is a correct regular expression.
+                                                         *chk-check-hlgroup*
+hlgroup     _ (argument is ignored)
+            Check whether {argument} is a name of existing highlight group.
                                                             *chk-check-file*
 file        String
             Test, whether {argument} is a filename, which
@@ -343,4 +350,73 @@ transchk  Check
 skip    _ (value is ignored)
         Do not add {argument} to the arguments list.
 
-vim: ft=help:tw=78
+==============================================================================
+3. Example usage                                                 *chk-usage*
+
+Pretend that you want to create a function that will echo message with changed 
+highlighting and want to throw an exception if given higlight group does not 
+exist: >
+    " Tests, whether given highlight group exists
+    function HighlightExists(hlname)
+        try
+            silent execute "highlight ".a:name
+            return 1
+        catch
+            return 0
+        endtry
+    endfunction
+    " Get a dictionary with this plugins' functions
+    let s:chkdict=load#LoadFuncdict().getfunctions("chk")
+    function EchoHighlighted(hlname, text)
+        " Test, whether given ``hlname'' is a valid name for a highlight group 
+        " and this highlight group exists.
+        if !s:chkdict.checkargument(["and", [["regex", '^[a-zA-Z0-9_]\+$', "Invalid name for highlight group"],
+                                            \["func", function("HighlightExists"), "Highlight group does not exist"]]],
+                           \a:hlname)
+            throw "Invalid hlname."
+        endif
+        execute "echohl ".a:hlname
+        echo a:text
+        echohl None
+    endfunction
+Now, if you do >
+    call EchoHighlighted("Comment", "This message will be highlighted like a comment")
+you will get highlighted message, but these calls will throw an error: >
+    call EchoHighlighted("Invalid Name", "This will throw an error")
+    " output:
+    " chk/achk.regex:InvalidValue(Value does not match regular expression /'^[a-zA-Z0-9_]\+$'/: 'Invalid Name')
+    " chk/achk._main:InvalidValue(Invalid name for highlight group)
+    " chk/achk._main:InvalidValue(Invalid value)
+    " Error detected while processing function EchoHighlighted:
+    " line    6:
+    " E605: Exception not caught: Invalid hlname.
+
+    call EchoHighlighted("NonExistantGroup", "This will throw an error too")
+    " output:
+    " chk/achk.func:InvalidValue(Function function('HighlightExists') returned a error)
+    " chk/achk._main:InvalidValue(Highlight group does not exist)
+    " chk/achk._main:InvalidValue(Invalid value)
+    " Error detected while processing function EchoHighlighted:
+    " line    6:
+    " E605: Exception not caught: Invalid hlname.
+
+Here is the same example, rewritten to use checkarguments function and new 
+`hlgroup' check: >
+    " Get a dictionary with this plugins' functions
+    let s:chkdict=load#LoadFuncdict().getfunctions("chk")
+    function EchoHighlighted(...)
+        " Test, whether given ``hlname'' is a valid name for a highlight group 
+        " and this highlight group exists.
+        let args=s:chkdict.checkarguments({"model": "simple",
+                \"required": [["hlgroup", ""],
+                             \["any", ""]],}
+                           \a:000)
+        if type(args)!=type([])
+            throw "Invalid arguments."
+        endif
+        execute "echohl ".args[0]
+        echo args[1]
+        echohl None
+    endfunction
+
+vim: ft=help:tw=78:nowrap

@@ -43,7 +43,8 @@ elseif !exists("s:g.pluginloaded")
                 \"dictfunctions": s:g.load.f,
                 \          "sid": s:g.load.sid,
                 \   "scriptfile": s:g.load.scriptfile,
-                \   "apiversion": "0.0",
+                \   "apiversion": "0.1",
+                \     "requires": [["load", '0.0']],
             \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
     "}}}2
@@ -80,12 +81,13 @@ let s:g.p={
             \    "uact": "Uknown action",
             \    "ukey": "Uknown key (key does not match any check)",
             \    "ufct": "Uknown file check type",
+            \    "aexp": "Action expected",
             \      "uf": "Number must be greater then or equal to %g",
             \      "of": "Number must be less then or equal to %g",
             \     "key": "Key “%s” not found",
             \    "nkey": "Dictionary does not have “%s” key",
-            \    "vars": "Variable name must start with a latin letter ".
-            \            "and a colon",
+            \    "vars": "Variable name must start either with a latin letter ".
+            \            "and a colon or with an ampersand",
             \   "varls": "Function (l: and a:) and script variable name",
             \   "varne": "Variable does not exist",
             \     "neq": "Value not equal to “%s”",
@@ -109,6 +111,9 @@ let s:g.p={
             \    "pmis": "Some required keys are missing",
             \   "nfull": "Full version not found",
             \      "pl": "Prefix list must be a list of strings",
+            \     "hid": "Invalid highlight group identifier: ".
+            \            "it must contain only letters, digits and underscores",
+            \     "hnf": "Highlight group not found",
             \},
             \"etype": {
             \     "value": "InvalidValue",
@@ -250,8 +255,10 @@ function s:F.mod.actions(chk, args, shift)
     "{{{4 Проверка аргументов
     if !s:F.achk._main(s:g.mod.actcheck, a:chk)
         return 0
+    elseif a:shift>=len(a:args)
+        return s:F.main.eerror(selfname, "value", ["aexp"], a:shift)
     elseif type(a:args[a:shift])!=type("")
-        return s:F.main.eerror(selfname, "value", ["str"], 0)
+        return s:F.main.eerror(selfname, "value", ["str"], a:shift)
     endif
     "{{{4 Проверка, разрешены ли сокращения
     let allowtrun=1
@@ -384,7 +391,7 @@ function s:F.mod.prefixed(chk, args, shift)
         "{{{5 Получение префиксов
         while i<len(a:args)
             "{{{6 Если ещё нет префикса
-            if !len(pref)
+            if pref==#""
                 let pref=a:args[i]
                 let inlist=0
                 if type(pref)!=type("")
@@ -573,9 +580,9 @@ function s:F.cchk.getrequired(chk, args, shift)
         return {"result": [], "last": a:shift-1}
     endif
     "{{{4 Проверяем длину аргументов
-    if len(a:args)<len(a:chk.required)
+    if len(a:args)<(len(a:chk.required)+a:shift)
         return s:F.main.eerror(selfname, "value", ["ilen"],
-                    \len(a:args)."<".len(a:chk.required))
+                    \len(a:args)."<".(len(a:chk.required)+a:shift))
     endif
     "{{{4 Объявление переменных
     let args=[]
@@ -707,6 +714,7 @@ let s:g.achk.var={
             \"tabpage": "a:Arg=~#'^t:'",
             \ "global": "a:Arg=~#'^g:'",
             \    "vim": "a:Arg=~#'^v:'",
+            \ "option": "a:Arg=~#'^&'",
             \    "any": "1",
         \}
 "}}}4
@@ -718,7 +726,7 @@ function s:F.achk.var(chk, Arg)
     if type(a:Arg)!=type("")
         return s:F.main.eerror(selfname, "value", ["str"])
     "{{{5 Начало
-    elseif a:Arg!~'^\w:'
+    elseif a:Arg!~'^\%(\l:\|&\)'
         return s:F.main.eerror(selfname, "value", ["vars"], a:Arg)
     elseif a:Arg=~#'^[lsa]:'
         return s:F.main.eerror(selfname, "value", ["varls"], a:Arg)
@@ -947,6 +955,21 @@ function s:F.achk.isreg(Chk, Arg)
     endtry
     return 1
 endfunction
+"{{{3 achk.hlgroup: Проверить, является ли a:Arg именем группы подсветки
+function s:F.achk.hlgroup(Chk, Arg)
+    let selfname="achk.hlgroup"
+    if type(a:Arg)!=type("")
+        return s:F.main.eerror(selfname, "value", ["str"])
+    elseif a:Arg!~#'^[a-zA-Z0-9_]\+$'
+        return s:F.main.eerror(selfname, "value", ["hid"], a:Arg)
+    endif
+    try
+        execute "silent highlight ".a:Arg
+    catch
+        return s:F.main.eerror(selfname, "value", ["hnf"], a:Arg)
+    endtry
+    return 1
+endfunction
 "{{{3 achk._main:  Проверить значение
 "{{{4 Проверка проверок
 let s:g.achk.chkchecks={
@@ -977,6 +1000,7 @@ let s:g.achk.chkchecks={
             \    "any": ["1",                   ""                        ],
             \  "equal": ["1",                   ""                        ],
             \  "isreg": ["1",                   ""                        ],
+            \"hlgroup": ["1",                   ""                        ],
         \}
 let s:g.achk.chkroot=[["type(a:chk)==type([])",          s:g.p.emsg.list],
             \         ["len(a:chk)==2 || len(a:chk)==3", s:g.p.emsg.ilen],
