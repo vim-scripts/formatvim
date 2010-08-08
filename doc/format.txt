@@ -380,7 +380,7 @@ sbsdsep                                            *format-spec-key-sbsdsep*
         non-standart values):
         Argument    Value ~
         @@@         Empty string
-        @.@         0 (zero)
+        @.@         Number of document on the right site of the separator
         @-@         Index of the current line (Note that index is not current 
                     line number)
         @{stspec}@  Specification derived from "Normal" highlight group
@@ -422,7 +422,7 @@ columns                                            *format-spec-key-columns*
 strlen                                              *format-spec-key-strlen*
         Function reference, specifies the function that counts length of line 
         for "%_" and "%-" formats and "@=@" argument. Can be accessed inside
-        %=...=% via @_strlen@. May be removed in future versions. Default: >
+        %=...=% via @_strlen@. Default: >
             len(split(string, '\zs'))
 
 nolf                                                  *format-spec-key-nolf*
@@ -486,13 +486,20 @@ inside the |format-spec-expression|.
 %<SPACE>                                               *format-spec-%SPACE*
         A single @_leadingspace@. Just the same as %=@_leadingspace@=%, but 
         computed only once.
+%+                                                          *format-spec-%+*
+        @_leadingspace@ repeated enough times for the line length to be less 
+        or equal to @_columns@ (`less' case can appear only if length of 
+        @_leadingspace@, computed by |format-spec-key-strlen|, is greater 
+        then 1).
 %^                                                          *format-spec-%^*
         A single @_leadingspace@ if @_donr@ is true or an empty string 
         otherwise. Just the same as %=((@_donr@)?(@_leadingspace@):(''))=%, 
         but computed only once.
 %-                                                          *format-spec-%-*
         @_difffillchar@ repeated enough times for the line length to be less 
-        or equal to @_columns@.
+        or equal to @_columns@ (`less' case can appear only if length of 
+        @_difffillchar@, computed by |format-spec-key-strlen|, is greater 
+        then 1).
 %~                                                          *format-spec-%~*
         A single @_difffillchar@. Just the same as %=@_difffillchar@=%, but 
         computed only once.
@@ -560,8 +567,8 @@ sequences (use them in place of ordinary variables):
                       set or cursor is within formatted line range,1 otherwise
         sbsd          0 if side-by-side diff is not being generated, 1 if 
                       begin, end and sbsd* format specification keys are being 
-                      processed, 2 if first document is being processed and 
-                      3 if second document is being processed
+                      processed, 1+N, where N>0 if N'th document is being 
+                      generated
 
 ==============================================================================
 5. List of built-in format specifications                   *format-formats*

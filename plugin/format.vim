@@ -169,7 +169,7 @@ endfunction
 "{{{3 stuf.bbstrlen
 function s:F.stuf.bbstrlen(str)
     let str=a:str
-    let str=substitute(str, '[.\{-}]', '', 'g')
+    let str=substitute(str, '\[.\{-}\]', '', 'g')
     let str=substitute(str, '&[^;]\+;\|.', '.', 'g')
     return len(str)
 endfunction
@@ -555,9 +555,12 @@ let s:g.fmt.complexexpressions={
             \'#': "((a:opts.donr)?(".
             \       "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', '.".
             \       "a:opts.linenumlen.'-len(@@@)).@@@'):(''''''))",
-            \'-': "'repeat('.s:F.plug.stuf.squote(a:opts.difffillchar).', ('.".
-            \     "a:opts.columns.'-@=@)/'.".
-            \       "a:opts.strlen(a:opts.difffillchar).')'",
+            \'-': "'repeat('.s:F.plug.stuf.squote(a:opts.difffillchar).', (".
+            \             "@_columns@-@=@)/'.".
+            \             "a:opts.strlen(a:opts.difffillchar).')'",
+            \'+': "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', (".
+            \             "@_columns@-@=@)/'.".
+            \             "a:opts.strlen(a:opts.leadingspace).')'",
             \'_': "s:F.plug.stuf.squote(repeat(a:opts.leadingspace, ".
             \                                 "((a:opts.donr)?(".
             \                                   "a:opts.linenumlen):(0))))",
@@ -636,8 +639,8 @@ function s:F.fmt.compile(Str, opts, key)
                         \'\n    '.
                         \'let str.=\2a:opts.strlen(a:cur.str)',
                         \'g')
-            let str=substitute('let str='.str, '^let str=\n    let str\.=',
-                        \'let str=', '')
+            let str=substitute('let str='.str, '^let str=\ze\n',
+                        \'let str=""', '')
             let str.="\n    return str"
         else
             let str='return '.str
@@ -790,7 +793,9 @@ let s:g.fmt.formats.html={
             \                   '((@_sbsd@)?'.
             \                    '("table, tr, td { margin: 0; '.
             \                                      'padding: 0; '.
-            \                                      'border: 0; }"):'.
+            \                                      'border: 0; } '.
+            \                     '.SbSDSep { color: ".@_bgcolor@."; '.
+            \                                'background-color: ".@_fgcolor@."; } "):'.
             \                    '(""))''%'.
             \                "%:</style>".
             \                '<title>'.substitute(s:g.fmt.escapehtml, '@@@',
@@ -844,8 +849,9 @@ let s:g.fmt.formats.html={
             \"foldend":      "</div></div>",
             \"strlen":       s:F.stuf.htmlstrlen,
             \"sbsdstart":    '<tr class="SbSDLine" id="sbsd%N">'.
-            \                '<td class="SbSDFirst">',
-            \"sbsdsep":      '</td><td class="SbSDSecond">',
+            \                '<td class="SbSD1">',
+            \"sbsdsep":      '</td><td class="SbSDSep SbSDSep%C">|</td>'.
+            \                '<td class="SbSD%C">',
             \"sbsdend":      '</td></tr>',
         \}
 let s:g.fmt.styleattr="%'((@styleid@!=#\"\")?".
@@ -876,8 +882,9 @@ let s:g.fmt.bbufostylestart=
             \   '("[color=".((@fgcolor@!=#"")?(@fgcolor@):(@_fgcolor@))))."]".'.
             \'((@bold@)?("[b]"):("")).((@italic@)?("[i]"):(""))'
 let s:g.fmt.bbufostyleend='((@italic@)?("[/i]"):("")).'.
-            \'((@bold@)?("[/b]"):(""))..'.
-            \'((@inverse@||@bgcolor@!=#"")?("[/color]"):(""))'
+            \'((@bold@)?("[/b]"):("")).'.
+            \'(((@inverse@ && (@bgcolor@!=#"")) || (!@inverse@))?'.
+            \   '("[/color]"):(""))'
 let s:g.fmt.formats["bbcode-unixforum"]={
             \"begin":        '%>((&background==#"dark")?'.
             \                   '("[sh=".substitute(expand("%:p:~%"), ''[]'', '.
@@ -894,13 +901,15 @@ let s:g.fmt.formats["bbcode-unixforum"]={
             \"line":         '%>substitute(@:@, "%s", ''\='.
             \                   'substitute('.
             \                    'substitute('.
-            \                     'substitute(@@@, "&", "\\&amp;", "g"), '.
+            \                     'substitute(@@@, "&", "\\&#38;", "g"), '.
             \                     '"\\[", "\\&#91;", "g"), '.
             \                    '"\\]", "\\&#93;", "g")'', "")',
             \"leadingspace": " ",
             \"strlen":       s:F.stuf.bbstrlen,
             \"style":        "%>"  .  s:g.fmt.bbufostylestart.
             \                '."%s".'.s:g.fmt.bbufostyleend,
+            \"sbsdsep":      "%+|",
+            \"difffiller":   "%-",
         \}
 "{{{3 fmt.getspecdict
 function s:F.fmt.getspecdict(id, ...)
@@ -997,7 +1006,7 @@ let s:g.chk.ff[0][2].required[1]=s:g.chk.format
 "{{{4 s:g.fmt
 let s:g.fmt.compiled={}
 let s:g.fmt.progress={}
-let s:g.fmt.notpersistentdf=["a:line", "a:char"]
+let s:g.fmt.notpersistentdf=["a:line", "a:char", "="]
 let s:g.fmt.notpersistentfdc=["a:line"]
 let s:g.fmt.npsbsdstart=["a:line"]
 "}}}4
@@ -1224,19 +1233,18 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     endif
     "{{{5 side-by-side diff
     if sbsd==1
-        "{{{6 Номер второго буфера
+        "{{{6 Используемые буфера
         let lastwin=winnr('$')
         let curwin=winnr()
         let i=1
-        let dwinnr=-1
+        let dwinnrs=[]
         while i<=lastwin
             if i!=curwin && getwinvar(i, '&diff')
-                let dwinnr=i
-                break
+                call add(dwinnrs, i)
             endif
             let i+=1
         endwhile
-        if dwinnr==-1
+        if dwinnrs==[]
             return []
         endif
         "{{{6 Получение реальных номеров линий в текущем буфере
@@ -1257,90 +1265,106 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             let virtcurline+=1
             let curline+=1
         endwhile
-        "{{{6 Получение номеров линий в другом буфере
-        execute dwinnr."wincmd w"
-        let curline=1
-        let virtcurline=1
-        let maxline=line('$')
-        let dstartline=0
-        let dstartinfiller=0
-        let dendline=0
-        while curline<=maxline+1
-            let filler=diff_filler(curline)
-            let virtcurline+=filler
-            if !dstartline && virtcurline>=virtstartline
-                let dstartinfiller=filler-(virtcurline-virtstartline)
-                let dstartline=curline
+        "{{{6
+        call insert(dwinnrs, curwin)
+        for dwinnr in dwinnrs
+            if getwinvar(curwin, '&foldmethod')!=#"diff" ||
+                        \getwinvar(dwinnr, '&foldmethod')!=#"diff"
+                let a:options.ignorefolds=1
+                let ignorefolds=1
             endif
-            if virtcurline>virtendline
-                let dendline=((curline<=maxline)?(curline):(maxline))
-                break
+        endfor
+        let r=[]
+        let i=2
+        let width=0
+        let Curcompiledspec=s:F.fmt.compiledspec
+        for dwinnr in dwinnrs
+            "{{{6 Получение номеров линий в другом буфере
+            execute dwinnr."wincmd w"
+            let curline=1
+            let virtcurline=1
+            let maxline=line('$')
+            let dstartline=0
+            let dstartinfiller=0
+            let dendline=0
+            while curline<=maxline+1
+                let filler=diff_filler(curline)
+                let virtcurline+=filler
+                if !dstartline && virtcurline>=virtstartline
+                    let dstartinfiller=filler-(virtcurline-virtstartline)
+                    let dstartline=curline
+                endif
+                if virtcurline>virtendline
+                    let dendline=((curline<=maxline)?(curline):(maxline))
+                    break
+                endif
+                let virtcurline+=1
+                let curline+=1
+            endwhile
+            "{{{6 Получение отформатированных текстов
+            let a:options.allfolds=0
+            let a:options.collapsfiller=0
+            let s:F.fmt.compiledspec=Curcompiledspec
+            let normalspec=s:F.fmt.compiledspec(cformat, "Normal")
+            unlet s:F.fmt.compiledspec
+            if !ignorefolds
+                normal! zM
             endif
-            let virtcurline+=1
-            let curline+=1
-        endwhile
-        "{{{6 Получение отформатированных текстов
-        let a:options.allfolds=0
-        let a:options.collapsfiller=0
-        if getwinvar(curwin, '&foldmethod')!=#"diff" ||
-                    \getwinvar(dwinnr, '&foldmethod')!=#"diff"
-            let a:options.ignorefolds=1
-            let ignorefolds=1
-        endif
-        let normalspec=s:F.fmt.compiledspec(cformat, "Normal")
-        unlet s:F.fmt.compiledspec
+            let r2=s:F.fmt.format(a:type, dstartline, dendline, a:options, i)
+            "{{{6 Добавление sbsdstart или sbsdsep
+            let oldcolumns=opts.columns
+            let opts.columns=width
+            let width+=oldcolumns+1
+            let opts.sbsd=sbsd
+            if r==[]
+                let r=r2
+                if has_key(cformat, "sbsdstart")
+                    call map(r, 'cformat.sbsdstart("", normalspec, v:key, 0, '.
+                                \                 '"", opts, '.
+                                \                 'cformat.stylestr).v:val')
+                endif
+            else
+                let r2=r2[(dstartinfiller):(len(r)-1+dstartinfiller)]
+                if has_key(cformat, "sbsdsep")
+                    call map(r, 'v:val.'.
+                                \'cformat.sbsdsep("", normalspec, v:key, i-1, '.
+                                \                'v:val, opts, '.
+                                \                'cformat.stylestr).r2[v:key]')
+                endif
+            endif
+            let i+=1
+        endfor
+        "{{{6 Добавление sbsdend
+        let opts.columns=width-1
         execute curwin."wincmd w"
-        if !ignorefolds
-            normal! zM
-        endif
-        let r1=s:F.fmt.format(a:type, startline, endline, a:options, 2)
-        execute dwinnr."wincmd w"
-        if !ignorefolds
-            normal! zM
-        endif
-        let r2=s:F.fmt.format(a:type, dstartline, dendline, a:options, 3)
-        execute curwin."wincmd w"
-        let r2=r2[(dstartinfiller):(len(r1)-1+dstartinfiller)]
         let opts.sbsd=sbsd
-        "{{{6 Добавление sbsdstart, sbsdend, sbsdsep
-        let lr=len(r1)
-        let i=0
-        if has_key(cformat, "sbsdstart")
-            call map(r1, 'cformat.sbsdstart("", normalspec, v:key, 0, "", '.
-                        \                  'opts, cformat.stylestr).v:val')
-        endif
-        if has_key(cformat, "sbsdsep")
-            call map(r1, 'v:val.'.
-                        \'cformat.sbsdsep("", normalspec, v:key, 0, v:val, '.
-                        \                'opts, cformat.stylestr).r2[v:key]')
-        endif
         if has_key(cformat, "sbsdend")
-            call map(r1, 'v:val.'.
+            call map(r, 'v:val.'.
                         \'cformat.sbsdend("", normalspec, v:key, 0, v:val, '.
                         \                'opts, cformat.stylestr)')
         endif
         "{{{6 Начало и конец представления
         if has_key(cformat, "begin")
-            call insert(r1, cformat.begin("", normalspec, 0, 0, "", opts,
+            call insert(r, cformat.begin("", normalspec, 0, 0, "", opts,
                         \                 cformat.stylestr))
         endif
         if has_key(cformat, "end")
-            call add(r1, cformat.end("", normalspec, endline, 0, "", opts,
+            call add(r, cformat.end("", normalspec, endline, 0, "", opts,
                         \            cformat.stylestr))
         endif
         "{{{6 nolf/haslf
         if has_key(cformat, "nolf") && cformat.nolf
-            let r=[join(r1, "")]
+            let r=[join(r, "")]
         endif
         if has_key(cformat, "haslf") && cformat.haslf
-            let oldr=r1
-            let r1=[]
+            let oldr=r
+            let r=[]
             for item in oldr
-                let r1+=split(item, "\n")
+                let r+=split(item, "\n")
             endfor
         endif
         "}}}6
-        return r1
+        return r
     endif
     "{{{5 Progress bar
     if !has("statusline")
@@ -1450,9 +1474,11 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \"    if foldclosed(fcurline)>-1",
             \"        call add(closedfoldslist, fcurline)",
             \"        let closedfolds[fcurline]=".
-            \                    "cformat.linestart(1, ".
+            \               ((has_key(cformat, "linestart"))?
+            \                    ("cformat.linestart(1, ".
             \                                 "foldspec, fcurline, 0, '', ".
-            \                                 "opts, cformat.stylestr)"])
+            \                                 "opts, cformat.stylestr)"):
+            \                    ('""'))])
             if donr
                 call add(formatfunction,
                 \'    let closedfolds[fcurline].=cformat.linenr(fcurline, '.
@@ -1464,13 +1490,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             if !foldcolumn
                 call add(formatfunction,
                 \"        let closedfolds[fcurline].=".
-                \                    "cformat.fold(foldtextresult(fcurline), ".
-                \                                 "foldspec, fcurline, 0, ".
-                \                                 "closedfolds[fcurline], ".
-                \                                 "opts, cformat.stylestr).".
-                \                    'cformat.lineend(1, foldspec, fcurline,'.
-                \                                    ' 0, "", opts, '.
-                \                                    'cformat.stylestr)')
+                \               "cformat.fold(foldtextresult(fcurline), ".
+                \                            "foldspec, fcurline, 0, ".
+                \                            "closedfolds[fcurline], ".
+                \                            "opts, cformat.stylestr)".
+                \               ((has_key(cformat, "lineend"))?
+                \                   ('.cformat.lineend(1, foldspec, fcurline,'.
+                \                                   ' 0, "", opts, '.
+                \                                   'cformat.stylestr)'):
+                \                   ("")))
             endif
             if !allfolds
                 call extend(formatfunction, [
@@ -1661,10 +1689,12 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                                 \     'cformat.fold(foldtextresult(fcurline), '.
                                 \                  'foldspec, fcurline, 0, '.
                                 \                  'closedfolds[fcurline], '.
-                                \                  'opts, cformat.stylestr).'.
-                                \     'cformat.lineend(1, foldspec, fcurline,'.
-                                \                     ' 0, "", '.
-                                \                     'opts, cformat.stylestr)',
+                                \                  'opts, cformat.stylestr)'.
+                                \((has_key(cformat, "lineend"))?
+                                \   ('.cformat.lineend(1, foldspec, fcurline,'.
+                                \                    ' 0, "", '.
+                                \                    'opts, cformat.stylestr)'):
+                                \   ('')),
                                 \'endif',
                                 \])
                             endif
@@ -1684,10 +1714,13 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                             \         'cformat.fold(foldtextresult(fcurline), '.
                             \                      'foldspec, fcurline, 0, '.
                             \                      'closedfolds[fcurline], '.
-                            \                      'opts, cformat.stylestr).'.
-                            \         'cformat.lineend(1, foldspec, fcurline,'.
-                            \                         ' 0, "", '.
-                            \                         'opts, cformat.stylestr)',
+                            \                      'opts, cformat.stylestr)'.
+                            \         ((has_key(cformat, "lineend"))?
+                            \           ('.cformat.lineend(1, foldspec, '.
+                            \                             'fcurline, 0, "", '.
+                            \                             'opts, '.
+                            \                             'cformat.stylestr)'):
+                            \           ('')),
                             \'endif',
                             \])
                         endif
@@ -1789,12 +1822,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             call extend(formatfunction, [
             \'let filler=diff_filler(curline)',
             \'if filler>0',
-            \'    let curstrstart=cformat.linestart(2'.
+            \'    let curstrstart='.
+            \           ((has_key(cformat, "linestart"))?
+            \               ('cformat.linestart(2'.
             \                               ((collapsafter)?
             \                                   ('+(filler>='.collapsafter.')'):
             \                                   ('')).
             \                               ', fillspec, curline, 0, "", '.
-            \                               'opts, cformat.stylestr)',])
+            \                               'opts, cformat.stylestr)'):
+            \               ('""')),])
                 "{{{6 foldcolumn
                 if foldcolumn
                     call add(formatfunction,
@@ -1822,16 +1858,19 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                     endif
                     call extend(formatfunction, [
                     \'let curfil=filler',
-                    call extend(formatfunction, [
                     \'while curfil',
                     \'    let curstr=curstrstart',
                     \'    let curstr.=cformat.difffiller(opts.difffillchar, '.
                     \                                   'fillspec, curline, '.
                     \                                   'curfil, curstr, opts,'.
-                    \                                   ' cformat.stylestr)',
-                    \'    let curstr.=cformat.lineend(2, fillspec, curline,'.
-                    \                                ' 0, curstr, opts, '.
-                    \                                'cformat.stylestr)',
+                    \                                   ' cformat.stylestr)',])
+                    if has_key(cformat, "lineend")
+                        call add(formatfunction,
+                        \'let curstr.=cformat.lineend(2, fillspec, curline,'.
+                        \                            ' 0, curstr, opts, '.
+                        \                            'cformat.stylestr)')
+                    endif
+                    call extend(formatfunction, [
                     \'    call add(r, curstr)',
                     \'    let curfil-=1',
                     \'endwhile'
@@ -1845,11 +1884,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                         \                               'fillspec, curline,'.
                         \                               ' 0, curstr, '.
                         \                               'opts, '.
-                        \                               'cformat.stylestr)',
-                        \'    let curstr.=cformat.lineend(3, fillspec, '.
-                        \                               'curline, 0, curstr, '.
-                        \                               'opts, '.
-                        \                               'cformat.stylestr)',
+                        \                               'cformat.stylestr)',])
+                        if has_key(cformat, "lineend")
+                            call add(formatfunction,
+                            \'let curstr.=cformat.lineend(3, fillspec, '.
+                            \                           'curline, 0, curstr, '.
+                            \                           'opts, '.
+                            \                           'cformat.stylestr)')
+                        endif
+                        call extend(formatfunction, [
                         \'    call add(r, curstr)',
                         \'endif',
                         \])
@@ -1858,11 +1901,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                 else
                     call extend(formatfunction, [
                     \'    let curstr=curstrstart',
-                    \'    let curstr.='.s:F.plug.stuf.squote(fillerstr),
-                    \'    let curstr.=cformat.lineend(2, fillspec, curline,'.
-                    \                                ' 0, curstr, opts, '.
-                    \                                'cformat.stylestr)',
-                    \'let r+=repeat([curstr], filler)',])
+                    \'    let curstr.='.s:F.plug.stuf.squote(fillerstr),])
+                    if has_key(cformat, "lineend")
+                        call add(formatfunction,
+                        \'let curstr.=cformat.lineend(2, fillspec, curline,'.
+                        \                            ' 0, curstr, opts, '.
+                        \                            'cformat.stylestr)')
+                    endif
+                    call add(formatfunction,
+                    \'let r+=repeat([curstr], filler)')
                 endif
             "{{{6 Обнуление текущей строки
             call extend(formatfunction, [
@@ -1879,20 +1926,24 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
         if !ignorefolds && !allfolds && !foldcolumn
             call extend(formatfunction, [
             \'if foldclosed(curline)>-1',
-            \'let curstr=cformat.linestart(1, '.
-            \                          "foldspec, curline, 0, '', ".
-            \                          "opts, cformat.stylestr).".
-            \            ((donr)?
-            \               ("cformat.linenr(curline, foldspec, ".
-            \                               "curline, 0, '', opts, ".
-            \                               "cformat.stylestr)."):
-            \               ("")),
+            \'let curstr='.
+            \           ((has_key(cformat, "linestart"))?
+            \               ('cformat.linestart(1, foldspec, curline, 0, "", '.
+            \                                  'opts, cformat.stylestr).'):
+            \               ('')).
+            \           ((donr)?
+            \              ('cformat.linenr(curline, foldspec, '.
+            \                              'curline, 0, '', opts, '.
+            \                              'cformat.stylestr).'):
+            \              ('')),
             \'let curstr.=cformat.fold(foldtextresult(curline), '.
             \                         'foldspec, '.
             \                         'curline, 0, curstr, opts, '.
-            \                         'cformat.stylestr)).'.
-            \            "cformat.lineend(1, foldspec, curline, 0, '', ".
-            \                            "opts, cformat.styestr).",
+            \                         'cformat.stylestr))'.
+            \           ((has_key(cformat, "lineend"))?
+            \               ('.cformat.lineend(1, foldspec, curline, 0, "", '.
+            \                                 'opts, cformat.styestr)'):
+            \               ('')),
             \'    let curline=foldclosedend(curline)+1',
             \'    continue',
             \'else',
@@ -2266,6 +2317,8 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     endif
     call add(formatfunction, "return r")
 call add(formatfunction, "endfunction")
+    " " FIXME remove debugging line
+    " call writefile(formatfunction, $HOME."/tmp/vim/cffunc.vim", 1)
     execute join(formatfunction, "\n")
     "{{{4 r
     let r=s:F.fmt.compiledformat()

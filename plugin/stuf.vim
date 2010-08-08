@@ -400,7 +400,7 @@ function s:F.lst.let(list, index, element, ...)
     return a:list
 endfunction
 "{{{2 dct
-"{{{2 dct.recursivefilter
+"{{{$ dct.recursivefilter
 function s:F.dct.recursivefilter(dict, expr)
     let r={}
     for [Key, Val] in items(a:dict)
@@ -426,6 +426,7 @@ endfunction
 function s:F.mng.main(bang, ...)
     let options=filter(copy(a:000), 'v:val[0:1]==#"++"')
     let files=filter(copy(a:000), 'v:val[0:1]!=#"++"')
+    let nfiles=[]
     for file in files
         execute "e".a:bang." ".join(options)." ".join(map(files, 'fnameescape(v:val)'))
     endfor

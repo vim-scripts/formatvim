@@ -184,6 +184,9 @@ function s:F.comp.getfiles(arglead, filter)
     if a:arglead[0]==#'/'
         let globstart='/'
     endif
+    if a:arglead[-1:]==#'/'
+        call add(fragments, "")
+    endif
     while fragments[0]==#'.' || fragments[0]==#'..'
         let globstart.=remove(fragments, 0).'/'
     endwhile
@@ -211,8 +214,10 @@ function s:F.comp.recdownglob(globstart, fragments, i, escapedfragments)
                     \((a:i)?
                     \   (join(a:escapedfragments[:(a:i-1)],
                     \         '/')):
-                    \   ("")).'/'
-        let fcur=a:escapedfragments[a:i]
+                    \   (""))
+        if fstart!=#""
+            let fstart.="/"
+        endif
         for gexpr in s:g.comp.rg.glistexpr
             let glist=split(glob(eval(gexpr)), "\n")
             if glist!=[]
