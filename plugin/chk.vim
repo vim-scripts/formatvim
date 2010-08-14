@@ -503,6 +503,9 @@ function s:F.cchk.gettrun(trun, fulls)
     else
         let fulls=a:fulls
     endif
+    if index(fulls, a:trun)!=-1
+        return a:trun
+    endif
     let reg='^'.s:F.stuf.regescape(a:trun)
     let fullsfound=0
     for full in fulls

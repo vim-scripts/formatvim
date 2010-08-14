@@ -166,7 +166,7 @@ let s:g.str={}
 "{{{3 str.escapefor
 let s:F.str.escapefor={}
 let s:g.str.escapefor={
-            \"regex": 'escape(a:str, ''^$*~[]\'')',
+            \"regex": 'escape(a:str, ''^$*~[].\'')',
             \"map": 'escape('.
             \        'substitute('.
             \         'substitute('.

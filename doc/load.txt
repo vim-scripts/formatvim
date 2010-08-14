@@ -6,8 +6,9 @@ CONTENTS                                                     *load-contents*
     2. Functionality provided                     |load-functionality|
         2.1. Commands                             |load-commands|
         2.2. Functions                            |load-functions|
-        2.3. Plugin registration                  |load-reg|
-    3. Options                                    |load-options|
+        2.3. `Autocommands'                       |load-autocommands|
+    3. Plugin registration                        |load-reg|
+    4. Options                                    |load-options|
 
 =============================================================================
 1. Intro                                                        *load-intro*
@@ -84,6 +85,14 @@ options in g:loadOptions dictionary (Note that it is a very bad idea).
 :LoadCommand nrof {fname}                                 *load-action-nrof*
             Display a number of function {fname}. {fname} must have the 
             following structure: /{plugname}/{pathToFunction}.
+:LoadCommand autocmd {event} {plugin} {command}        *load-action-autocmd*
+            Create an `autocommand', see |load-autocommands|. For 
+            a description of arguments see |load-func-autocmd|. Note that you 
+            need to escape all spaces in {command}.
+:LoadCommand autocmd! {event}[ {plugin}[ {command}]]  *load-action-autocmd!*
+            Delete an `autocommand', see |load-autocommands|. For 
+            a description of arguments see |load-func-delautocmd|. Note that 
+            you need to escape all spaces in {command}.
 
 -----------------------------------------------------------------------------
 2.2. Functions                                              *load-functions*
@@ -145,8 +154,56 @@ getfunctions({plugname})                            *load-func-getfunctions*
         argument provided when plugin {plugname} was registered. For 
         {plugname} argument see |load-reg-name|.
 
+autocmd({event}, {plugin}, {command})                   *load-func-autocmd*
+        Register an autocommand. For a description of {event} see 
+        |load-autocommands|. {plugin} is any string that can be a plugin name. 
+        {command} is either a string which will be executed (see |:execute|) 
+        or a function reference which will be called with two arguments: 
+        {event} and {plugin}.
+
+delautocmd({event}[, {plugin}[, {command}]])         *load-func-delautocmd*
+        Delete `autocommand(s)': if only {event} is given, then all 
+        `autocommands' attached to this event are cleared. If {plugin} is 
+        given, then it deletes all `autocommands' associated with the given 
+        event and given plugin (if any). If both {plugin} and {command} 
+        arguments are given, then it filters out all autocommands that match 
+        all of {event}, {plugin} and {command}.
+
 -----------------------------------------------------------------------------
-2.3. Plugin registration                                          *load-reg*
+2.3. `Autocommands'                                      *load-autocommands*
+
+This plugin provides a way to run custom hooks on the following events:
+
+RegisterPluginPre                                *load-au-RegisterPluginPre*
+        Before plugin registration. Note that there is no way to catch this 
+        event for a load plugin as it must be loaded before you are able to 
+        define any autocommand.
+RegisterPluginPost                              *load-au-RegisterPluginPost*
+        After plugin registration. Note that there is no way to catch this 
+        event for a load plugin as it must be loaded before you are able to 
+        define any autocommand.
+LoadPluginPre                                        *load-au-LoadPluginPre*
+        After plugin registration, before plugin is sourced second time.
+        Some note's:
+        1. There is no way to catch this event for a load plugin as it must be 
+           loaded before you are able to define any autocommand.
+        2. If plugin is sourced only once (if it defines |load-reg-oneload| 
+           key) then this event occures just after 
+           |load-au-RegisterPluginPre|.
+LoadPluginPost                                      *load-au-LoadPluginPost*
+        After plugin is sourced second time.
+        Some note's:
+        1. There is no way to catch this event for a load plugin as it must be 
+           loaded before you are able to define any autocommand.
+        2. If plugin is sourced only once (if it defines |load-reg-oneload| 
+           key) then this event never occures.
+UnloadPluginPre                                    *load-au-UnloadPluginPre*
+        Just before unloading the plugin.
+UnloadPluginPost                                  *load-au-UnloadPluginPost*
+        Just after unloading the plugin.
+
+=============================================================================
+3. Plugin registration                                            *load-reg*
 
 Registration is done via calling |load-func-register| function with a single 
 dictionary as an argument. The following keys are required: oprefix, funcdict, 
@@ -298,7 +355,7 @@ requires :: [[{PlugName}, {APIVersion}]]                 *load-reg-requires*
         {APIVersion} has syntax equal to |load-reg-apiversion|.
 
 =============================================================================
-3. Options                                                   *load-options*
+4. Options                                                   *load-options*
 
 Plugin registered by |load-func-registerplugin| automatically gets some 
 options:

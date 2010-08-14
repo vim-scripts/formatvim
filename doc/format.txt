@@ -51,8 +51,8 @@ via dictionary returned by |load-func-getfunctions| function.
             is not given, format the whole file. For list of built-in formats 
             see |format-formats|. Possible options:
             Option         Value and description ~
-            columns        Unsigned integer greater then zero. Used to specify 
-                           number of columns (screen width). Overrides 
+            columns        Unsigned integer greater then zero or -1. Used to 
+                           specify number of columns (screen width). Overrides 
                            |format-spec-key-columns|.
             collapsfiller  Unsigned integer. Overrides 
                            |format-option-CollapsFiller|.
@@ -147,6 +147,22 @@ IgnoreList :: Bool                                   *format-opt-IgnoreList*
         If IgnoreList is true, then ignore 'list' and 'listchars' options.
         Now plugin supports only tab, trail and eol 'listchars' 
         specifications.
+
+IgnoreTags :: 0 | 1 | 2                              *format-opt-IgnoreTags*
+        Defines whether tags are ignored, see |taglist()|
+        0: do not ignore any tags
+        1: ignore tags that are not in current file (default)
+        2: ignore all tags
+
+AddTagCmdEscapes                               *format-opt-AddTagCmdEscapes*
+        String, defines a list of characters that should be escaped if `cmd' 
+        key in tag description returned by |taglist()| is an vim pattern. 
+        Default: '[]*.~'.
+
+MaxDupTags                                           *format-opt-MaxDupTags*
+        Defines a maximum number of tag entries with one name. If actual 
+        number of tag entries that share the same name exceeds this value, 
+        then this tag is ignored. Default: 5.
 
 NoLineNR :: -1 | Bool                                  *format-opt-NoLineNR*
         If it is true then do no add the line numbers, -1 (default) means 
@@ -296,6 +312,22 @@ lineend                                            *format-spec-key-lineend*
                     highlight group, for difffiller and collapsedfiller lines 
                     specification changes to "DiffDelete" highlight group.
 
+tagstart                                              *format-spec-tagstart*
+        String, describes the start of each tag. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Tag name.
+        @{stspec}@  Undefined (it may be anything)
+
+tagend                                                  *format-spec-tagend*
+        String, describes the end of each tag. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Tag name.
+        @{stspec}@  Undefined (it may be anything)
+
 fold                                                  *format-spec-key-fold*
         String, describes each fold. Arguments (see |format-spec-description|) 
         (listed only arguments with non-standart values):
@@ -417,7 +449,9 @@ leadingspace                                  *format-spec-key-leadingspace*
 
 columns                                            *format-spec-key-columns*
         Number of columns. If it is not specified, winwidth(0) is used instead 
-        (this is the width of the current window, see |winwidth()|).
+        (this is the width of the current window, see |winwidth()|). You can 
+        also use special value `-1': in this case length of the longest line 
+        will be used.
 
 strlen                                              *format-spec-key-strlen*
         Function reference, specifies the function that counts length of line 
@@ -549,8 +583,8 @@ sequences (use them in place of ordinary variables):
                       specification if it is present, " " otherwise.
         difffillchar  Value of the "difffillchar" key from format 
                       specification if it is present, "-" otherwise.
-        columns       Value of the "columns" key from format specification or 
-                      value of 'columns' option if it is not present.
+        columns       Actual number of columns that will be used for the 
+                      formats like `%-'.
         fgcolor       Foreground color of "Normal" highlight group. If this 
                       color is an empty string then it is either "#000000" or 
                       "#ffffff" depending on 'background' option.
@@ -569,6 +603,12 @@ sequences (use them in place of ordinary variables):
                       begin, end and sbsd* format specification keys are being 
                       processed, 1+N, where N>0 if N'th document is being 
                       generated
+        tags          Dictionary where keys are tag names and values are lists 
+                      of pairs [{tag-location}, {tag-options}] where each tag 
+                      location is either a line number (if tag is located in 
+                      the current file) or a pair [{filename}, {line-number}]. 
+                      Is empty if tags are ignored. See |taglist()| for 
+                      description of {tag-options}.
 
 ==============================================================================
 5. List of built-in format specifications                   *format-formats*

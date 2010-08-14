@@ -19,6 +19,7 @@ let s:F={
             \"comp": {},
             \"maps": {},
             \ "int": {},
+            \  "au": {},
         \}
 lockvar 1 s:F
 "{{{3 Глобальная переменная
@@ -480,6 +481,11 @@ function s:F.reg.register(regdict)
     if has_key(s:g.reg.registered, plugname)
         return s:F.main.eerror(selfname, "perm", ["preg"], plugname)
     endif
+    "{{{4 au RegisterPluginPre, LoadPluginPre
+    call s:F.au.doevent("RegisterPluginPre", plugname)
+    if has_key(a:regdict, "oneload") && a:regdict.oneload
+        call s:F.au.doevent("LoadPluginPre", plugname)
+    endif
     "{{{4 Построение записи
     let entry={
                 \        "status": ((has_key(a:regdict, "oneload") &&
@@ -527,7 +533,7 @@ function s:F.reg.register(regdict)
     let entry.intfuncprefix='s:g.reg.registered['.entry.quotedname.'].F'
     let locks={}
     call map(["F", "g"], 'extend(locks, {(v:val): islocked("entry.".v:val)})')
-    lockvar entry
+    lockvar 1 entry
     for  v  in  ["status", "extfunctions", "extcommands", "g", "F",
                 \"globalmappings", "buffermappings", "requiredby"]
         if !(has_key(locks, v) && locks[v])
@@ -553,6 +559,9 @@ function s:F.reg.register(regdict)
     endif
     "}}}4
     call s:F.comm.cf(entry)
+    "{{{4 au RegisterPluginPost
+    call s:F.au.doevent("RegisterPluginPost", plugname)
+    "}}}4
     return      {     "name": plugname,
                 \"functions": F}
 endfunction
@@ -1076,6 +1085,7 @@ endfunction
 "{{{3 comm.load:         Загрузить плагин
 function s:F.comm.load(plugname)
     let selfname='comm.load'
+    call s:F.au.doevent("LoadPluginPre", a:plugname)
     let plugdict=s:F.comm.getpldict(a:plugname)
     if plugdict.status==#"loaded"
         return 1
@@ -1096,6 +1106,7 @@ function s:F.comm.load(plugname)
         endwhile
     endif
     "}}}4
+    call s:F.au.doevent("LoadPluginPost", a:plugname)
     return 1
 endfunction
 "{{{3 comm.cdict:        Создать словарь с функциями
@@ -1255,6 +1266,7 @@ let s:F.comm.depcomp=function("s:DepComp")
 "{{{3 comm.unload:       Удалить плагин
 function s:F.comm.unload(plugname)
     let plugdict=s:g.reg.registered[a:plugname]
+    call s:F.au.doevent("UnloadPluginPre", a:plugname)
     let srccmd=""
     let hasdep={}
     let depends=sort(s:F.comm.getdep(plugdict, hasdep), s:F.comm.depcomp)
@@ -1307,8 +1319,75 @@ function s:F.comm.unload(plugname)
         unlet plugdict.g
         unlet plugdict.F
     endfor
+    call s:F.au.doevent("UnloadPluginPost", a:plugname)
     return srccmd
 endfunction
+"{{{2 au
+"{{{3 s:g.au
+let s:g.au={}
+let s:g.au.events={}
+let s:g.au.events.RegisterPluginPre={}
+let s:g.au.events.LoadPluginPre={}
+let s:g.au.events.UnloadPluginPre={}
+let s:g.au.events.RegisterPluginPost={}
+let s:g.au.events.LoadPluginPost={}
+let s:g.au.events.UnloadPluginPost={}
+lockvar 1 s:g.au
+lockvar 1 s:g.au.events
+"{{{3 au.doau
+function s:F.au.doau(Command, event, plugin)
+    if type(a:Command)==type("")
+        execute a:Command
+    else
+        call call(a:Command, [a:event, a:plugin], {})
+    endif
+endfunction
+"{{{3 au.doevent
+function s:F.au.doevent(event, plugin)
+    for Cmd in get(s:g.au.events[a:event], a:plugin, [])
+        call s:F.au.doau(Cmd, a:event, a:plugin)
+    endfor
+endfunction
+"{{{3 au.regevent
+function s:F.au.regevent(event, plugin, Command)
+    if !has_key(s:g.au.events[a:event], a:plugin)
+        let s:g.au.events[a:event][a:plugin]=[]
+    endif
+    call add(s:g.au.events[a:event][a:plugin], a:Command)
+endfunction
+"{{{3 au.delevent
+function s:F.au.delevent(event, plugin, Command)
+    if type(a:Command)!=type(0)
+        if !has_key(s:g.au.events[a:event], a:plugin)
+            return
+        endif
+        call filter(s:g.au.events[a:event][a:plugin],
+                    \'!(type(v:val)==type(a:Command) && v:val==#a:Command)')
+    elseif type(a:plugin)==type("")
+        call filter(s:g.au.events[a:event], 'v:key!=#a:plugin')
+        if !empty(s:g.au.events[a:event])
+            call remove(s:g.au.events[a:event], 0, -1)
+        endif
+    else
+        for key in keys(s:g.au.events[a:event])
+            unlet s:g.au.events[a:event][key]
+        endfor
+    endif
+endfunction
+"{{{3 s:g.comm.f
+unlockvar 1 s:g.comm.f
+call add(s:g.comm.f,
+            \["autocmd", 'au.regevent', {"model": "simple",
+            \                         "required": [["keyof", s:g.au.events],
+            \                                      ["type", type("")],
+            \                                      ["type", type("")]]}])
+call add(s:g.comm.f,
+            \["delautocmd", 'au.delevent',
+            \           {"model": "optional",
+            \         "required": [["keyof", s:g.au.events]],
+            \         "optional": [[["type", type("")], {}, ""],
+            \                      [["type", type("")], {}, ""]]}])
+lockvar 2 s:g.comm.f
 "{{{2 mng: main
 "{{{3 mng.main
 "{{{4 s:g.c.cmd
@@ -1328,8 +1407,21 @@ let s:g.c.cmd.actions.findnr={"model": "simple",
             \                              "trans": ["earg", ""]}]}
 let s:g.c.cmd.actions.nrof={"model": "simple",
             \              "required": [{"check": ["regex", '^/']}]}
+let s:g.c.cmd.actions.autocmd={"model": "simple",
+            \               "required": [["keyof", s:g.au.events],
+            \                            ["type", type("")],
+            \                            ["type", type("")]]}
+let s:g.c.cmd.actions["autocmd!"]={"model": "optional",
+            \                   "required": [["keyof", s:g.au.events]],
+            \                   "optional": [[["keyof", s:g.reg.registered],
+            \                                 {}, 0],
+            \                                [["type", type("")], {}, 0]]}
 lockvar! s:g.c
 unlockvar! s:g.reg.registered
+for s:key in keys(s:g.au.events)
+    execute "unlockvar! s:g.au.events.".s:key
+endfor
+unlet s:key
 "}}}4
 function s:F.mng.main(action, ...)
     "{{{4 Объявление переменных
@@ -1378,6 +1470,12 @@ function s:F.mng.main(action, ...)
         else
             echo s:g.p.nfnd
         endif
+    "{{{5 autocmd
+    elseif action==#"autocmd"
+        call s:F.au.regevent(args[1], args[2], args[3])
+    "{{{5 autocmd!
+    elseif action==#"autocmd!"
+        call s:F.au.delevent(args[1], args[2], args[3])
     endif
     "}}}4
 endfunction
@@ -1426,6 +1524,7 @@ endfunction
 "{{{3 s:g.comp
 let s:g.comp={}
 let s:g.comp.plug=["keyof", s:g.reg.registered]
+let s:g.comp.event=["keyof", s:g.au.events]
 let s:g.comp.a={"model": "actions"}
 let s:g.comp.a.actions={}
 let s:g.comp.a.actions.unload={"model": "simple",
@@ -1436,6 +1535,10 @@ let s:g.comp.a.actions.show={"model": "simple"}
 let s:g.comp.a.actions.findnr={"model": "simple"}
 let s:g.comp.a.actions.nrof={"model": "simple",
             \              "arguments": [["func", s:F.comp.nrof]]}
+let s:g.comp.a.actions.autocmd={"model": "simple",
+            \               "arguments": [s:g.comp.event, s:g.comp.plug]}
+let s:g.comp.a.actions["autocmd!"]={"model": "simple",
+            \                   "arguments": [s:g.comp.event, s:g.comp.plug]}
 let s:g.comp._cname="load"
 "{{{1
 let s:g.reginfo=s:F.reg.register({
@@ -1450,7 +1553,7 @@ let s:g.reginfo=s:F.reg.register({
             \   "scriptfile": s:g.load.scriptfile,
             \      "oneload": 1,
             \"dictfunctions": s:g.comm.f,
-            \   "apiversion": "0.1",
+            \   "apiversion": "0.2",
         \})
 lockvar! s:g.reginfo
 let s:F.main.eerror=s:g.reginfo.functions.eerror
