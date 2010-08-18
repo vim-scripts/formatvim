@@ -150,19 +150,29 @@ IgnoreList :: Bool                                   *format-opt-IgnoreList*
 
 IgnoreTags :: 0 | 1 | 2                              *format-opt-IgnoreTags*
         Defines whether tags are ignored, see |taglist()|
-        0: do not ignore any tags
+        0: do not ignore any tags. In HTML format it produces the following 
+           tags: >
+               <a href="#line18-0">...</a>
+<          (if tag links to the current buffer) and >
+               <a href="{path}#line18-0">...</a>
+<          (if tag links to other file). Here {path} is a path to the file 
+           with tag definition relative to the current directory (if 
+           possible). Note that HTML formatter escapes all `<' and `>' 
+           characters, so it is safe to use regular expressions to change the 
+           tags.
         1: ignore tags that are not in current file (default)
         2: ignore all tags
 
-AddTagCmdEscapes                               *format-opt-AddTagCmdEscapes*
+AddTagCmdEscapes :: [ Char ]                   *format-opt-AddTagCmdEscapes*
         String, defines a list of characters that should be escaped if `cmd' 
         key in tag description returned by |taglist()| is an vim pattern. 
         Default: '[]*.~'.
 
-MaxDupTags                                           *format-opt-MaxDupTags*
+MaxDupTags :: UInt                                   *format-opt-MaxDupTags*
         Defines a maximum number of tag entries with one name. If actual 
         number of tag entries that share the same name exceeds this value, 
-        then this tag is ignored. Default: 5.
+        then this tag is ignored. You can set this option to 0 in order to 
+        prevent filtering. Default: 5.
 
 NoLineNR :: -1 | Bool                                  *format-opt-NoLineNR*
         If it is true then do no add the line numbers, -1 (default) means 
@@ -615,7 +625,7 @@ sequences (use them in place of ordinary variables):
 
 html                                                    *format-format-html*
         Specification for html format. Supports numbered lines, currently 
-        closed folds, AllFolds option. Uses CSS styles; CSS :hover and 
+        closed folds, tags, AllFolds option. Uses CSS styles; CSS :hover and 
         JavaScript for AllFolds.
 html-vimwiki                                    *format-format-html-vimwiki*
         Specification for html format that can be pasted to vim.wikia.com 
@@ -625,6 +635,9 @@ bbcode-unixforum                            *format-format-bbcode-unixforum*
         Specification for BBcode used on unixforum.org. Supports numbered 
         lines. Does not support background color, because changing background 
         is not available on this forum.
+latex-xcolor                                    *format-format-latex-xcolor*
+        Experimental support for dumping to LaTeX format. Uses xcolor and 
+        ttfamily fonts.
 
 vim: ft=help:tw=78
 

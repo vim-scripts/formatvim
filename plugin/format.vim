@@ -772,11 +772,12 @@ let s:g.fmt.formats.html={
             \                     s:g.fmt.htmlstylestr.
             \                   '."} "):'.
             \                   '(""))',
-            \"begin":        "<html><head>".
+            \"begin":        "<html xmlns=\"http://www.w3.org/1999/xhtml\">".
+            \                "<head>".
             \                "<meta http-equiv=\"content-type\" ".
             \                       "content=\"text/hmtl; charset=UTF-8\" />".
             \                '<meta name="generator" content="format.vim" />'.
-            \                "<style> ".
+            \                "<style type=\"text/css\"> ".
             \                "body { font-family: monospace; ".
             \                        "white-space: nowrap; ".
             \                        "margin: 0; padding: 0; border: 0;  ".
