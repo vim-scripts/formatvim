@@ -2191,15 +2191,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \'let curstr='.
             \           ((has_key(cformat, "linestart"))?
             \               ('cformat.linestart(1, foldspec, curline, "", '.
-            \                                  'opts).'):
+            \                                  'opts)'):
             \               ('')).
             \           ((donr||dornr)?
-            \              ('cformat.linenr('.
+            \              ('.cformat.linenr('.
             \                   ((dornr)?
             \                       ('abs(curline-'.cline.')'):
             \                       ('curline')).', '.
             \                              'foldspec, '.
-            \                              'curline, '', opts).'):
+            \                              'curline, '', opts)'):
             \              ('')),
             \'let curstr.=cformat.fold(foldtextresult(curline), '.
             \                         'foldspec, '.
