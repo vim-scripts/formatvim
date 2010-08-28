@@ -864,6 +864,7 @@ let s:g.fmt.formats.html={
             \                ".closed-fold:hover > .fulltext{display: block;}".
             \                ".closed-fold:hover > .toggle-filler ".
             \                                              "{display: none;}".
+            \                ".Line { height: 1em; }".
             \                ".Present { display: none; }".
             \                ".Line:hover .Shown { display: none; }".
             \                ".Line:hover .Present { display: inline; }".
