@@ -40,6 +40,7 @@ elseif !exists("s:g.pluginloaded")
                 \           "collapsfiller":   [["num", [ 1]],     {}, -1],
                 \           "foldcolumn":      [["num", [-1]],     {}, -2],
                 \           "nonr":            [["in", [0, 1]],    {}, -1],
+                \           "rnr":             [["in", [0, 1]],    {}, -1],
                 \           "allfolds":        [["in", [0, 1]],    {}, -1],
                 \           "ignorefolds":     [["in", [0, 1]],    {}, -1],
                 \           "ignorelist":      [["in", [0, 1]],    {}, -1],
@@ -126,6 +127,7 @@ let s:g.defaultOptions={
             \"ShowProgress":      0,
             \"CollapsFiller":     0,
             \"NoLineNR":         -1,
+            \"RelativeNumber":   -1,
             \"FoldColumn":       -1,
             \"MaxDupTags":        5,
             \"FormatConcealed":   1,
@@ -143,6 +145,7 @@ let s:g.chk.options={
             \"ShowProgress":     ["num", [0, 2]],
             \"CollapsFiller":    ["num", [0]],
             \"NoLineNR":         ["num", [-1, 1]],
+            \"RelativeNumber":   ["num", [-1, 1]],
             \"FoldColumn":       ["num", [-1]],
             \"MaxDupTags":       ["num", [0]],
             \"AddTagCmdEscapes": ["type", type("")],
@@ -567,7 +570,7 @@ let s:g.fmt.expressions={
         \}
 "{{{4 s:g.fmt.complexexpressions
 let s:g.fmt.complexexpressions={
-            \'#': "((a:opts.donr)?(".
+            \'#': "((a:opts.donr || a:opts.dornr)?(".
             \       "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', '.".
             \       "a:opts.linenumlen.'-len(@@@)).@@@'):(''''''))",
             \'-': "'repeat('.s:F.plug.stuf.squote(a:opts.difffillchar).', (".
@@ -577,10 +580,11 @@ let s:g.fmt.complexexpressions={
             \             "(@_columns@)-(@=@))/'.".
             \             "a:opts.strlen(a:opts.leadingspace).')'",
             \'_': "s:F.plug.stuf.squote(repeat(a:opts.leadingspace, ".
-            \                                 "((a:opts.donr)?(".
+            \                                 "((a:opts.donr || a:opts.dornr)?(".
             \                                   "a:opts.linenumlen):(0))))",
             \' ': "s:F.plug.stuf.squote(a:opts.leadingspace)",
-            \'^': "((a:opts.donr)?s:F.plug.stuf.squote(a:opts.leadingspace):".
+            \'^': "((a:opts.donr || a:opts.dornr)?".
+            \       "s:F.plug.stuf.squote(a:opts.leadingspace):".
             \       "(''''''))",
             \'~': "s:F.plug.stuf.squote(a:opts.difffillchar)",
         \}
@@ -739,12 +743,32 @@ function s:F.fmt.prepare(format, startline, endline, options)
                 \   (get(a:format, 'columns', winwidth(0))))
     let opts.strlen=get(a:format, 'strlen', s:F.stuf.strlen)
     let opts.linenumlen=len(a:endline)
-    let opts.donr=has_key(a:format, "linenr") &&
-                \!((a:options.nonr==-1)?
-                \    (s:F.main.option("NoLineNR")):
-                \    (a:options.nonr))
-    if opts.donr==-1
-        let opts.donr=!&number
+    if has_key(a:format, "linenr")
+        let opts.donr=((a:options.nonr==-1)?
+                    \    (s:F.main.option("NoLineNR")):
+                    \    (a:options.nonr))
+        if opts.donr!=-1
+            let opts.donr=!opts.donr
+        endif
+        let opts.dornr=((a:options.rnr==-1)?
+                    \    (s:F.main.option("RelativeNumber")):
+                    \    (a:options.rnr))
+        if opts.donr==-1
+            let opts.donr=&number
+        endif
+        if opts.dornr==-1
+            if exists("&relativenumber")
+                let opts.dornr=&relativenumber
+            else
+                let opts.dornr=0
+            endif
+        endif
+        if opts.dornr
+            let opts.donr=0
+        endif
+    else
+        let opts.donr=0
+        let opts.dornr=0
     endif
     let id=hlID("normal")
     let opts.fgcolor=s:F.fmt.getcolor(synIDattr(id, "fg#", s:g.fmt.whatterm))
@@ -1333,8 +1357,8 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     let specialcolumns={}
     "{{{6 Курсор
     let docline=0
+    let cline=line('.')
     if !ignorecursor
-        let cline=line('.')
         let ccolumn=virtcol('.')
         if &cursorcolumn
             call add(formatfunction,
@@ -1425,14 +1449,28 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
         \'let foldspec=s:F.fmt.compiledspec(cformat, "Folded")')
     endif
     let donr=0
+    let dornr=0
     if has_key(cformat, "linenr")
-        let donr=!((a:options.nonr==-1)?
+        let donr=((a:options.nonr==-1)?
                     \(s:F.main.option("NoLineNR")):
                     \(a:options.nonr))
-        if donr==-1
-            let donr=!&number
+        if opts.donr!=-1
+            let opts.donr=!opts.donr
         endif
-        if donr
+        let dornr=((a:options.rnr==-1)?
+                    \(s:F.main.option("RelativeNumber")):
+                    \(a:options.rnr))
+        if dornr==-1
+            if exists("&relativenumber")
+                let dornr=&relativenumber
+            else
+                let dornr=0
+            endif
+        endif
+        if !dornr && donr==-1
+            let donr=&number
+        endif
+        if donr || dornr
             call add(formatfunction,
             \'let nrspec=s:F.fmt.compiledspec(cformat, "LineNr")')
             if docline
@@ -1441,9 +1479,14 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                 \                                  '"CursorLine")')
             endif
         endif
+        if dornr
+            let donr=0
+        endif
     endif
     let opts.donr=donr
     call add(formatfunction, "let opts.donr=".donr)
+    let opts.dornr=dornr
+    call add(formatfunction, "let opts.dornr=".dornr)
     if &diff
         call add(formatfunction,
         \'let fillspec=s:F.fmt.compiledspec(cformat, "DiffDelete")')
@@ -1708,9 +1751,12 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \                                 "foldspec, fcurline, '', ".
             \                                 "opts)"):
             \                    ('""'))])
-            if donr
+            if donr || dornr
                 call add(formatfunction,
-                \'    let closedfolds[fcurline].=cformat.linenr(fcurline, '.
+                \'    let closedfolds[fcurline].=cformat.linenr('.
+                \                   ((dornr)?
+                \                       ('abs(fcurline-'.cline.')'):
+                \                       ('fcurline')).', '.
                 \                                     'foldspec, '.
                 \                                     'fcurline, '.
                 \                                     'closedfolds[fcurline], '.
@@ -2065,7 +2111,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                     \                           'opts)')))
                 endif
                 "{{{6 Номер строки
-                if donr
+                if donr || dornr
                     call add(formatfunction,
                     \'let curstrstart.=cformat.linenr("", nrspec, '.
                     \                                'curline, "", '.
@@ -2146,8 +2192,12 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \               ('cformat.linestart(1, foldspec, curline, "", '.
             \                                  'opts).'):
             \               ('')).
-            \           ((donr)?
-            \              ('cformat.linenr(curline, foldspec, '.
+            \           ((donr||dornr)?
+            \              ('cformat.linenr('.
+            \                   ((dornr)?
+            \                       ('abs(curline-'.cline.')'):
+            \                       ('curline')).', '.
+            \                              'foldspec, '.
             \                              'curline, '', opts).'):
             \              ('')),
             \'let curstr.=cformat.fold(foldtextresult(curline), '.
@@ -2281,9 +2331,12 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             endif
         endif
         "{{{7 Номер
-        if donr
+        if donr || dornr
             call add(formatfunction,
-            \'let curstr.=cformat.linenr(curline, '.
+            \'let curstr.=cformat.linenr('.
+            \                            ((dornr)?
+            \                                ('abs(curline-'.cline.')'):
+            \                                ('curline')).', '.
             \                            ((docline)?
             \                               ('((curline=='.cline.')?'.
             \                                   '(nrclspec):'.
@@ -2732,6 +2785,7 @@ let s:g.chk.cmd={
             \           "columns":         [["nums", [-1]],          {},  0],
             \           "foldcolumn":      [["nums", [-1]],          {}, -2],
             \           "nonr":            [["in", ['0', '1']],      {}, -1],
+            \           "rnr":             [["in", ['0', '1']],      {}, -1],
             \           "ignorefolds":     [["in", ['0', '1']],      {}, -1],
             \           "ignorelist":      [["in", ['0', '1']],      {}, -1],
             \           "ignoretags":      [["in", ['0', '1', '2']], {}, -1],
@@ -2749,6 +2803,7 @@ let s:g.chk.cmd={
             \           "collapsfiller":   [["nums", [0]],           {}, -1],
             \           "foldcolumn":      [["nums", [-1]],          {}, -2],
             \           "nonr":            [["in", ['0', '1']],      {}, -1],
+            \           "rnr":             [["in", ['0', '1']],      {}, -1],
             \           "allfolds":        [["in", ['0', '1']],      {}, -1],
             \           "ignorefolds":     [["in", ['0', '1']],      {}, -1],
             \           "ignorelist":      [["in", ['0', '1']],      {}, -1],
@@ -2808,6 +2863,7 @@ let s:g.comp.a.actions.format={
             \   "collapsfiller":   ["list", []],
             \   "foldcolumn":      ["list", []],
             \   "nonr":            ["list", ['0', '1']],
+            \   "rnr":             ["list", ['0', '1']],
             \   "allfolds":        ["list", ['0', '1']],
             \   "ignorefolds":     ["list", ['0', '1']],
             \   "ignorelist":      ["list", ['0', '1']],
@@ -2824,6 +2880,7 @@ if has("diff")
                 \   "columns":         ["func", s:F.comp.getcolumns],
                 \   "foldcolumn":      ["list", []],
                 \   "nonr":            ["list", ['0', '1']],
+                \   "rnr":             ["list", ['0', '1']],
                 \   "ignorefolds":     ["list", ['0', '1']],
                 \   "ignorelist":      ["list", ['0', '1']],
                 \   "ignoretags":      ["list", ['0', '1', '2']],

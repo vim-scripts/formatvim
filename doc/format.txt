@@ -62,6 +62,7 @@ via dictionary returned by |load-func-getfunctions| function.
             ignorefolds    Bool. Overrides |format-option-IgnoreFolds|.
             ignorelist     Bool. Overrides |format-option-IgnoreList|.
             nonr           Bool. Overrides |format-option-NoLineNR|.
+            rnr            Bool. Overrides |format-option-RelativeNumber|.
             progress       0, 1 or 2. Overrides |format-option-ShowProgress|.
             formatconcealed  0, 1 or 2. Overrides 
                            |format-option-FormatConcealed|.
@@ -176,13 +177,20 @@ MaxDupTags :: UInt                                   *format-opt-MaxDupTags*
         then this tag is ignored. You can set this option to 0 in order to 
         prevent filtering. Default: 5.
 
+RelativeNumber :: -1 | Bool                      *format-opt-RelativeNumber*
+        If it is true, then it adds relative line numbers, just like when 
+        'relativenumber' is set ('relativenumber' was introduced in vim 7.3, 
+        but this option will also work in vim 7.2). -1 (default) means that 
+        this option will be enabled if 'relativenumber' option is set. 
+        Overrides |format-opt-NoLineNR|.
+
 NoLineNR :: -1 | Bool                                  *format-opt-NoLineNR*
-        If it is true then do no add the line numbers, -1 (default) means 
+        If it is true then do not add the line numbers, -1 (default) means 
         "preserve 'number' option" (plugin acts as if NoLineNR were true if 
         'number' is not set and as if it were false otherwise). It does the 
         following:
         1. Sets @_donr@ to 0
-        2. Makes "%#" and "%_" return empty strings
+        2. Makes "%#" and "%_" return blank strings
         3. Forces skipping applying "linenr" specification
         It has the same effect as removing "linenr" key from specification.
 
@@ -626,7 +634,8 @@ sequences (use them in place of ordinary variables):
                       "#ffffff" depending on 'background' option.
         linenumlen    Length of the number of the last line.
         ignorefolds   1 if folds are ignored, 0 otherwise.
-        donr          1 if lines will be numbered, 0 otherwise.
+        donr          1 if lines will be numbered normally, 0 otherwise.
+        dornr         1 if lines will be numbered relatively, 0 otherwise.
         allfolds      1 if AllFolds is on, 0 otherwise
         foldcolumn    0 if foldcolumn is not formatted, width of foldcolumn  
                       in characters otherwise
