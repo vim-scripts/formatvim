@@ -63,6 +63,8 @@ via dictionary returned by |load-func-getfunctions| function.
             ignorelist     Bool. Overrides |format-option-IgnoreList|.
             nonr           Bool. Overrides |format-option-NoLineNR|.
             progress       0, 1 or 2. Overrides |format-option-ShowProgress|.
+            formatconcealed  0, 1 or 2. Overrides 
+                           |format-option-FormatConcealed|.
                                                   *format-action-diffformat*
 :{range}FormatCommand diffformat [{formatName} [{option1} {value1}]]
             Like |format-action-format|, but create a side-by-side diff file. 
@@ -195,9 +197,19 @@ IgnoreCursor :: Bool                               *format-opt-IgnoreCursor*
         (cursor line or column do not get highlighted when 'cursorline' or 
         'cursorcolumn' is on, cursor character also is not highlighted).
 
+FormatConcealed :: 0, 1 or 2                    *format-opt-FormatConcealed*
+        If both this option and 'conceallevel' have non-zero values, then only 
+        actually shown text will be formatted. Difference between values 1 
+        and 2 is that if FormatConcealed value is 1 then 
+        |format-spec-key-line| will be used with specification derived from 
+        |hl-Concealed| higlight group, thus losing information about what 
+        characters are actually hidden. And if FormatConcealed value is 2 then 
+        |format-spec-key-concealed| is used, so information about concealed 
+        characters can be possibly saved.
+
 ShowProgress :: 0, 1 or 2                          *format-opt-ShowProgress*
-        If this value is not zero then show progress bar. Differencies between 
-        1 and 2:
+        If this option is not zero then show progress bar. Differencies 
+        between 1 and 2:
         Value  Bar ~
           1    [=>       ] 10% (bar and per cent count)
           2    [=>   ] 1/9 10% (bar, currentline/lastline, per cent count)
@@ -322,7 +334,7 @@ lineend                                            *format-spec-key-lineend*
                     highlight group, for difffiller and collapsedfiller lines 
                     specification changes to "DiffDelete" highlight group.
 
-tagstart                                              *format-spec-tagstart*
+tagstart                                          *format-spec-key-tagstart*
         String, describes the start of each tag. Arguments (see 
         |format-spec-description|) (listed only arguments with non-standart 
         values):
@@ -330,13 +342,24 @@ tagstart                                              *format-spec-tagstart*
         @@@         Tag name.
         @{stspec}@  Undefined (it may be anything)
 
-tagend                                                  *format-spec-tagend*
+tagend                                              *format-spec-key-tagend*
         String, describes the end of each tag. Arguments (see 
         |format-spec-description|) (listed only arguments with non-standart 
         values):
         Argument    Value ~
         @@@         Tag name.
         @{stspec}@  Undefined (it may be anything)
+
+concealed                                        *format-spec-key-concealed*
+        String, describes the concealed character. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         Text actually shown
+        @?@         Concealed text (this argument is unique for concealed key)
+        @&{stspec}@ Specification derived from actual highlight group (this 
+                    argument is unique for concealed key)
+        @{stspec}@  Specification derived from "Concealed" highlight group
 
 fold                                                  *format-spec-key-fold*
         String, describes each fold. Arguments (see |format-spec-description|) 
@@ -433,7 +456,7 @@ sbsdend                                            *format-spec-key-sbsdend*
         values):
         Argument    Value ~
         @@@         Empty string
-        @.@         0 (zero)
+        @.@         Number of documents formatted
         @-@         Index of the current line (Note that index is not current 
                     line number)
         @{stspec}@  Specification derived from "Normal" highlight group
@@ -608,17 +631,36 @@ sequences (use them in place of ordinary variables):
         foldcolumn    0 if foldcolumn is not formatted, width of foldcolumn  
                       in characters otherwise
         ignorecursor  0 if IgnoreCursor is off and either 'cursorcolumn' is 
-                      set or cursor is within formatted line range,1 otherwise
+                      set or cursor is within formatted line range, 1 otherwise
         sbsd          0 if side-by-side diff is not being generated, 1 if 
                       begin, end and sbsd* format specification keys are being 
                       processed, 1+N, where N>0 if N'th document is being 
                       generated
+        formatconcealed  0 if concealed text is ignored, 1 or 2 otherwise, see 
+                      |format-opt-FormatConcealed|.
         tags          Dictionary where keys are tag names and values are lists 
                       of pairs [{tag-location}, {tag-options}] where each tag 
                       location is either a line number (if tag is located in 
                       the current file) or a pair [{filename}, {line-number}]. 
                       Is empty if tags are ignored. See |taglist()| for 
                       description of {tag-options}.
+
+The following arguments are unique for the |format-spec-key-concealed|:
+@?@                                                        *format-spec-@?@*
+        Concealed text (text that is actually present in the file). Empty 
+        string if text is not concealed.
+@&{stspec}@                                             *format-spec-@&key@*
+        Value of the actual style specification. For a list of possible 
+        {stspec}s see |format-spec-@key@|. It is an alias for 
+        |format-spec-@key@| unless used inside |format-spec-key-concealed|.
+@&@                                                        *format-spec-@&@*
+        String with style computed for actual style specification. It is an 
+        alias for |format-spec-@:@| unless used inside 
+        |format-spec-key-concealed|.
+
+Note that these expressions are replaced in arbitrary order, so you need to 
+avoid such ambigious constructions as @_columns@-@=@. Use spaces or brackets 
+instead.
 
 ==============================================================================
 5. List of built-in format specifications                   *format-formats*

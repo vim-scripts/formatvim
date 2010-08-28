@@ -64,6 +64,12 @@ simple                                                   *comp-model-simple*
         Defines a completion for command that takes a list of arguments, for 
         each possible arguments a {ListDescription} must be defined. See 
         |comp-listdescription| for details.
+words                                                     *comp-model-words*
+        Required keys: words :: {ListDescription}
+        Defines a completion for command that takes a list of arguments that 
+        are not connected with each other, for every argument 
+        a {ListDescription} from words key is used. See |comp-listdescription| 
+        for details.
 pref                                                       *comp-model-pref*
         Optional keys: arguments :: [{ListDescription}]
                        prefix :: { {prefix}: {ListDescription} }
@@ -77,6 +83,11 @@ pref                                                       *comp-model-pref*
 <
         Key `argument' is handled just like in |comp-model-simple|. Key 
         `prefix' describes prefixes and corresponding arguments.
+                          *comp-model-inputactions* *comp-model-inputsimple*
+                              *comp-model-inputwords* *comp-model-inputpref*
+input{model}                                              *comp-model-input*
+        Like {model}, but for use in |input()| completion.
+
 
 ==============================================================================
 4. Argument descriptions                              *comp-listdescription*

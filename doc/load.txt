@@ -154,6 +154,19 @@ getfunctions({plugname})                            *load-func-getfunctions*
         argument provided when plugin {plugname} was registered. For 
         {plugname} argument see |load-reg-name|.
 
+lazygetfunctions({plugname})                   *load-func-lazygetfunctions*
+        Get the dictionary which will be populated with plugin's dictionary 
+        functions when this plugin will be loaded. Can be used to resolve 
+        cyclic dependencies. See |load-func-run| for information about how to 
+        run functions from this dictionary.
+
+run({dict}, {funcname}[, {arg1}[, ...]])                    *load-func-run*
+        Run function {funcname} from dictionary {dict} with arguments 
+        {arg1}..{argN} (N may be 0). If {dict} was obtained by 
+        |load-func-lazygetfunctions| and was not modified then first load the 
+        plugin and then run the function. Trows an exception, if function is 
+        not found in dictionary.
+
 autocmd({event}, {plugin}, {command})                   *load-func-autocmd*
         Register an autocommand. For a description of {event} see 
         |load-autocommands|. {plugin} is any string that can be a plugin name. 

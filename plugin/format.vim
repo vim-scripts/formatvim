@@ -36,13 +36,16 @@ elseif !exists("s:g.pluginloaded")
                 \                    [["num", [1]], {"trans": ["earg", ""]},
                 \                     "line('$')"]],
                 \       "prefoptional": {
-                \           "columns":       [["num", [-1]],     {}, 0],
-                \           "collapsfiller": [["num", [ 1]],     {}, 0],
-                \           "nonr":          [["in", [0, 1]],    {}, 0],
-                \           "allfolds":      [["in", [0, 1]],    {}, 0],
-                \           "ignorefolds":   [["in", [0, 1]],    {}, 0],
-                \           "ignorelist":    [["in", [0, 1]],    {}, 0],
-                \           "progress":      [["in", [0, 1, 2]], {}, 0],
+                \           "columns":         [["num", [-1]],     {},  0],
+                \           "collapsfiller":   [["num", [ 1]],     {}, -1],
+                \           "foldcolumn":      [["num", [-1]],     {}, -2],
+                \           "nonr":            [["in", [0, 1]],    {}, -1],
+                \           "allfolds":        [["in", [0, 1]],    {}, -1],
+                \           "ignorefolds":     [["in", [0, 1]],    {}, -1],
+                \           "ignorelist":      [["in", [0, 1]],    {}, -1],
+                \           "ignoretags":      [["in", [0, 1, 2]], {}, -1],
+                \           "progress":        [["in", [0, 1, 2]], {}, -1],
+                \           "formatconcealed": [["in", [0, 1, 2]], {}, -1],
                 \       },
                 \   }
                 \]
@@ -99,7 +102,7 @@ elseif !exists("s:g.pluginloaded")
                 \     "commands": s:g.load.commands,
                 \    "functions": s:g.chk.ff,
                 \"dictfunctions": s:g.chk.f,
-                \   "apiversion": '2.0',
+                \   "apiversion": '2.1',
                 \     "requires": [["load", '0.0'],
                 \                  ["comp", '0.0'],
                 \                  ["chk",  '0.0'],
@@ -113,33 +116,35 @@ endif
 let s:g.pluginloaded=1
 "{{{2 Настройки
 let s:g.defaultOptions={
-            \"DefaultFormat": "html",
-            \"KeepColorCache": 1,
-            \"IgnoreCursor":   1,
-            \"IgnoreFolds":    0,
-            \"IgnoreList":     0,
-            \"IgnoreTags":     1,
-            \"AllFolds":       0,
-            \"ShowProgress":   0,
-            \"CollapsFiller":  0,
-            \"NoLineNR":       -1,
-            \"FoldColumn":     -1,
-            \"MaxDupTags":     5,
+            \"DefaultFormat":    "html",
+            \"KeepColorCache":    1,
+            \"IgnoreCursor":      1,
+            \"IgnoreFolds":       0,
+            \"IgnoreList":        0,
+            \"IgnoreTags":        1,
+            \"AllFolds":          0,
+            \"ShowProgress":      0,
+            \"CollapsFiller":     0,
+            \"NoLineNR":         -1,
+            \"FoldColumn":       -1,
+            \"MaxDupTags":        5,
+            \"FormatConcealed":   1,
             \"AddTagCmdEscapes": '[]*.~',
         \}
 let s:g.chk.options={
-            \"DefaultFormat":  ["keyof", s:g.fmt.formats],
-            \"KeepColorCache": ["bool", ""],
-            \"IgnoreCursor":   ["bool", ""],
-            \"IgnoreFolds":    ["bool", ""],
-            \"IgnoreList":     ["bool", ""],
-            \"IgnoreTags":     ["nums", [0, 2]],
-            \"AllFolds":       ["bool", ""],
-            \"ShowProgress":   ["num", [0, 2]],
-            \"CollapsFiller":  ["num", [0]],
-            \"NoLineNR":       ["num", [-1, 1]],
-            \"FoldColumn":     ["num", [-1]],
-            \"MaxDupTags":     ["num", [0]],
+            \"DefaultFormat":    ["keyof", s:g.fmt.formats],
+            \"KeepColorCache":   ["bool", ""],
+            \"IgnoreCursor":     ["bool", ""],
+            \"IgnoreFolds":      ["bool", ""],
+            \"IgnoreList":       ["bool", ""],
+            \"IgnoreTags":       ["nums", [0, 2]],
+            \"FormatConcealed":  ["nums", [0, 2]],
+            \"AllFolds":         ["bool", ""],
+            \"ShowProgress":     ["num", [0, 2]],
+            \"CollapsFiller":    ["num", [0]],
+            \"NoLineNR":         ["num", [-1, 1]],
+            \"FoldColumn":       ["num", [-1]],
+            \"MaxDupTags":       ["num", [0]],
             \"AddTagCmdEscapes": ["type", type("")],
         \}
 "{{{2 Чистка
@@ -566,10 +571,10 @@ let s:g.fmt.complexexpressions={
             \       "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', '.".
             \       "a:opts.linenumlen.'-len(@@@)).@@@'):(''''''))",
             \'-': "'repeat('.s:F.plug.stuf.squote(a:opts.difffillchar).', (".
-            \             "@_columns@-@=@)/'.".
+            \             "(@_columns@)-(@=@))/'.".
             \             "a:opts.strlen(a:opts.difffillchar).')'",
             \'+': "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', (".
-            \             "@_columns@-@=@)/'.".
+            \             "(@_columns@)-(@=@))/'.".
             \             "a:opts.strlen(a:opts.leadingspace).')'",
             \'_': "s:F.plug.stuf.squote(repeat(a:opts.leadingspace, ".
             \                                 "((a:opts.donr)?(".
@@ -615,57 +620,97 @@ function s:F.fmt.getexpr(str, opts)
     endif
 endfunction
 "{{{3 fmt.compile
+let s:g.fmt.args={
+            \".": ["linestart", "linenr", "fold", "collapsedfiller",
+            \      "begin", "end", "sbsdstart", "style"],
+            \"-": ["begin", "style"],
+            \"@": ["begin", "end", "sbsdstart", "sbsdsep", "sbsdend"],
+        \}
 function s:F.fmt.compile(Str, opts, key)
-    if type(a:Str)==type(function("tr"))
-        return a:Str
+    let requires=[]
+    let args=[]
+    let str=a:Str
+    let str=s:F.plug.stuf.squote(str)
+    let str=substitute(str, '%\(=\([^\\%]\|\\.\)\+=%\|''.\{-}''%\|>.*\|.\)',
+                \'\=substitute("''.".'.
+                \       's:F.fmt.getexpr(submatch(1), a:opts).".''",'.
+                \   '"^''\\.''\\|''\\.''$", "", "g")',
+                \'g')
+    if index(s:g.fmt.args["@"], a:key)!=-1
+        let str=substitute(str, '@@@', "''", 'g')
     else
-        let requires=[]
-        let str=a:Str
-        let str=s:F.plug.stuf.squote(str)
-        let str=substitute(str, '%\(=\([^\\%]\|\\.\)\+=%\|''.\{-}''%\|>.*\|.\)',
-                    \'\=substitute("''.".'.
-                    \       's:F.fmt.getexpr(submatch(1), a:opts).".''",'.
-                    \   '"^''\\.''\\|''\\.''$", "", "g")',
-                    \'g')
-        let str=substitute(str, "^''\\.\\|\\.''$", "", "g")
-        let str=substitute(str, '@_\([a-z]\+\)@',
-                    \'\="a:opts.".add(requires, "_".submatch(1))[-1][1:]',
-                    \'g')
-        let str=substitute(str, '@\([a-z]\+\)@',
-                    \'\="a:spec[0].".add(requires, submatch(1))[-1]',
-                    \'g')
-        let str=substitute(str, '@:@',  '\=add(requires, "'.
-                    \((index(["begin", "end"], a:key)!=-1)?
-                    \   ("a:style"):
-                    \   ("a:spec[1]")).
-                    \'")[-1]',  'g')
-        let str=substitute(str, '@-@',  '\=add(requires, "a:line")[-1]',   'g')
-        let str=substitute(str, '@@@',  '\=add(requires, "a:str")[-1]',    'g')
-        let str=substitute(str, '@\.@', '\=add(requires, "a:char")[-1]',   'g')
-        if match(str, '@=@')!=-1
-            call add(requires, '=')
-            let str=substitute(str, '\(^\|''\@<=\.\)'.
-                        \               '\(\(\(''\.\)\@!.\)*\)@=@',
-                        \'\n    '.
-                        \'let str.=\2a:opts.strlen(a:cur.str)',
-                        \'g')
-            let str=substitute('let str='.str, '^let str=\ze\n',
-                        \'let str=""', '')
-            let str.="\n    return str"
-        else
-            let str='return '.str
-        endif
-        let str=substitute(str, '%%@', '%@', 'g')
-        let str=substitute(str,  '%@',  '@', 'g')
-        let r={}
-        execute      "function r.r(str, spec, line, char, cur, opts".
-                    \               ((index(["begin", "end"], a:key)!=-1)?
-                    \                   (", style"):
-                    \                   ("")).")\n".
-                    \'    '.str."\n".
-                    \'endfunction'
-        return [r.r, requires]
+        let str=substitute(str, '@@@',  '\=add(requires, "a:str")[-1]', 'g')
+        call add(args, "str")
     endif
+
+    let str=substitute(str, "^''\\.\\|\\.''$", "", "g")
+
+    let str=substitute(str, '@\([a-z]\+\)@',
+                \'\="a:spec[0].".add(requires, submatch(1))[-1]', 'g')
+    call add(args, "spec")
+
+    if index(s:g.fmt.args["-"], a:key)!=-1
+        let str=substitute(str, '@-@', '0', 'g')
+    else
+        let str=substitute(str, '@-@', '\=add(requires, "a:line")[-1]', 'g')
+        call add(args, "line")
+    endif
+
+    if index(s:g.fmt.args["."], a:key)!=-1
+        let str=substitute(str, '@\.@', '0', 'g')
+    else
+        let str=substitute(str, '@\.@', '\=add(requires, "a:char")[-1]',   'g')
+        call add(args, "char")
+    endif
+
+    if match(str, '@=@')!=-1
+        call add(requires, '=')
+        let str=substitute(str, '\(^\|''\@<=\.\)'.
+                    \               '\(\(\(''\.\)\@!.\)*\)@=@',
+                    \'\n    '.
+                    \'let str.=\2a:opts.strlen(a:cur.str)',
+                    \'g')
+        let str=substitute('let str='.str, '^let str=\ze\n',
+                    \'let str=""', '')
+        let str.="\n    return str"
+    else
+        let str='return '.str
+    endif
+    call add(args, "cur")
+
+    let str=substitute(str, '@_\([a-z]\+\)@',
+                \'\="a:opts.".add(requires, "_".submatch(1))[-1][1:]', 'g')
+    call add(args, "opts")
+
+    if a:key==#"begin" || a:key==#"end"
+        call add(args, "style")
+    endif
+    if a:key==#"concealed"
+        let str=substitute(str, '@?@', '\=add(requires, "a:concealed")[-1]','g')
+        let str=substitute(str, '@&\([a-z]\+\)@',
+                    \'\="a:cspec[0].".add(requires, "&".submatch(1))[-1][1:]',
+                    \'g')
+        let str=substitute(str, '@&@', '\=add(requires, "a:cspec[1]")[-1]', 'g')
+        call add(args, "concealed")
+        call add(args, "cspec")
+    else
+        let str=substitute(str, '@?@', "''", 'g')
+        let str=substitute(str, '@&\([a-z]\)\+@',
+                    \'\="a:spec[0].".add(requires, submatch(1))[-1]', 'g')
+    endif
+    let str=substitute(str, '@[:&]@', '\=add(requires, "'.
+                \((index(["begin", "end"], a:key)!=-1)?
+                \   ("a:style"):
+                \   ("a:spec[1]")).
+                \'")[-1]',  'g')
+
+    let str=substitute(str, '%%@', '%@', 'g')
+    let str=substitute(str,  '%@',  '@', 'g')
+    let r={}
+    execute      "function r.r(".join(args, ", ").")\n".
+                \'    '.str."\n".
+                \'endfunction'
+    return [r.r, requires]
 endfunction
 "{{{3 fmt.prepare
 function s:F.fmt.prepare(format, startline, endline, options)
@@ -715,7 +760,7 @@ function s:F.fmt.prepare(format, startline, endline, options)
     for key in  ["linestart", "line", "lineend", "begin", "end", "style",
                 \"linenr", "fold", "difffiller", "collapsedfiller",
                 \"foldstart", "foldend", "foldcolumn", "sbsdstart",
-                \"sbsdsep", "sbsdend", "tagstart", "tagend"]
+                \"sbsdsep", "sbsdend", "tagstart", "tagend", "concealed"]
         if has_key(a:format, key)
             let [cformat[key], cformat["r_".key]]=s:F.fmt.compile(a:format[key],
                         \                                         opts, key)
@@ -795,6 +840,13 @@ let s:g.fmt.formats.html={
             \                ".closed-fold:hover > .fulltext{display: block;}".
             \                ".closed-fold:hover > .toggle-filler ".
             \                                              "{display: none;}".
+            \                ".Present { display: none; }".
+            \                ".Line:hover .Shown { display: none; }".
+            \                ".Line:hover .Present { display: inline; }".
+            \                ".s%'hlID('Conceal')'% { font-weight: normal; ".
+            \                                        "font-style: normal; ".
+            \                                        "text-decoration: none; ".
+            \                                      "}".
             \                '%''((@_allfolds@)?'.
             \                    '(".Fold {display:none;}"):'.
             \                    '("")).'.
@@ -803,7 +855,8 @@ let s:g.fmt.formats.html={
             \                                      'padding: 0; '.
             \                                      'border: 0; } '.
             \                     '.SbSDSep { color: ".@_bgcolor@."; '.
-            \                                'background-color: ".@_fgcolor@."; } "):'.
+            \                                'background-color: ".@_fgcolor@.";'.
+            \                               '} "):'.
             \                    '(""))''%'.
             \                "%:</style>".
             \                '<title>%'''.substitute(s:g.fmt.escapehtml, '@@@',
@@ -820,7 +873,8 @@ let s:g.fmt.formats.html={
             \                  '}</script>'''.
             \                '):(""))''%'.
             \                '</head><body class="s%S">'.
-            \                '%''((@_sbsd@)?("<table cellpadding=\"0\" cellspacing=\"0\">"):(""))''%',
+            \                '%''((@_sbsd@)?("<table cellpadding=\"0\" '.
+            \                       'cellspacing=\"0\">"):(""))''%',
             \"end":          '%''((@_sbsd@)?("</table>"):(""))''%'.
             \                '</body></html>',
             \"linestart":    '<div class="s%S %''s:g.fmt.stylelist[@@@]''%"'.
@@ -835,7 +889,15 @@ let s:g.fmt.formats.html={
             \                       '%''((@_foldcolumn@)?'.
             \                               '(@_leadingspace@):'.
             \                               '(""))''%%#% </span>',
-            \"line":         '<span class="s%S">%'''.s:g.fmt.escapehtml.'''%</span>',
+            \"line":         '<span class="s%S">%'''.s:g.fmt.escapehtml.
+            \                                           '''%</span>',
+            \"concealed":    '<span class="Concealed">'.
+            \                   '<span class="s%S Shown">%'''.s:g.fmt.escapehtml.
+            \                                                   '''%</span>'.
+            \                   '<span class="s%=@&styleid@=% Present">%'''.
+            \                       substitute(s:g.fmt.escapehtml, '@@@', '@?@',
+            \                                  '').'''%</span>'.
+            \                '</span>',
             \"lineend":      "</div>",
             \"tagstart":     "<a href=\"%'(".
             \                   "(type(".s:g.fmt.gettag.")==".type('').")?(''):".
@@ -1133,7 +1195,7 @@ let s:g.chk.format=[
             \                            "leadingspace", "fold", "linenr",
             \                            "foldstart", "foldend", "sbsdstart",
             \                            "sbsdsep", "sbsdend", "tagstart",
-            \                            "tagend"]],
+            \                            "tagend", "concealed"]],
             \                    ["type", type("")]],
             \                   [["equal", "strlen"], ["type",  2]],
             \                   [["equal", "columns"], ["num", -1]],
@@ -1236,6 +1298,19 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     call add(formatfunction, "let r=[]")
     " Номер преобразовываемой линии
     call add(formatfunction, "let curline=".startline)
+    "{{{5 «Скрытые» символы
+    if has("conceal") && &conceallevel
+        let formatconcealed=((a:options.formatconcealed==-1)?
+                    \           (s:F.main.option("FormatConcealed")):
+                    \           (a:options.formatconcealed))
+    else
+        let formatconcealed=0
+    endif
+    if formatconcealed==2 && !has_key(cformat, "concealed")
+        let formatconcealed=1
+    endif
+    let opts.formatconcealed=formatconcealed
+    call add(formatfunction, 'let opts.formatconcealed='.formatconcealed)
     "{{{5 Курсор
     let ignorecursor=s:F.main.option("IgnoreCursor")
     "{{{5 Форматы
@@ -1256,8 +1331,8 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     \])
     let speciallines={}
     let specialcolumns={}
-    let docline=0
     "{{{6 Курсор
+    let docline=0
     if !ignorecursor
         let cline=line('.')
         let ccolumn=virtcol('.')
@@ -1330,7 +1405,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     \])
     if has_key(cformat, "style")
         call add(specfunction,
-        \'let r[1]=a:cformat.style(id, r, 0, 0, "", a:cformat.opts)')
+        \'let r[1]=a:cformat.style(id, r, "", a:cformat.opts)')
         if index(cformat.r_begin+cformat.r_end, "a:style")!=-1
             call add(specfunction, 'let a:cformat.stylestr.=r[1]')
         endif
@@ -1461,14 +1536,14 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             if r==[]
                 let r=r2
                 if has_key(cformat, "sbsdstart")
-                    call map(r, 'cformat.sbsdstart("", normalspec, v:key, 0, '.
-                                \                 '"", opts).v:val')
+                    call map(r, 'cformat.sbsdstart(normalspec, v:key, "", '.
+                                \                 'opts).v:val')
                 endif
             else
                 let r2=r2[(dstartinfiller):(len(r)-1+dstartinfiller)]
                 if has_key(cformat, "sbsdsep")
                     call map(r, 'v:val.'.
-                                \'cformat.sbsdsep("", normalspec, v:key, i-1, '.
+                                \'cformat.sbsdsep(normalspec, v:key, i-1, '.
                                 \                'v:val, opts).r2[v:key]')
                 endif
             endif
@@ -1480,16 +1555,16 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
         let opts.sbsd=sbsd
         if has_key(cformat, "sbsdend")
             call map(r, 'v:val.'.
-                        \'cformat.sbsdend("", normalspec, v:key, 0, v:val, '.
-                        \                'opts)')
+                        \'cformat.sbsdend(normalspec, v:key, '.
+                        \                 len(dwinnrs).', v:val, opts)')
         endif
         "{{{6 Начало и конец представления
         if has_key(cformat, "begin")
-            call insert(r, cformat.begin("", normalspec, 0, 0, "", opts,
+            call insert(r, cformat.begin(normalspec, "", opts,
                         \                cformat.stylestr))
         endif
         if has_key(cformat, "end")
-            call add(r, cformat.end("", normalspec, endline, 0, "", opts,
+            call add(r, cformat.end(normalspec, endline, "", opts,
                         \           cformat.stylestr))
         endif
         "{{{6 nolf/haslf
@@ -1630,14 +1705,14 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \"        let closedfolds[fcurline]=".
             \               ((has_key(cformat, "linestart"))?
             \                    ("cformat.linestart(1, ".
-            \                                 "foldspec, fcurline, 0, '', ".
+            \                                 "foldspec, fcurline, '', ".
             \                                 "opts)"):
             \                    ('""'))])
             if donr
                 call add(formatfunction,
                 \'    let closedfolds[fcurline].=cformat.linenr(fcurline, '.
                 \                                     'foldspec, '.
-                \                                     'fcurline, 0, '.
+                \                                     'fcurline, '.
                 \                                     'closedfolds[fcurline], '.
                 \                                     'opts)')
             endif
@@ -1645,7 +1720,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                 call add(formatfunction,
                 \"        let closedfolds[fcurline].=".
                 \               "cformat.fold(foldtextresult(fcurline), ".
-                \                            "foldspec, fcurline, 0, ".
+                \                            "foldspec, fcurline, ".
                 \                            "closedfolds[fcurline], ".
                 \                            "opts)".
                 \               ((has_key(cformat, "lineend"))?
@@ -1837,7 +1912,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                                 \                         'opts)',
                                 \'    let closedfolds[fcurline].='.
                                 \     'cformat.fold(foldtextresult(fcurline), '.
-                                \                  'foldspec, fcurline, 0, '.
+                                \                  'foldspec, fcurline, '.
                                 \                  'closedfolds[fcurline], '.
                                 \                  'opts)'.
                                 \((has_key(cformat, "lineend"))?
@@ -1860,7 +1935,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                             \                      'foldcolumns[&foldlevel][0]',
                             \'    let closedfolds[fcurline].='.
                             \         'cformat.fold(foldtextresult(fcurline), '.
-                            \                      'foldspec, fcurline, 0, '.
+                            \                      'foldspec, fcurline, '.
                             \                      'closedfolds[fcurline], '.
                             \                      'opts)'.
                             \         ((has_key(cformat, "lineend"))?
@@ -1975,7 +2050,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \                               ((collapsafter)?
             \                                   ('+(filler>='.collapsafter.')'):
             \                                   ('')).
-            \                               ', fillspec, curline, 0, "", '.
+            \                               ', fillspec, curline, "", '.
             \                               'opts)'):
             \               ('""')),])
                 "{{{6 foldcolumn
@@ -1993,7 +2068,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                 if donr
                     call add(formatfunction,
                     \'let curstrstart.=cformat.linenr("", nrspec, '.
-                    \                                'curline, 0, "", '.
+                    \                                'curline, "", '.
                     \                                'opts)')
                 endif
                 "{{{6 Заполнитель
@@ -2025,7 +2100,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                         \'    let curstr.=cformat.collapsedfiller('.
                         \                               'filler, '.
                         \                               'fillspec, curline,'.
-                        \                               ' 0, curstr, '.
+                        \                               'curstr, '.
                         \                               'opts)',])
                         if has_key(cformat, "lineend")
                             call add(formatfunction,
@@ -2068,16 +2143,16 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \'if foldclosed(curline)>-1',
             \'let curstr='.
             \           ((has_key(cformat, "linestart"))?
-            \               ('cformat.linestart(1, foldspec, curline, 0, "", '.
+            \               ('cformat.linestart(1, foldspec, curline, "", '.
             \                                  'opts).'):
             \               ('')).
             \           ((donr)?
             \              ('cformat.linenr(curline, foldspec, '.
-            \                              'curline, 0, '', opts).'):
+            \                              'curline, '', opts).'):
             \              ('')),
             \'let curstr.=cformat.fold(foldtextresult(curline), '.
             \                         'foldspec, '.
-            \                         'curline, 0, curstr, opts)'.
+            \                         'curline, curstr, opts)'.
             \           ((has_key(cformat, "lineend"))?
             \               ('.cformat.lineend(1, foldspec, curline, 0, "", '.
             \                                 'opts)'):
@@ -2186,7 +2261,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             call add(formatfunction,
             \'let curstr.=cformat.linestart("", '.
             \   ((&diff)?('((diffattr)?(dspec):('.nstring.'))'):(nstring)).', '.
-            \   'curline, 0, curstr, opts)')
+            \   'curline, curstr, opts)')
         endif
         "{{{7 Foldcolumn
         if foldcolumn
@@ -2214,7 +2289,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \                                   '(nrclspec):'.
             \                                   '(nrspec))'):
             \                               ('nrspec')).', '.
-            \                           'curline, 0, curstr, opts)')
+            \                           'curline, curstr, opts)')
         endif
         "{{{6 Обработка остальной строки
         call extend(formatfunction, [
@@ -2237,6 +2312,29 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                             \'endif']
                 call add(formatfunction, 'let tag=""')
             endif
+            "{{{8 Скрытые символы
+            call add(formatfunction,
+            \'let id=synID(curline, curcol, 1)')
+            if formatconcealed
+                call extend(formatfunction, [
+                \'let concealinfo=synconcealed(curline, curcol)',
+                \'let concealed=concealinfo[0]',
+                \'if concealed',
+                \'    let curcol+=1',
+                \'    while concealinfo==#synconcealed(curline, curcol)']+
+                \taglines+[
+                \'        let curcol+=1',
+                \'    endwhile',])
+                if &conceallevel==1
+                    call extend(formatfunction, [
+                    \'if empty(concealinfo[1])',
+                    \'    let concealinfo[1]=" "',
+                    \'endif',])
+                elseif &conceallevel==3
+                    call add(formatfunction, 'let concealinfo[1]=""')
+                endif
+                call add(formatfunction, 'else')
+            endif
             "{{{8 Строка отличается
             if &diff
                 " Для отличающихся строк подсветка линии складывается из цвета 
@@ -2247,7 +2345,6 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                 call extend(formatfunction, [
                 \'if diffattr',
                 \'    let diffid=diff_hlID(curline, curcol)',
-                \'    let id=synID(curline, curcol, 1)',
                 \'    let curcol+=1',
                 \'    while id==synID(curline, curcol, 1) && '.
                 \          'diffid==diff_hlID(curline, curcol) && '.
@@ -2261,7 +2358,6 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             endif
             "{{{8 Строка не отличается или не включен режим различий
             call extend(formatfunction, [
-            \'let id=synID(curline, curcol, 1)',
             \'let curcol+=1',
             \'while id==synID(curline, curcol, 1) && '.
             \       ((hasspcol)?
@@ -2273,11 +2369,35 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             if &diff
                 call add(formatfunction, "endif")
             endif
+            if formatconcealed
+                call add(formatfunction, "endif")
+            endif
             "{{{7 Форматирование части строки с идентичной подсветкой
             " cstr — текст найденной части
+            if formatconcealed==1
+                call extend(formatfunction, [
+                \'if concealed',
+                \'    let cstr=concealinfo[1]',
+                \'else',
+                \])
+            endif
             call add(formatfunction,
             \'let cstr=strpart(linestr, startcol-1, curcol-startcol)')
+            if formatconcealed==1
+                call add(formatfunction, 'endif')
+            endif
             "{{{8 Получение спецификации подсветки найденной части
+            if formatconcealed
+                call add(formatfunction, 'if concealed')
+                if formatconcealed==2
+                    call add(formatfunction,
+                    \'let hlname=synIDattr(synIDtrans(id), "name", "'.
+                    \                       s:g.fmt.whatterm.'")')
+                else
+                    call add(formatfunction, 'let hlname="Conceal"')
+                endif
+                call add(formatfunction, 'else')
+            endif
             if has_key(listchars, "trail")
                 call extend(formatfunction, [
                 \'if trail==-1',
@@ -2289,6 +2409,9 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \'    let hlname=synIDattr(synIDtrans(id), "name", "'.
             \                          s:g.fmt.whatterm.'")')
             if has_key(listchars, "trail")
+                call add(formatfunction, "endif")
+            endif
+            if formatconcealed
                 call add(formatfunction, "endif")
             endif
             if &diff
@@ -2314,9 +2437,19 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             if &diff
                 call add(formatfunction, "endif")
             endif
+            if formatconcealed==2
+                call extend(formatfunction, [
+                \'if concealed',
+                \'    let cspec=s:F.fmt.compiledspec(cformat, "Conceal")',
+                \'endif',
+                \])
+            endif
             "{{{8 Обработка табуляции и непечатных символов
             " rstartcol — длина обработанной части строки с учётом
             "             возможного наличия многобайтных символов
+            if formatconcealed
+                call add(formatfunction, "if !concealed")
+            endif
             call extend(formatfunction, [
             \'let idx=match(cstr, '.npregex.')',
             \'if idx!=-1',
@@ -2404,6 +2537,20 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \'        let idx=match(cstr, '.npregex.')',
             \'    endwhile',
             \'endif'])
+            "{{{9 Скрытые символы
+            if formatconcealed
+                call add(formatfunction, "endif")
+                if formatconcealed==2
+                    call extend(formatfunction, [
+                    \'if concealed',
+                    \'    let curstr.=cformat.concealed(concealinfo[1], '.
+                    \                                  'cspec, curline, '.
+                    \                                  'curcol, curstr, opts, '.
+                    \                                  'cstr, spec)',
+                    \'else',
+                    \])
+                endif
+            endif
             "{{{8 Сброс trail
             if has_key(listchars, 'trail')
                 call extend(formatfunction, [
@@ -2418,6 +2565,9 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \'    let curstr.=cformat.line(cstr, spec, curline, curcol, '.
             \                             'curstr, opts)',
             \'endif',])
+            if formatconcealed==2
+                call add(formatfunction, 'endif')
+            endif
             "{{{7 Тёги
             if tagregex!=#""
                 if has_key(cformat, 'tagend')
@@ -2485,12 +2635,12 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     if !sbsd
         if has_key(cformat, "begin")
             call add(formatfunction,
-            \'call insert(r, cformat.begin("", normalspec, 0, 0, "", opts, '.
+            \'call insert(r, cformat.begin(normalspec, "", opts, '.
             \            'cformat.stylestr))')
         endif
         if has_key(cformat, "end")
             call add(formatfunction,
-            \'call add(r, cformat.end("", normalspec, '.endline.', 0, "", opts, '.
+            \'call add(r, cformat.end(normalspec, '.endline.', "", opts, '.
             \          'cformat.stylestr))')
         endif
     endif
@@ -2579,13 +2729,14 @@ let s:g.chk.cmd={
             \                     {"trans": ["call", ["DefaultFormat"]]},
             \                     s:F.main.option]],
             \       "prefoptional": {
-            \           "columns":       [["nums", [-1]],          {},  0],
-            \           "foldcolumn":    [["nums", [-1]],          {}, -2],
-            \           "nonr":          [["in", ['0', '1']],      {}, -1],
-            \           "ignorefolds":   [["in", ['0', '1']],      {}, -1],
-            \           "ignorelist":    [["in", ['0', '1']],      {}, -1],
-            \           "ignoretags":    [["in", ['0', '1', '2']], {}, -1],
-            \           "progress":      [["in", ['0', '1', '2']], {}, -1],
+            \           "columns":         [["nums", [-1]],          {},  0],
+            \           "foldcolumn":      [["nums", [-1]],          {}, -2],
+            \           "nonr":            [["in", ['0', '1']],      {}, -1],
+            \           "ignorefolds":     [["in", ['0', '1']],      {}, -1],
+            \           "ignorelist":      [["in", ['0', '1']],      {}, -1],
+            \           "ignoretags":      [["in", ['0', '1', '2']], {}, -1],
+            \           "progress":        [["in", ['0', '1', '2']], {}, -1],
+            \           "formatconcealed": [["in", ['0', '1', '2']], {}, -1],
             \       },
             \   },
             \   "format": {
@@ -2594,15 +2745,16 @@ let s:g.chk.cmd={
             \                     {"trans": ["call", ["DefaultFormat"]]},
             \                     s:F.main.option]],
             \       "prefoptional": {
-            \           "columns":       [["nums", [-1]],          {},  0],
-            \           "collapsfiller": [["nums", [0]],           {}, -1],
-            \           "foldcolumn":    [["nums", [-1]],          {}, -2],
-            \           "nonr":          [["in", ['0', '1']],      {}, -1],
-            \           "allfolds":      [["in", ['0', '1']],      {}, -1],
-            \           "ignorefolds":   [["in", ['0', '1']],      {}, -1],
-            \           "ignorelist":    [["in", ['0', '1']],      {}, -1],
-            \           "ignoretags":    [["in", ['0', '1', '2']], {}, -1],
-            \           "progress":      [["in", ['0', '1', '2']], {}, -1],
+            \           "columns":         [["nums", [-1]],          {},  0],
+            \           "collapsfiller":   [["nums", [0]],           {}, -1],
+            \           "foldcolumn":      [["nums", [-1]],          {}, -2],
+            \           "nonr":            [["in", ['0', '1']],      {}, -1],
+            \           "allfolds":        [["in", ['0', '1']],      {}, -1],
+            \           "ignorefolds":     [["in", ['0', '1']],      {}, -1],
+            \           "ignorelist":      [["in", ['0', '1']],      {}, -1],
+            \           "ignoretags":      [["in", ['0', '1', '2']], {}, -1],
+            \           "progress":        [["in", ['0', '1', '2']], {}, -1],
+            \           "formatconcealed": [["in", ['0', '1', '2']], {}, -1],
             \       },
             \   },
             \   "delete": {
@@ -2652,15 +2804,16 @@ let s:g.comp.a.actions.format={
             \"model": "pref",
             \"arguments": [["keyof", s:g.fmt.formats]],
             \"prefix": {
-            \   "columns":       ["func", s:F.comp.getcolumns],
-            \   "collapsfiller": ["list", []],
-            \   "foldcolumn":    ["list", []],
-            \   "nonr":          ["list", ['0', '1']],
-            \   "allfolds":      ["list", ['0', '1']],
-            \   "ignorefolds":   ["list", ['0', '1']],
-            \   "ignorelist":    ["list", ['0', '1']],
-            \   "ignoretags":    ["list", ['0', '1', '2']],
-            \   "progress":      ["list", ['0', '1', '2']],
+            \   "columns":         ["func", s:F.comp.getcolumns],
+            \   "collapsfiller":   ["list", []],
+            \   "foldcolumn":      ["list", []],
+            \   "nonr":            ["list", ['0', '1']],
+            \   "allfolds":        ["list", ['0', '1']],
+            \   "ignorefolds":     ["list", ['0', '1']],
+            \   "ignorelist":      ["list", ['0', '1']],
+            \   "ignoretags":      ["list", ['0', '1', '2']],
+            \   "progress":        ["list", ['0', '1', '2']],
+            \   "formatconcealed": ["list", ['0', '1', '2']],
             \}
         \}
 if has("diff")
@@ -2668,13 +2821,14 @@ if has("diff")
                 \"model": "pref",
                 \"arguments": [["keyof", s:g.fmt.formats]],
                 \"prefix": {
-                \   "columns":       ["func", s:F.comp.getcolumns],
-                \   "foldcolumn":    ["list", []],
-                \   "nonr":          ["list", ['0', '1']],
-                \   "ignorefolds":   ["list", ['0', '1']],
-                \   "ignorelist":    ["list", ['0', '1']],
-                \   "ignoretags":    ["list", ['0', '1', '2']],
-                \   "progress":      ["list", ['0', '1', '2']],
+                \   "columns":         ["func", s:F.comp.getcolumns],
+                \   "foldcolumn":      ["list", []],
+                \   "nonr":            ["list", ['0', '1']],
+                \   "ignorefolds":     ["list", ['0', '1']],
+                \   "ignorelist":      ["list", ['0', '1']],
+                \   "ignoretags":      ["list", ['0', '1', '2']],
+                \   "progress":        ["list", ['0', '1', '2']],
+                \   "formatconcealed": ["list", ['0', '1', '2']],
                 \}
             \}
 else

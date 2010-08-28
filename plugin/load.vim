@@ -62,6 +62,9 @@ let s:g.load.functions=[["Funcdict", "comm.rdict", {}]]
 "{{{2 Выводимые сообщения
 let s:g.p={
             \"emsg": {
+            \    "1dct": "First argument to this function must be a dictionary",
+            \    "2str": "Second argument to this function must be ".
+            \            'a non-empty string',
             \    "uact": "Unknown action",
             \    "bool": "Value must equal either to 0 or to 1",
             \     "str": "Value must be of a type “string”",
@@ -1092,8 +1095,8 @@ function s:F.comm.load(plugname)
     if plugdict.status==#"loaded"
         return 1
     endif
-    let plugdict.status="loaded"
     execute plugdict.srccmd
+    let plugdict.status="loaded"
     call s:F.comm.cf(plugdict)
     if plugdict.requnsatisfied!={}
         return s:F.main.eerror(selfname, "req", ["nreq"],
@@ -1101,7 +1104,10 @@ function s:F.comm.load(plugname)
     endif
     "{{{4 Ленивая загрузка
     if has_key(s:g.reg.lazyload, a:plugname)
-        while len(s:g.reg.lazyload[a:plugname])
+        while !empty(s:g.reg.lazyload[a:plugname])
+            unlockvar! s:g.reg.lazyload[a:plugname][-1]
+            unlet s:g.reg.lazyload[a:plugname][-1]._plugname
+            unlet s:g.reg.lazyload[a:plugname][-1]._position
             call extend(s:g.reg.lazyload[a:plugname][-1],
                         \s:F.comm.cdict(plugdict))
             unlet s:g.reg.lazyload[a:plugname][-1]
@@ -1146,7 +1152,7 @@ function s:F.comm.cf(plugdict)
     endif
     call s:F.comm.mkfuncs(a:plugdict)
 endfunction
-"{{{3 comm.loadreq:     Загрузить требуемое дополнение
+"{{{3 comm.loadreq:      Загрузить требуемое дополнение
 function s:F.comm.loadreq(plugdict, rplugname, rplugversion)
     let selfname='comm.loadreq'
     let rplugdict={}
@@ -1215,11 +1221,39 @@ function s:F.comm.lazyload(plugname)
         if !has_key(s:g.reg.lazyload, a:plugname)
             let s:g.reg.lazyload[a:plugname]=[]
         endif
-        let result={}
+        let result={"_plugname": a:plugname,
+                    \"_position": len(s:g.reg.lazyload[a:plugname])}
+        lockvar! result
         call add(s:g.reg.lazyload[a:plugname], result)
         return result
     else
         return s:F.comm.cdict(s:g.reg.registered[a:plugname])
+    endif
+endfunction
+"{{{3 comm.run:          Запустить функцию из «лениво» созданного словаря
+function s:F.comm.run(lazydict, funcname, ...)
+    let selfname="comm.run"
+    if type(a:lazydict)!=type({})
+        return s:F.main.eerror(selfname, "syntax", ["1dict"])
+    elseif type(a:funcname)!=type("")
+        return s:F.main.eerror(selfname, "syntax", ["2str"])
+    endif
+    if has_key(a:lazydict, "_plugname") &&
+                \type(a:lazydict._plugname)==type("") &&
+                \has_key(s:g.reg.lazyload, a:lazydict._plugname) &&
+                \has_key(a:lazydict, "_position") &&
+                \type(a:lazydict._position)==type(0) &&
+                \s:g.reg.lazyload[a:lazydict._plugname][a:lazydict._position] is
+                \                                                     a:lazydict
+        if !s:F.comm.load(a:lazydict._plugname)
+            return s:F.main.eerror(selfname, "nfnd", 1, ["nplug"],
+                        \          a:lazydict._plugname)
+        endif
+    endif
+    if has_key(a:lazydict, a:funcname)
+        return call(a:lazydict[a:funcname], a:000, a:lazydict)
+    else
+        return s:F.main.eerror(selfname, "nfnd", 1, ["nfunc"], a:funcname)
     endif
 endfunction
 "{{{3 comm.rdict:        Вернуть словарь с функциями данного плагина
@@ -1237,7 +1271,8 @@ let s:g.comm.f=[
             \                   {"model": "simple",
             \                    "required": [["keyof", s:g.reg.registered]]}],
             \["getfunctions",     "comm.getfunctions", s:g.c.tstr],
-            \["lazygetfunctions", "comm.lazyload", s:g.c.tstr],
+            \["lazygetfunctions", "comm.lazyload",     s:g.c.tstr],
+            \["run",              "comm.run",          {}],
         \]
 lockvar! s:g.comm
 unlockvar! s:g.reg.registered
@@ -1505,23 +1540,12 @@ function s:F.comp.nrof(arglead)
 endfunction
 "{{{3 comp._complete
 function s:F.comp._complete(...)
-    if has_key(s:F.comp, "__complete")
-        return call(s:F.comp.__complete, a:000, {})
-    elseif has_key(s:F.plug.comp, "ccomp")
-        let s:F.comp.__complete=s:F.plug.comp.ccomp(s:g.comp._cname, s:g.comp.a)
-        lockvar! s:F.comp
-        return call(s:F.comp.__complete, a:000, {})
-    else
-        runtime plugin/comp.vim
-        call s:F.comm.load("comp")
-        if has_key(s:F.plug.comp, "ccomp")
-            let s:F.comp.__complete=s:F.plug.comp.ccomp(s:g.comp._cname,
-                        \s:g.comp.a)
-            lockvar! s:F.comp
-            return call(s:F.comp.__complete, a:000, {})
-        endif
+    if !has_key(s:F.comp, "__complete")
+        let s:F.comp.__complete=
+                    \s:F.comm.run(s:F.plug.comp, "ccomp",
+                    \             s:g.comp._cname, s:g.comp.a)
     endif
-    return []
+    return call(s:F.comp.__complete, a:000, {})
 endfunction
 "{{{3 s:g.comp
 let s:g.comp={}
