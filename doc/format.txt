@@ -584,12 +584,19 @@ inside the |format-spec-expression|.
                                            *format-spec-%'* *format-spec-%>*
                                                     *format-spec-expression*
 
-Inside string descriptions can be used complex expressions: "%=expression=%", 
-"%'expression'%" and "%>expression". In the first form all '%' and '\' 
-characters need to be escaped, in the second form you must not allow the 
-string "'%" to appear inside expression, and the third form just grabs the 
-whole string after "%>". Inside the expressions you can use the following 
-sequences (use them in place of ordinary variables):
+Inside string descriptions can be used complex expressions: 
+"%={expression}=%", "%'{expression}'%" and "%>{expression}". In the first form 
+all '%' and '\' characters need to be escaped, in the second form you must not 
+allow the string "'%" to appear inside expression, and the third form just 
+grabs the whole string after "%>".
+                                                            *format-spec-%!*
+There is also a special form of expression, valid only at the start of the 
+string: "%!{commands}!%", where {commands} is a newline-separated list of 
+commands. It can be used to declare variables. Note that you must omit having 
+"!%" inside {commands} string.
+
+Inside the expressions you can use the following sequences (use them in place 
+of ordinary variables):
 
 @@@                                                        *format-spec-@@@*
         String being formatted.

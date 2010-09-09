@@ -97,7 +97,7 @@ elseif !exists("s:g.pluginloaded")
                 \        "required": [["file", "r"]]}],
                 \["cinput", "cmd.geninput",
                 \       {   "model": "optional",
-                \        "required": [["and", [["regex", '^\w\+$'],
+                \        "required": [["and", [["regex", '^[a-z][a-z_]*$'],
                 \                              ["not",
                 \                               ["keyof", s:g.cmd.inputs]]]]],
                 \        "optional": [[["type", type("")], {}, ""],
@@ -453,6 +453,18 @@ function s:F.dct.recursivefilter(dict, expr)
     return r
 endfunction
 "{{{2 cmd
+"{{{3 cmd.savehist
+function s:F.cmd.savehist()
+    if &viminfo=~'!'
+        for [key, value] in items(s:g.cmd.inputs)
+            let g:STUF_HISTORY_{toupper(key)}=join(value.history, "\n")
+        endfor
+    endif
+endfunction
+augroup StufStoreHistory
+    autocmd!
+    autocmd VimLeavePre * call s:F.cmd.savehist()
+augroup END
 "{{{3 cmd.histget
 function s:F.cmd.histget(history)
     let r=[]
@@ -512,6 +524,9 @@ function s:F.cmd.geninput(name, prompt, Completion)
                 \"history": [],
                 \"inputhistory": [],
             \}
+    if exists('g:STUF_HISTORY_'.toupper(a:name))
+        call extend(entry.history, split(g:STUF_HISTORY_{toupper(a:name)},"\n"))
+    endif
     let s:g.cmd.inputs[a:name]=entry
     if type(a:Completion)==2
         let entry.compfunc='g:__complete_input_'.a:name

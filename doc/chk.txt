@@ -65,6 +65,14 @@ func        (a -> Bool) (any function that takes {argument} and
                                                             *chk-check-type*
 type        Int (any integer from 0 to 5)
             Checks, whether type of {argument} is {checkargument}.
+                                                          *chk-check-isfunc*
+isfunc      Bool (0 or 1)
+            Checks, whether {argument} is function reference and it is 
+            callable. It is similar to |chk-check-type| when {checkargument} 
+            is 2, but prevents from supplying function references that are not 
+            callable (for example, if this reference points to script-local 
+            function). If {checkargument} is 1, then check also accepts 
+            strings with function names.
                                                             *chk-check-bool*
 bool        _ (argument is ignored)
             Checks, whether {argument} is either 0 or 1.
@@ -134,6 +142,8 @@ file        String
             {checkargument}  Meaning ~
                    r         exists and is readable;
                    rw        exists and is writeable;
+                   d         exists and is a directory;
+                   x         exists and is executable;
                    dw        exists, is a directory and is writeable;
                    w         either exists and is writeable or does not
                              exist, but is in directory where we could 
