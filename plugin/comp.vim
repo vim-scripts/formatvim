@@ -54,7 +54,7 @@ elseif !exists("s:g.pluginloaded")
                 \"dictfunctions": s:g.chk.f,
                 \   "apiversion": "0.2",
                 \     "requires": [["load", '0.0'],
-                \                  ["chk",  '0.0'],
+                \                  ["chk",  '0.3'],
                 \                  ["stuf", '0.0']],
             \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
@@ -149,23 +149,23 @@ endfunction
 "{{{2 comp
 "{{{3 comp.getlist
 function s:F.comp.getlist(descr, arglead)
-    let [type, Arg]=a:descr
+    let [type, l:Arg]=a:descr
     if type==#"merge"
         let result=[]
-        for descr in Arg
+        for descr in l:Arg
             let result+=s:F.comp.getlist(descr, a:arglead)
         endfor
         return result
     elseif type==#"file"
         return s:F.comp.getfiles(a:arglead,
                     \["v:val=~?a:filter[1]",
-                    \ s:F.plug.stuf.regescape(Arg).'$'])
+                    \ s:F.plug.stuf.regescape(l:Arg).'$'])
     elseif type==#"file!"
         return s:F.comp.getfiles(a:arglead,
                     \['s:F.plug.chk.checkargument(a:filter[1], v:val)',
-                    \ Arg])
+                    \ l:Arg])
     elseif type==#"first"
-        for descr in Arg
+        for descr in l:Arg
             let result=s:F.comp.getlist(descr, a:arglead)
             if result!=[]
                 return result
@@ -180,9 +180,9 @@ endfunction
 "{{{4 s:g.comp.list
 let s:g.comp={}
 let s:g.comp.list={
-            \"func": "call(Arg, [a:arglead], {})",
-            \"list": "Arg",
-            \"keyof": "keys(Arg)",
+            \"func": "call(l:Arg, [a:arglead], {})",
+            \"list": "l:Arg",
+            \"keyof": "keys(l:Arg)",
         \}
 "{{{3 comp.getfiles
 function s:F.comp.getfiles(arglead, filter)
@@ -222,7 +222,8 @@ function s:F.comp.recdownglob(globstart, fragments, i, escapedfragments)
                     \   (join(a:escapedfragments[:(a:i-1)],
                     \         '/')):
                     \   (""))
-        if fstart!=#""
+        let fcur=a:escapedfragments[a:i]
+        if fstart!=#"" && fstart[-1:]!=#"/"
             let fstart.="/"
         endif
         for gexpr in s:g.comp.rg.glistexpr
@@ -372,9 +373,9 @@ let s:g.chk.list=["and", [["len", [2]],
             \             ["or", [["chklst", [["equal", "merge"],
             \                                 s:g.chk.alist]],
             \                     ["chklst", [["equal", "func"],
-            \                                 ["type", 2]]],
+            \                                 ["isfunc", 0]]],
             \                     ["chklst", [["equal", "func!"],
-            \                                 ["type", 2]]],
+            \                                 ["isfunc", 0]]],
             \                     ["chklst", [["equal", "list"],
             \                                 ["alllst", ["type", type("")]]]],
             \                     ["chklst", [["equal", "file"],

@@ -8,7 +8,8 @@ CONTENTS                                                     *load-contents*
         2.2. Functions                            |load-functions|
         2.3. `Autocommands'                       |load-autocommands|
     3. Plugin registration                        |load-reg|
-    4. Options                                    |load-options|
+    4. Sessions                                   |load-sessions|
+    5. Options                                    |load-options|
 
 =============================================================================
 1. Intro                                                        *load-intro*
@@ -88,18 +89,24 @@ options in g:loadOptions dictionary (Note that it is a very bad idea).
 :LoadCommand autocmd {event} {plugin} {command}        *load-action-autocmd*
             Create an `autocommand', see |load-autocommands|. For 
             a description of arguments see |load-func-autocmd|. Note that you 
-            need to escape all spaces in {command}.
+            need to escape a backslash in {command}.
 :LoadCommand autocmd! {event}[ {plugin}[ {command}]]  *load-action-autocmd!*
             Delete an `autocommand', see |load-autocommands|. For 
             a description of arguments see |load-func-delautocmd|. Note that 
-            you need to escape all spaces in {command}.
+            you need to escape a backslash in {command}.
+:LoadCommand mksession {filename}                    *load-action-mksession*
+            Creates a session: two files, {filename} and {root}x.vim, where 
+            {root} is {filename} with extension removed, see |:mkssession| for 
+            information about filenames and |load-sessions| about how to 
+            implement session support in your plugin. This command always 
+            overwrites existing files.
 
 -----------------------------------------------------------------------------
 2.2. Functions                                              *load-functions*
                                    *load-func-LoadFuncdict* *LoadFuncdict()*
 This plugin provides only one global function: LoadFuncdict (prefix Load may 
 be altered, but this is a very bad idea). You can also use load#LoadFuncdict() 
-which loads the plugin and then calls LoadFuncdictbb(). This function returns 
+which loads the plugin and then calls LoadFuncdict(). This function returns 
 a dictionary with the following keys (each value is a function reference):
 
                                                   *load-func-registerplugin*
@@ -107,24 +114,27 @@ registerplugin({regdict})
             Register plugin. For the meaning of the argument see |load-reg|. 
             Returns a dictionary with following keys:
             Key        Value ~
-            name       Name of the plugin. Now it is the filename without path 
-                       and extension
+            name       Name of the plugin, see |load-reg-name| for information 
+                       about how it is constructed.
+            type       Type of the plugin, see |load-reg-name| for information 
+                       about how it is obtained.
             functions  Some useful functions:
                        eerror({srcname}, {etype}, {arg1}, ...)
                             Display the error message with pattern
-                                {plugname}/{srcname}:{etypestr}({msgs})
-                            Here {plugname} stands for plugin name (see the 
-                            `name' key above), {srcname} is a string provided 
-                            as the first argument, {etypestr} is a string 
-                            obtained from |load-reg-g|.etype[{etype}] (or 
-                            empty string if it does not exist) and {argN} are 
-                            handled in following way:
+                                {plugtype}/{plugname}/{srcname}:{etypestr}({msgs})
+                            Here {plugtype} stands for plugin type, {plugname} 
+                            for plugin name (see the `name' and `type' keys 
+                            above), {srcname} is a string provided as the 
+                            first argument, {etypestr} is a string obtained 
+                            from |load-reg-g|.etype[{etype}] (or empty string 
+                            if it does not exist) and {argN} are handled in 
+                            following way:
                             1. If {arg1} (only {arg1}, not {argN}) is 
                                a non-zero number then throw error message 
                                after echoing it.
                             2. If {argN} is a list, its first value is 
-                               a string and exists 
-                               |load-reg-g|.emsg[{argN}[0]], then add 
+                               a string and |load-reg-g|.emsg[{argN}[0]] 
+                               exists, then add 
                                printf(|load-reg-g|.emsg[{argN}[0]], {argN}[1], 
                                {argN}[2], ...) to {msgs}.
                             3. In other cases add {argN} to {msgs}.
@@ -142,19 +152,20 @@ registerplugin({regdict})
                             check failed. Note that all option names starting 
                             with underscore are reserved.
 
-unregister({plugname})                                *load-func-unregister*
-        Unregister plugin. For {plugname} argument see |load-reg-name|. 
-        “Unregister” means:
+unregister({plugname}[, {plugtype}])                  *load-func-unregister*
+        Unregister plugin. For {plugname} and {plugtype} arguments see 
+        |load-reg-name|. “Unregister” means:
         1. delete all global functions;
         2. delete all commands;
         3. remove plugin dictionary.
 
-getfunctions({plugname})                            *load-func-getfunctions*
+getfunctions({plugname}[, {plugtype}])             *load-func-getfunctions*
         Get the dictionary functions listed in |load-reg-dictfunctions| 
         argument provided when plugin {plugname} was registered. For 
-        {plugname} argument see |load-reg-name|.
+        {plugname} and {plugtype} arguments see |load-reg-name|.
 
-lazygetfunctions({plugname})                   *load-func-lazygetfunctions*
+                                               *load-func-lazygetfunctions*
+lazygetfunctions({plugname}[, {plugtype}])
         Get the dictionary which will be populated with plugin's dictionary 
         functions when this plugin will be loaded. Can be used to resolve 
         cyclic dependencies. See |load-func-run| for information about how to 
@@ -169,10 +180,10 @@ run({dict}, {funcname}[, {arg1}[, ...]])                    *load-func-run*
 
 autocmd({event}, {plugin}, {command})                   *load-func-autocmd*
         Register an autocommand. For a description of {event} see 
-        |load-autocommands|. {plugin} is any string that can be a plugin name. 
-        {command} is either a string which will be executed (see |:execute|) 
-        or a function reference which will be called with two arguments: 
-        {event} and {plugin}.
+        |load-autocommands|. {plugin} is any string of a form 
+        {plugtype}/{plugname}. {command} is either a string which will be 
+        executed (see |:execute|) or a function reference which will be called 
+        with two arguments: {event} and {plugin}.
 
 delautocmd({event}[, {plugin}[, {command}]])         *load-func-delautocmd*
         Delete `autocommand(s)': if only {event} is given, then all 
@@ -181,6 +192,40 @@ delautocmd({event}[, {plugin}[, {command}]])         *load-func-delautocmd*
         event and given plugin (if any). If both {plugin} and {command} 
         arguments are given, then it filters out all autocommands that match 
         all of {event}, {plugin} and {command}.
+
+restoresession({filename})                        *load-func-restoresession*
+        Restore additional session information stored by 
+        |load-action-mksession|. Note that you should not call this function 
+        by yourself, it should be used from session file only.
+
+There are also some convenience functions in autoload/load.vim file:
+
+load#LoadFuncdict([{plugname}[, {plugtype}]])          *load#LoadFuncdict()*
+        Calls |LoadFuncdict()|, loads the plugin if it is not defined. If the 
+        optional {plugname} argument is provided, then it calls 
+        |load-func-getfunctions|.
+
+load#Setoption({dictname}, {key}, {value}[, {extend}])    *load#Setoption()*
+        Sets the value of {key} in dictionary with name {dictname} to {value} 
+        if it is possible. If {extend} is given and is 1, then try to extend 
+        existing option instead of overwriting it. Some notes:
+        1. If variable {dictname} does not exist it will be created.
+        2. If variable {dictname} does not contain a dictionary, it will be 
+           reset to an empty dictionary without notice.
+        3. If {key} is locked, it will be unlocked without notice and will not 
+           be locked again.
+        4. If {extend} is given, but {key} cannot be extended with {value}, 
+           then it will be overwritten without notice.
+        5. If setting an option failed, then function will return 0, otherwise 
+           it will return a dictionary. No error will be echoed anyway.
+
+load#CreateDictFunction({arguments}, {body})     *load#CreateDictFunction()*
+        Creates a dictionary function with given arguments and body. The 
+        advantage of creating a dictionary function using this function is 
+        that created function will be unable to get access to script 
+        variables. For example, to create an |eval()| function that does not 
+        have access to script variables you should do the following call: >
+            let s:F.safeeval=load#CreateDictFunction("s", "return eval(a:s)")
 
 -----------------------------------------------------------------------------
 2.3. `Autocommands'                                      *load-autocommands*
@@ -349,8 +394,19 @@ sid :: String                                            *load-reg-scriptid*
                                                              *load-reg-name*
 scriptfile :: String                                   *load-reg-scriptfile*
         The script filename. It is used to autoload plugin and also to get 
-        a plugin name using |fnamemodify|(a:scriptfile, ":t:r") (filename 
-        without extension and path). Must end with `.vim'.
+        a plugin name. Must end with `.vim'. Here is a way how plugin name is 
+        constructed:
+        0. Resolve given path to full path (using |%:p| path modifier).
+        1. Get last path component without extension and remove it (see |%:t| 
+           and |%:r| path modifiers description).
+        2. Remove tail path components until last path component will not 
+           match one of the following strings: `plugin', `autoload', 
+           `ftplugin', `ftdetect', `syntax', `indent', `colors', `keymap' or 
+           `compiler' (yes, they all are names of special folders in vim 
+           runtime directory). If it is found, this component is remembered as 
+           a script type. If it is not, then script type will be `/unknown'.
+        3. Join all removed path components (except those with type) with `/'. 
+           This will be a plugin name.
 oneload :: Bool                                           *load-reg-oneload*
         Defines whether plugin needs to be autoloaded (defines whether plugin 
         file needs to be sourced twice before plugin is actually ready to 
@@ -359,16 +415,34 @@ apiversion :: String                                   *load-reg-apiversion*
         String, defines the api version. Must consist of a number (unsigned 
         integer) followed by a dot and another unsigned integer. Everything 
         after this is ignored.
-requires :: [[{PlugName}, {APIVersion}]]                 *load-reg-requires*
-        List of lists of two items. Defines requirements for the plugin. 
-        Requirements are considered satisfied if {PlugName} was loaded, its 
-        major api version number is equal to the one specified in {APIVersion} 
-        and minor api version number greater then or equal to the one 
-        specified in {APIVersion}. Minor api version number may be omitted. 
-        {APIVersion} has syntax equal to |load-reg-apiversion|.
+                                                         *load-reg-requires*
+requires :: [({PlugName}, {APIVersion}[, {PlugType}])]
+        List of lists of two or three items. Defines requirements for the 
+        plugin. Requirements are considered satisfied if {PlugName} was 
+        loaded, its major api version number is equal to the one specified in 
+        {APIVersion} and minor api version number greater then or equal to the 
+        one specified in {APIVersion}. Minor api version number may be 
+        omitted. {APIVersion} has syntax equal to |load-reg-apiversion|. If 
+        {PlugType} is not given it is assumed to be equal to `plugin'.
+preload :: [({PlugName}[, {PlugType}])]                  *load-reg-preload*
+        List of lists of one or two items. Defines requirements for the plugin 
+        that do not use pluginloader. Requirements are considered satisfied if 
+        {PlugType}/{PlugName} was sourced. Note that you must not disable 
+        SourcePre events in order to get this work.
 
 =============================================================================
-4. Options                                                   *load-options*
+4. Sessions                                                 *load-sessions*
+
+All plugins that use vim plugin loader can easily implement a sessions 
+support: all you need is to define |load-reg-F|.main.session function which 
+will take either no or one argument. When session file is created using 
+|load-action-session|, this function will be called with no arguments and its 
+result will be stored in {root}x.vim file ({root} is a session file name with 
+extension removed). When session is restored, this function will be called 
+with the only argument: value stored on previous step.
+
+=============================================================================
+5. Options                                                   *load-options*
 
 Plugin registered by |load-func-registerplugin| automatically gets some 
 options:

@@ -20,6 +20,7 @@ let s:F={
             \"maps": {},
             \ "int": {},
             \  "au": {},
+            \ "ses": {},
         \}
 lockvar 1 s:F
 "{{{3 Глобальная переменная
@@ -28,11 +29,10 @@ let s:g.c={}
 let s:g.load={}
 let s:g.pluginloaded=1
 let s:g.load.scriptfile=expand("<sfile>")
-let s:g.srccmd="source ".(s:g.load.scriptfile)
 "{{{4 sid
 function s:SID()
     return matchstr(expand('<sfile>'), '\d\+\ze_SID$')
-endfun
+endfunction
 let s:g.scriptid=s:SID()
 delfunction s:SID
 "{{{4 Настройки по умолчанию
@@ -65,32 +65,44 @@ let s:g.p={
             \    "1dct": "First argument to this function must be a dictionary",
             \    "2str": "Second argument to this function must be ".
             \            'a non-empty string',
-            \    "uact": "Unknown action",
             \    "bool": "Value must equal either to 0 or to 1",
-            \     "str": "Value must be of a type “string”",
+            \   "procd": "While processing option %s for plugin %s ".
+            \            "from dictionary %s found an error",
+            \    "proc": "While processing option %s for plugin %s ".
+            \            "found an error",
+            \     "str": "Option must have type String",
             \   "fpref": "Function prefix must start either with g: or with a ".
             \            "capital latin letter and contain latin letters and ".
             \            "numbers",
             \   "cpref": "Command prefix must start with a capital latin ".
             \            "letter and contain latin letters and numbers",
-            \    "preg": "Plugin already registered",
-            \   "nplug": "No such plugin",
-            \    "nvar": "No such variable",
-            \   "nfunc": "No such function",
-            \    "iarg": "Invalid argument",
+            \    "preg": "Plugin “%s” was already registered",
+            \   "nplug": "Failed to find plugin %s",
+            \   "nfunc": "Failed to find function %s",
+            \    "ireg": "Invalid registration dictionary",
             \    "iopt": "Invalid option",
-            \    "uopt": "Unknown option",
-            \   "cexst": "Command “%s” already exists",
-            \   "fexst": "Function “%s” already exists",
-            \   "imaps": "Invalid “_maps” option in %s",
+            \    "uopt": "Failed to find option %s",
+            \   "cexst": "Failed to create command “%s” for plugin “%s”: ".
+            \            "command already exists",
+            \   "fexst": "Failed to create function “%s” for plugin “%s”: ".
+            \            "function already exists",
             \   "imdef": "Invalid “s:g.defaultOptions._maps”",
-            \   "nmdef": "No “_maps” option in s:g.defaultOptions",
-            \   "ukmap": "Unknown mapping name",
-            \   "ebmap": "Mapping (buffer) already defined",
-            \   "egmap": "Mapping (global) already defined",
-            \   "majap": "Major api version mismatch",
-            \   "minap": "Minor api version mismatch",
-            \    "nreq": "Failed to load dependencies",
+            \   "ukmap": "Failed to find options for mapping named “%s” ".
+            \            "defined in plugin “%s”",
+            \   "ebmap": "Buffer mapping “%s” already defined by plugin %s",
+            \   "egmap": "Global mapping “%s” already defined by plugin %s",
+            \   "majap": "Major api version mismatch (%s required by %s): ".
+            \            "%u≠%u",
+            \   "minap": "Minor api version mismatch (%s required by %s): ".
+            \            "%u<%u",
+            \    "nreq": "Failed to load dependencies for plugin %s",
+            \   "sesdw": "Unable to write to directory %s that contains ".
+            \            "session file",
+            \   "sesfx": "Unable to overwrite %s file",
+            \   "sesnf": "Failed to create session file",
+            \   "yamlf": "Failed to load yaml plugin",
+            \    "sesr": "While restoring a session, failed to load plugin %s",
+            \    "wext": "Wrong vim script extension: “%s” (should be “vim”)",
             \},
             \"etype": {
             \    "value": "InvalidValue",
@@ -101,7 +113,7 @@ let s:g.p={
             \    "ofail": "OperationFailed",
             \      "req": "RequirementsUnsatisfied",
             \},
-            \"th": ["SID", "Name", "File", "Status"],
+            \"th": ["Type", "Name", "File", "Status"],
             \"nfnd": "Not found",
         \}
 lockvar! s:g.p
@@ -153,8 +165,9 @@ function s:F.cons.eerror(plugin, from, type, ...)
         unlet e
     endfor
     let comm="(".join(outmsgs, ': ').")"
-    let msg=(a:plugin.name)."/".s:F.stuf.string(a:from).":".(etype).(comm)
-    echohl Error
+    let msg=(a:plugin.type.'/'.a:plugin.name)."/".
+                \s:F.stuf.string(a:from).":".(etype).(comm)
+    echohl ErrorMsg
     echo msg
     echohl None
     if dothrow
@@ -184,7 +197,9 @@ function s:F.cons.option(plugin, option)
         if has_key(a:plugin, "mappings")
             if !s:F.plug.chk.checkargument(s:g.c.intmaps, a:plugin.mappings)
                 return s:F.cons.eerror(a:plugin, selfname, "value", 1,
-                            \          ["imdef"])
+                            \          printf(s:g.p.emsg.proc, a:option,
+                            \                 a:plugin.name),
+                            \          s:g.p.emsg.imdef)
             endif
             let r[2]=a:plugin.mappings
         else
@@ -193,14 +208,18 @@ function s:F.cons.option(plugin, option)
         if exists("b:".oname) && has_key(b:{oname}, "_maps")
             if !s:F.plug.chk.checkargument(s:g.c.maps, b:{oname}._maps)
                 return s:F.cons.eerror(a:plugin, selfname, "value", 1,
-                            \          ["imaps", "b:".oname])
+                            \          printf(s:g.p.emsg.procd, a:option,
+                            \                 a:plugin.name, 'b:'.oname),
+                            \          s:g.p.emsg.iopt)
             endif
             let r[0]=b:{oname}._maps
         endif
         if exists("g:".oname) && has_key(g:{oname}, "_maps")
             if !s:F.plug.chk.checkargument(s:g.c.maps, g:{oname}._maps)
                 return s:F.cons.eerror(a:plugin, selfname, "value", 1,
-                            \          ["imaps", "g:".oname])
+                            \          printf(s:g.p.emsg.procd, a:option,
+                            \                 a:plugin.name, 'g:'.oname),
+                            \          s:g.p.emsg.iopt)
             endif
             let r[1]=g:{oname}._maps
         endif
@@ -211,8 +230,10 @@ function s:F.cons.option(plugin, option)
             if type(g:{oname}._leader)==type("")
                 return g:{oname}._leader
             else
-                return s:F.cons.eerror(a:plugin, selfname, "value", 1, ["iopt"],
-                            \          "_leader")
+                return s:F.cons.eerror(a:plugin, selfname, "value", 1,
+                            \          printf(s:g.p.emsg.procd, a:option,
+                            \                 a:plugin.name, 'g:'.oname),
+                            \          s:g.p.emsg.iopt)
             endif
         elseif has_key(a:plugin, "leader")
             return a:plugin.leader
@@ -227,8 +248,10 @@ function s:F.cons.option(plugin, option)
             let r=!!(defaults[a:option])
         endif
         if index([0, 1], r)==-1
-            return s:F.main.eerror(selfname, 'option', 1, ["bool"],
-                        \          '_disablemaps')
+            return s:F.main.eerror(selfname, 'option', 1,
+                        \          ["procd", a:option, a:plugin.name,
+                        \           'g:'.oname],
+                        \          ["bool"])
         endif
         return r
     "{{{4 Настройки _cprefix и _fprefix
@@ -238,12 +261,20 @@ function s:F.cons.option(plugin, option)
             let pref=g:{oname}[a:option]
         endif
         if type(pref)!=type("")
-            return s:F.main.eerror(selfname, 'option', 1, ["str"], a:option,
-                        \          s:F.stuf.string(pref))
+            return s:F.main.eerror(selfname, 'option', 1,
+                        \          ["procd", a:option, a:plugin.name,
+                        \           'g:'.oname],
+                        \          ["str"], s:F.stuf.string(pref))
         elseif a:option[1]==#"c" && pref!~#s:g.c.reg.cmd
-            return s:F.main.eerror(selfname, 'option', 1, ["fpref"], pref)
+            return s:F.main.eerror(selfname, 'option', 1,
+                        \          ["procd", a:option, a:plugin.name,
+                        \           'g:'.oname],
+                        \          ["fpref"], pref)
         elseif a:option[1]==#"f" && pref!~#s:g.c.reg.func
-            return s:F.main.eerror(selfname, 'option', 1, ["cpref"], pref)
+            return s:F.main.eerror(selfname, 'option', 1,
+                        \          ["procd", a:option, a:plugin.name,
+                        \           'g:'.oname],
+                        \          ["cpref"], pref)
         endif
         return pref
     endif
@@ -264,19 +295,22 @@ function s:F.cons.option(plugin, option)
         if has_key(defaults, a:option)
             return defaults[a:option]
         else
-            return s:F.cons.eerror(a:plugin, selfname, "value", 1, ["uopt"],
-                        \a:option)
+            return s:F.cons.eerror(a:plugin, selfname, "value", 1,
+                        \          printf(s:g.p.emsg.uopt, a:option))
         endif
     endif
     "{{{4 Проверить правильность
     let optstr=a:option."/".src
     if type(chk)!=type(0) && !s:F.plug.chk.checkargument(chk, retopt)
-        return s:F.cons.eerror(a:plugin, selfname, "value", 1, ["iopt"], optstr)
+        return s:F.cons.eerror(a:plugin, selfname, "value", 1,
+                    \          printf(s:g.p.emsg.procd, a:option, a:plugin.name,
+                    \                 src.':'.oname),
+                    \          s:g.p.emsg.iopt)
     endif
     "}}}4
     return retopt
 endfunction
-"{{{2 stuf: findnr, findpath, eeerror, printtable, fdictstr, string, ...
+"{{{2 stuf: findnr, findpath, printtable, fdictstr, string, ...
 "{{{3 s:Eval: доступ к внутренним переменным
 " Внутренние переменные, в том числе s:F, недоступны в привязках
 function s:Eval(var)
@@ -333,11 +367,13 @@ function s:F.stuf.findf(nr, pos, d, depth)
 endfunction
 "{{{3 stuf.findr: Найти функцию по номеру
 function s:F.stuf.findnr(nr)
-    for [key, value] in items(s:g.reg.registered)
-        let pos=s:F.stuf.findf(a:nr, "/".key, value.F, 0)
-        if type(pos)==type("")
-            return pos
-        endif
+    for plugtype in keys(s:g.reg.registered)
+        for [plugname, plugdict] in items(s:g.reg.registered[plugtype])
+            let pos=s:F.stuf.findf(a:nr, "/".plugdict.plid, plugdict.F, 0)
+            if type(pos)==type("")
+                return pos
+            endif
+        endfor
     endfor
     if has_key(s:g.reg.unnamedfunctions, a:nr)
         return s:g.reg.unnamedfunctions[a:nr]
@@ -351,11 +387,17 @@ function s:F.stuf.findpath(path)
     if s==[]
         return 0
     endif
-    let [plugname; path]=s
-    if !has_key(s:g.reg.registered, plugname)
-        return s:F.main.eerror(selfname, "nfnd", ["nplug"], plugname)
+    if has_key(s:g.reg.plugtypes, s[0])
+        let plugtype=remove(s, 0)
+    else
+        let plugtype='plugin'
     endif
-    let Fdict=s:g.reg.registered[plugname].F
+    let [plugname; path]=s
+    if !has_key(s:g.reg.registered[plugtype], plugname)
+        return s:F.main.eerror(selfname, "nfnd",
+                    \["nplug", plugtype.'/'.plugname])
+    endif
+    let Fdict=s:g.reg.registered[plugtype][plugname].F
     for component in path
         if type(Fdict)!=type({}) || !has_key(Fdict, component)
             return 0
@@ -434,11 +476,16 @@ function s:F.stuf.fdictstr(dict, indent)
     endfor
     return result
 endfunction
-"{{{2 main: eerror, destruct
+"{{{2 main: eerror, destruct, session
 "{{{3 main.destruct: Выгрузить дополнение
 function s:F.main.destruct()
-    for F in keys(s:F.int)
-        execute "delfunction ".F
+    for aug in ["LoadRegisterLoad", "LoadNewBuffer", "LoadDeleteBufferMappings"]
+        execute 'augroup '.aug
+            autocmd!
+        augroup END
+    endfor
+    for f in keys(s:F.int)
+        execute "delfunction ".f
     endfor
     if has_key(s:F.comp, "__complete")
         call s:F.plug.comp.delcomp(s:g.comp._cname)
@@ -447,16 +494,134 @@ function s:F.main.destruct()
     unlet s:g
     return 1
 endfunction
+"{{{3 main.session
+function s:F.main.session(...)
+    if empty(a:000)
+        let r={}
+        for [plugtype, plugins] in items(s:g.reg.registered)
+            for [plugname, plugdict] in items(s:g.reg.registered[plugtype])
+                let r[plugdict.plid]={
+                            \"status": plugdict.status,
+                            \  "type": plugdict.type,
+                        \}
+            endfor
+        endfor
+        return r
+    else
+        let rdict=get(a:000, 0, {})
+        if type(rdict)!=type({})
+            return
+        endif
+        for plugtype in keys(s:g.reg.registered)
+            for plugname in keys(s:g.reg.registered[plugtype])
+                if !has_key(rdict, plugtype.'/'.plugname)
+                    call s:F.comm.unload(plugname, plugtype)
+                endif
+            endfor
+        endfor
+        for [plugname, l:Plugopts] in items(rdict)
+            if type(l:Plugopts)!=type({}) || !has_key(l:Plugopts, "status") ||
+                        \!has_key(l:Plugopts, "type") ||
+                        \!has_key(s:g.reg.plugtypes, l:Plugopts.type)
+                unlet l:Plugopts
+                continue
+            endif
+            let plugdict=s:F.comm.getpldict(plugname, l:Plugopts.type)
+            let curstatus=plugdict.status
+            let status=l:Plugopts.status
+            if curstatus!=#"loaded" && status==#"loaded"
+                call s:F.comm.load(plugname, l:Plugopts.type)
+            elseif curstatus==#""
+                call s:F.main.eerror(selfname, "ofail",
+                            \["sesr", l:Plugopts.type.'/'.plugname])
+            endif
+            unlet l:Plugopts
+        endfor
+    endif
+endfunction
 "{{{2 reg: register, unreg
 "{{{3 s:g.reg
 let s:g.reg={}
 let s:g.reg.lazyload={}
-let s:g.reg.registered={}
-let s:g.reg.plugsids={}
 let s:g.reg.unnamedfunctions={}
 let s:g.reg.required={}
+let s:g.reg.preloaded={}
 let s:g.reg.mapdict=[]
+let s:g.reg.plugtypes={
+            \"colors": 0,
+            \"plugin": 0,
+            \"syntax": '&l:filetype',
+            \"indent": '&l:filetype',
+            \"keymap": '&l:keymap',
+            \"autoload": 0,
+            \"ftplugin": '&l:filetype',
+            \"compiler": '((exists("b:current_compiler"))?'.
+            \               '(b:current_compiler):'.
+            \               '(""))',
+            \"ftdetect": 0,
+            \"/unknown": 0,
+        \}
+let s:g.reg.registered=map(copy(s:g.reg.plugtypes), '{}')
+lockvar!  s:g.reg.plugtypes
+lockvar 1 s:g.reg.registered
 lockvar 1 s:g.reg
+"{{{3 reg.regsource: Добавить запись о том, что плагин загружен
+"{{{4 aug LoadRegisterLoad
+augroup LoadRegisterLoad
+    autocmd!
+    autocmd SourcePre * call s:F.reg.regsource(expand('<afile>:p'))
+augroup END
+"}}}4
+function s:F.reg.regsource(scriptname)
+    silent let [plugname, plugtype, plugaddinfo, plugactinfo]=
+                \s:F.reg.parsepf(a:scriptname)
+    let s:g.reg.preloaded[plugtype.'/'.plugname]=1
+    if has_key(s:g.reg.registered, plugtype) &&
+                \has_key(s:g.reg.registered[plugtype], plugname) &&
+                \s:g.reg.registered[plugtype][plugname].file==#a:scriptname &&
+                \s:g.reg.registered[plugtype][plugname].status==#"registered"
+        let s:g.reg.registered[plugtype][plugname].status="sourced"
+    endif
+endfunction
+"{{{3 reg.parsepf:   Получить информацию о типе и имени дополнения
+"                    из имени его файла
+function s:F.reg.parsepf(filename)
+    let selfname="reg.parsepf"
+    let filename  = fnamemodify(a:filename, ':p:h')
+    let plugname  = fnamemodify(a:filename, ':t:r')
+    let extension = fnamemodify(a:filename, ':t:e')
+    if extension!=#"vim"
+        call s:F.main.eerror(selfname, 'value', ['wext', extension],
+                    \        a:filename)
+    endif
+    let fragments = [plugname]
+    let oldfilename=""
+    let curfragment=""
+    let plugtype="/unknown"
+    let plugaddinfo=0
+    while 1
+        let curfragment = fnamemodify(filename, ':t')
+        let oldfilename = filename
+        let filename    = fnamemodify(filename, ':h')
+        if filename==#oldfilename
+            break
+        elseif has_key(s:g.reg.plugtypes, curfragment)
+            let plugtype=curfragment
+            let plugaddinfo=s:g.reg.plugtypes[curfragment]
+            break
+        else
+            call insert(fragments, curfragment)
+        endif
+    endwhile
+    if plugtype[0]!=#'/'
+        let plugname=join(fragments, "/")
+    endif
+    let plugactinfo=0
+    if type(plugaddinfo)!=type(0)
+        let plugactinfo=fragments[0]
+    endif
+    return [plugname, plugtype, plugaddinfo, plugactinfo]
+endfunction
 "{{{3 reg.register:  Зарегистрировать плагин
 "{{{4 s:g.reg.mapdict
 call extend(s:g.reg.mapdict, ["cprefix", "fprefix", "commands", "functions",
@@ -466,35 +631,39 @@ lockvar! s:g.reg.mapdict
 function s:F.reg.register(regdict)
     let selfname="reg.register"
     "{{{4 Проверка аргументов
-    let plugname=fnamemodify(a:regdict.scriptfile, ":t:r")
+    let [plugname, plugtype, plugaddinfo, plugactinfo]=
+                \s:F.reg.parsepf(a:regdict.scriptfile)
+    let plid=plugtype.'/'.plugname
+    let regdict=s:g.reg.registered[plugtype]
     "{{{5 Если проверяющее дополнение не загружено
-    if !has_key(s:g.reg.registered, "chk") && plugname!=#"load"
+    if !has_key(s:g.reg.registered.plugin, "chk") &&
+                \!(plugtype==#'plugin' && (plugname==#"load" ||
+                \                          plugname==#"chk"))
         runtime plugin/chk.vim
     endif
     "}}}5
-    if !(plugname==#"chk" || plugname==#"load")
+    if !(plugtype==#'plugin' && (plugname==#"chk" || plugname==#"load"))
         if !has_key(s:F.plug, "chk")
-            let s:F.plug.chk=s:F.comm.getfunctions("chk")
+            let s:F.plug.chk=s:F.comm.getfunctions("chk", "plugin")
         endif
         if !s:F.main.option("DisableLoadChecks") &&
                     \!s:F.plug.chk.checkargument(s:g.c.register, a:regdict)
-            return s:F.main.eerror(selfname, "value", 1, ["iarg"])
+            return s:F.main.eerror(selfname, "value", 1, ["ireg"])
         endif
     endif
-    if has_key(s:g.reg.registered, plugname)
-        return s:F.main.eerror(selfname, "perm", ["preg"], plugname)
+    if has_key(regdict, plugname)
+        return s:F.main.eerror(selfname, "perm", ["preg", plid])
     endif
     "{{{4 au RegisterPluginPre, LoadPluginPre
-    call s:F.au.doevent("RegisterPluginPre", plugname)
-    if has_key(a:regdict, "oneload") && a:regdict.oneload
-        call s:F.au.doevent("LoadPluginPre", plugname)
+    call s:F.au.doevent("RegisterPluginPre", plid)
+    let oneload=get(a:regdict, "oneload", 0)
+    if oneload
+        call s:F.au.doevent("LoadPluginPre", plid)
     endif
     "{{{4 Построение записи
     let entry={
-                \        "status": ((has_key(a:regdict, "oneload") &&
-                \                    a:regdict.oneload)?
-                \                           ("loaded"):
-                \                           ("registered")),
+                \        "status": ((oneload)?("loaded"):("registered")),
+                \       "oneload": oneload,
                 \             "F": a:regdict.funcdict,
                 \             "g": a:regdict.globdict,
                 \      "scriptid": a:regdict.sid,
@@ -504,19 +673,30 @@ function s:F.reg.register(regdict)
                 \  "optionprefix": a:regdict.oprefix,
                 \          "name": plugname,
                 \    "quotedname": s:F.stuf.squote(plugname),
+                \          "type": plugtype,
+                \          "plid": plid,
+                \       "addinfo": plugaddinfo,
+                \       "actinfo": plugactinfo,
                 \    "apiversion": map(split(matchstr(a:regdict.apiversion,
                 \                                     '^\d\+\.\d\+'), '\.'),
                 \                      'v:val+0'),
+                \       "preload": [],
                 \"globalmappings": {},
                 \"buffermappings": {},
                 \      "requires": {},
                 \"requnsatisfied": {},
                 \    "requiredby": {},
             \}
-    let entry.srccmd="source ".fnameescape(entry.file)
-    if has_key(s:g.reg.required, plugname)
-        let entry.requiredby=s:g.reg.required[plugname]
-        unlet s:g.reg.required[plugname]
+    if exists('*fnameescape')
+        let entry.srccmd="source ".fnameescape(entry.file)
+    else
+        let entry.srccmd="source ".escape(entry.file, " \t\n*$`?[{\\%#'\"|!<")
+    endif
+    let entry.loadcmd="call s:F.comm.load(".entry.quotedname.", ".
+                \                        "'".entry.type."')"
+    if has_key(s:g.reg.required, plid)
+        let entry.requiredby=s:g.reg.required[plid]
+        unlet s:g.reg.required[plid]
     endif
     for regdictkey in s:g.reg.mapdict
         if has_key(a:regdict, regdictkey)
@@ -524,7 +704,9 @@ function s:F.reg.register(regdict)
         endif
     endfor
     if has_key(a:regdict, "requires")
-        for [rplugname, rplugversion] in a:regdict.requires
+        for req in a:regdict.requires
+            let rplugname=get(req, 2, "plugin").'/'.req[0]
+            let rplugversion=req[1]
             let entry.requires[rplugname]=map(
                         \                 split(
                         \                  matchstr(rplugversion,
@@ -533,7 +715,12 @@ function s:F.reg.register(regdict)
             let entry.requnsatisfied[rplugname]=1
         endfor
     endif
-    let entry.intfuncprefix='s:g.reg.registered['.entry.quotedname.'].F'
+    if has_key(a:regdict, "preload")
+        call extend(entry.preload, map(copy(a:regdict.preload),
+                    \'get(v:val, 1, "plugin")."/".v:val[0]'))
+    endif
+    let entry.intprefix='s:g.reg.registered["'.entry.type.'"]'.
+                \                         '['.entry.quotedname.']'
     let locks={}
     call map(["F", "g"], 'extend(locks, {(v:val): islocked("entry.".v:val)})')
     lockvar 1 entry
@@ -543,18 +730,17 @@ function s:F.reg.register(regdict)
             unlockvar entry[v]
         endif
     endfor
-    let s:g.reg.registered[plugname]=entry
-    let s:g.reg.plugsids[plugname]=a:regdict.sid
+    let regdict[plugname]=entry
     "{{{4 Создание функций
     let F={}
     for fname in keys(s:F.cons)
         execute      "function F.".fname."(...)\n".
                     \"    return call(s:F.cons.".fname.", ".
-                    \"             [s:g.reg.registered[".entry.quotedname."]]+".
+                    \"             [".entry.intprefix."]+".
                     \"             a:000, {})\n".
                     \"endfunction"
         let fnr=matchstr(string(F[fname]), '\d\+')
-        let s:g.reg.unnamedfunctions[fnr]="cons:/".plugname."/".fname
+        let s:g.reg.unnamedfunctions[fnr]="cons:/".plid."/".fname
     endfor
     "{{{4 Создание привязок
     if has_key(entry, "mappings")
@@ -563,9 +749,10 @@ function s:F.reg.register(regdict)
     "}}}4
     call s:F.comm.cf(entry)
     "{{{4 au RegisterPluginPost
-    call s:F.au.doevent("RegisterPluginPost", plugname)
+    call s:F.au.doevent("RegisterPluginPost", plid)
     "}}}4
     return      {     "name": plugname,
+                \     "type": plugtype,
                 \"functions": F}
 endfunction
 "{{{4 Проверки аргументов
@@ -620,6 +807,7 @@ let s:g.c.intmaps=["dict", [[["regex", '^\(+\)\@!'],
             \                                      ["in", [" ", "n", "v", "x",
             \                                              "s", "o", "!", "i",
             \                                              "l", "c"]]]]]]]]]]
+let s:g.c.plugtype=["keyof", s:g.reg.plugtypes]
 let s:g.c.register=["and", [
             \["map", ["hkey", ["oprefix",
             \                  "funcdict",
@@ -654,24 +842,30 @@ let s:g.c.register=["and", [
             \   [["equal", "scriptfile"], ["and", [["file", "r"],
             \                                      ["regex", '\.vim$']]]],
             \   [["equal", "apiversion"], ["regex", '^\d\+\.\d\+']],
-            \   [["equal", "requires"],   ["alllst", ["chklst", [["any", ""],
-            \                                                    ["regex",
-            \                                                     '^\d\+']]]]],
+            \   [["equal", "requires"],   ["alllst", ["optlst",
+            \                                         [[["type", type("")],
+            \                                           ["regex",
+            \                                            '^\d\+']],
+            \                                          [s:g.c.plugtype]]]]
+            \   ],
+            \   [["equal", "preload"], ["alllst", ["optlst",
+            \                                      [["type", type("")]],
+            \                                      [s:g.c.plugtype]]]],
             \   [["equal", "leader"],     ["type", type("")]],
             \   [["any", ''], ["any", '']],
             \ ]
             \],
         \]]
 "{{{3 reg.unreg:     Удалить команды и функции
-function s:F.reg.unreg(plugname)
-    let plugdict=s:g.reg.registered[a:plugname]
-    for F in plugdict.extfunctions
-        execute "delfunction ".F
+function s:F.reg.unreg(plugname, plugtype)
+    let plugdict=s:F.comm.getpldict(a:plugname, a:plugtype)
+    for f in plugdict.extfunctions
+        execute "delfunction ".f
     endfor
-    for C in plugdict.extcommands
-        execute "delcommand ".C
+    for c in plugdict.extcommands
+        execute "delcommand ".c
     endfor
-    unlet s:g.reg.registered[a:plugname]
+    unlet s:g.reg.registered[a:plugtype][a:plugname]
     unlet plugdict
 endfunction
 "{{{2 maps: create, delmappings
@@ -705,7 +899,8 @@ function s:F.maps.map(plugdict, mapname, options, mapstring, buffer)
     endif
     "{{{4 mapoptions
     if !has_key(a:options, a:mapname)
-        return s:F.main.eerror(selfname, "option", ["ukmap"], a:mapname)
+        return s:F.main.eerror(selfname, "option", ["ukmap", a:mapname,
+                    \                               a:plugdict.name])
     endif
     let mapoptions=a:options[a:mapname]
     "{{{4 Тип привязки: определение команды
@@ -719,13 +914,28 @@ function s:F.maps.map(plugdict, mapname, options, mapstring, buffer)
         if           has_key(s:g.maps.created_buffer,curbuffer) &&
                     \has_key(s:g.maps.created_buffer[curbuffer],type) &&
                     \has_key(s:g.maps.created_buffer[curbuffer][type],
-                    \        a:mapstring)
-            return s:F.main.eerror(selfname, "perm", ["ebmap"], a:mapstring)
+                    \        a:mapstring) &&
+                    \
+                    \s:g.maps.created_buffer[curbuffer][type][a:mapstring][1].
+                    \'/'.
+                    \s:g.maps.created_buffer[curbuffer][type][a:mapstring][0]
+                    \!=#a:plugdict.plid
+            return s:F.main.eerror(selfname, "perm", ["ebmap", a:mapstring,
+                        \s:g.maps.created_buffer[curbuffer][type][a:mapstring]
+                        \[1].'/'.
+                        \s:g.maps.created_buffer[curbuffer][type][a:mapstring]
+                        \[0]])
         endif
     else
         if           has_key(s:g.maps.created_global,type) &&
-                    \has_key(s:g.maps.created_global[type], a:mapstring)
-            return s:F.main.eerror(selfname, "perm", ["egmap"], a:mapstring)
+                    \has_key(s:g.maps.created_global[type], a:mapstring) &&
+                    \
+                    \s:g.maps.created_global[type][a:mapstring][1].'/'.
+                    \s:g.maps.created_global[type][a:mapstring][0]
+                    \!=#a:plugdict.plid
+            return s:F.main.eerror(selfname, "perm", ["egmap", a:mapstring,
+                        \s:g.maps.created_global[type][a:mapstring][1].'/'.
+                        \s:g.maps.created_global[type][a:mapstring][0]])
         endif
     endif
     let cmd=s:g.maps.mapcommands[type]
@@ -769,7 +979,8 @@ function s:F.maps.map(plugdict, mapname, options, mapstring, buffer)
         if !has_key(created_plugin, type)
             let created_plugin[type]={}
         endif
-        let centry=[a:plugdict.name, a:mapname, copy(mapoptions)]
+        let centry = [a:plugdict.name, a:plugdict.type, a:mapname,
+                    \ copy(mapoptions)]
         let created[type][a:mapstring]=centry
         let created_plugin[type][a:mapstring]=centry
         "}}}5
@@ -795,7 +1006,7 @@ function s:F.maps.create(plugdict)
             let mapname=mapname[1:]
             let mapstring=leader.mapstring
         endif
-        call s:F.maps.map(mapname, options, mapstring, 1)
+        call s:F.maps.map(a:plugdict, mapname, options, mapstring, 1)
     endfor
     "{{{4 Добавление глобальных привязок
     for [mapname, mapstring] in items(gmaps)
@@ -821,21 +1032,22 @@ endfunction
 "{{{3 maps.run
 function s:F.maps.run(type, mapstring, buffer)
     if a:buffer==-1
-        let [plugname, mapname, mapoptions]=
+        let [plugname, plugtype, mapname, mapoptions]=
                     \             s:g.maps.created_global[a:type][a:mapstring]
     else
-        let [plugname, mapname, mapoptions]=
+        let [plugname, plugtype, mapname, mapoptions]=
                     \   s:g.maps.created_buffer[a:buffer][a:type][a:mapstring]
     endif
-    let plugdict=s:F.comm.getpldict(plugname)
+    let plugdict=s:F.comm.getpldict(plugname, plugtype)
     if plugdict.status!=#"loaded"
-        call s:F.comm.load(plugname)
+        call s:F.comm.load(plugname, plugtype)
     endif
     return call(eval("plugdict.F.".(mapoptions.function)),
                 \[a:type, mapname, a:mapstring, a:buffer], {})
 endfunction
 "{{{3 maps.unmap
-function s:F.maps.unmap(plugname, mapname, mapoptions, mapstring, buffer)
+function s:F.maps.unmap(plugname, plugtype, mapname, mapoptions, mapstring,
+            \           buffer)
     let selfname='maps.unmap'
     let type=" "
     if has_key(a:mapoptions, "type")
@@ -847,12 +1059,12 @@ function s:F.maps.unmap(plugname, mapname, mapoptions, mapstring, buffer)
     try
         execute unmapcommand
         if a:buffer==-1
-            unlet s:g.reg.registered[a:plugname].globalmappings
+            unlet s:g.reg.registered[a:plugtype][a:plugname].globalmappings
                         \[type][a:mapstring]
             unlet s:g.maps.created_global[type][a:mapstring]
         else
-            unlet s:g.reg.registered[a:plugname].buffermappings[a:buffer]
-                        \[type][a:mapstring]
+            unlet s:g.reg.registered[a:plugtype][a:plugname].buffermappings
+                        \[a:buffer][type][a:mapstring]
             unlet s:g.maps.created_buffer[a:buffer][type][a:mapstring]
         endif
         return 1
@@ -906,25 +1118,32 @@ function s:F.maps.delmappings(what)
             endfor
         endif
         "}}}5
+    "{{{4 Удаление привязок, связанных с удаляемым буфером
+    elseif type(a:what)==type("")
+        if has_key(s:g.maps.created_buffer, a:what)
+            unlet s:g.maps.created_buffer[a:what]
+        endif
     endif
     "}}}4
     return 1
 endfunction
 "{{{3 maps.newbuffer
 function s:F.maps.newbuffer(buffer)
-    for plugdict in values(s:g.reg.registered)
-        let [bmaps, gmaps, options]=s:F.cons.option(plugdict, "_maps")
-        if options=={}
-            continue
-        endif
-        let leader=s:F.cons.option(plugdict, "_leader")
-        for [mapname, mapstring] in items(bmaps)
-            let mapname=substitute(mapname, '^{-.\{-}-}', '', '')
-            if mapname[0]==#'+'
-                let mapname=mapname[1:]
-                let mapstring=leader.mapstring
+    for plugtype in keys(s:g.reg.registered)
+        for plugdict in values(s:g.reg.registered[plugtype])
+            let [bmaps, gmaps, options]=s:F.cons.option(plugdict, "_maps")
+            if options=={}
+                continue
             endif
-            call s:F.maps.map(mapname, options, mapstring, 1)
+            let leader=s:F.cons.option(plugdict, "_leader")
+            for [mapname, mapstring] in items(bmaps)
+                let mapname=substitute(mapname, '^{-.\{-}-}', '', '')
+                if mapname[0]==#'+'
+                    let mapname=mapname[1:]
+                    let mapstring=leader.mapstring
+                endif
+                call s:F.maps.map(plugdict, mapname, options, mapstring, 1)
+            endfor
         endfor
     endfor
     return 1
@@ -932,6 +1151,17 @@ endfunction
 "{{{2 comm: load, cf, getfunctions, lazyload, unload
 "{{{3 s:g.comm
 let s:g.comm={}
+"{{{3 comm.parseplid
+function s:F.comm.parseplid(plid)
+    let plugtype=matchstr(a:plid, '/\=[^/]*')
+    if !has_key(s:g.reg.registered, plugtype)
+        let plugtype="plugin"
+        let plugname=a:plid
+    else
+        let plugname=a:plid[(len(plugtype)+1):]
+    endif
+    return [plugname, plugtype]
+endfunction
 "{{{3 comm.cmdadd:       Создать команду
 function s:F.comm.cmdadd(key, value, cmdargs, plugdict, command)
     "{{{4 Объявление переменных
@@ -940,14 +1170,13 @@ function s:F.comm.cmdadd(key, value, cmdargs, plugdict, command)
     "{{{4 Автодополнение
     if a:key==#"complete" && a:value=~'^custom'
         "{{{5 Объявление переменных
-        let plugname=a:plugdict.quotedname
         " -complete=custom,func или -complete=customlist,func
         let funcname=matchstr(a:value, 'custom\(list\)\=,\zss:.*')
         " удаляем s:
         let intfunc=funcname[2:]
         let quotedintfunc="'".substitute(intfunc, "'", "''", "g")."'"
         " имя функции внутри дополнения (s:F.comp.funcname)
-        let intfuncname=(a:plugdict.intfuncprefix).'.comp['.quotedintfunc.']'
+        let intfuncname=(a:plugdict.intprefix).'.F.comp['.quotedintfunc.']'
         " чтобы функции к разным командам не пересекались добавим имя команды 
         " к имени функции
         let realname=funcname.(a:command)
@@ -974,8 +1203,7 @@ function s:F.comm.cmdadd(key, value, cmdargs, plugdict, command)
         else
             augroup LoadBeforeLoadComp
                 execute "autocmd! FuncUndefined ".fpattern
-                execute "autocmd FuncUndefined ".fpattern." ".
-                            \"call s:F.comm.load(".plugname.")"
+                execute "autocmd FuncUndefined ".fpattern." ".a:plugdict.loadcmd
             augroup END
         endif
         "}}}5
@@ -993,11 +1221,9 @@ function s:F.comm.mkcmd(cmd, plugdict)
     "{{{4 Объявление переменных
     let cmdargs=[]
     let fargs=[]
-    let plugname=a:plugdict.quotedname
-    let intfuncprefix=a:plugdict.intfuncprefix
+    let intfuncprefix=a:plugdict.intprefix.'.F'
     let cmddescr=a:plugdict.commands[a:cmd]
     let cmd=s:F.cons.option(a:plugdict, '_cprefix').a:cmd
-    let loadcmd="call s:F.comm.load(".plugname.")"
     "{{{4 Получение ключей для :command
     for key in keys(cmddescr)
         if has_key(s:g.comm.cmdfargs, key)
@@ -1012,16 +1238,20 @@ function s:F.comm.mkcmd(cmd, plugdict)
         if index(a:plugdict.extcommands, cmd)!=-1
             execute "delcommand ".cmd
         else
-            return s:F.main.eerror(selfname, "perm", ["cexst", cmd])
+            return s:F.main.eerror(selfname, "perm", ["cexst", a:plugdict.name,
+                        \                             cmd])
         endif
     endif
     "{{{4 Создание команды
     execute "command ".join(cmdargs, " ")." ".cmd." ".
-                \((a:plugdict.status==#"loaded")?(""):(loadcmd." | ")).
+                \((a:plugdict.status==#"loaded")?
+                \   (""):
+                \   (a:plugdict.loadcmd." | ")).
                 \"call ".(intfuncprefix.".".(cmddescr.func)).
                 \"(".join(sort(fargs), ", ").")"
     "{{{4 Регистрация команды
-    if a:plugdict.status==#"registered"
+    if a:plugdict.status==#"registered" ||
+                \(a:plugdict.oneload && a:plugdict.status==#"loaded")
         call add(a:plugdict.extcommands, cmd)
     endif
     return 1
@@ -1041,12 +1271,15 @@ let s:g.comm.cmdfargs={
         \}
 lockvar! s:g.comm.cmdfargs
 "{{{3 comm.getcheck:     Создать строку проверки для аргументов функции
-function s:F.comm.getcheck(check, checkstr)
-    if len(keys(a:check))
-        return "let args=s:F.plug.chk.checkarguments(".a:checkstr.", a:000)\n".
-                    \"if type(args)!=type([])\n".
-                    \"throw 'checkFailed'\n".
-                    \"endif\n"
+function s:F.comm.getcheck(check, checkstr, plugdict)
+    if !empty(a:check)
+        return "    let args=s:F.plug.chk.checkarguments(".a:checkstr.", ".
+                    \                                   "a:000)\n".
+                    \"    if type(args)!=type([])\n".
+                    \"        throw 'CheckFailed(".a:plugdict.type."/'.".
+                    \                              a:plugdict.quotedname.'.'.
+                    \                          "')'\n".
+                    \"    endif\n"
     endif
     return "let args=a:000\n"
 endfunction
@@ -1058,18 +1291,17 @@ function s:F.comm.mkfuncs(plugdict)
     if !has_key(a:plugdict, "functions")
         return 0
     endif
-    let plugname=a:plugdict.quotedname
-    let loadcmd="call s:F.comm.load(".plugname.")"
     let i=0
     for [extname, intname, acheck] in a:plugdict.functions
-        let intfuncprefix=a:plugdict.intfuncprefix
+        let intfuncprefix=a:plugdict.intprefix.'.F'
         let extname=s:F.cons.option(a:plugdict, '_fprefix').extname
         if exists('*'.extname)
-            call s:F.main.eerror(selfname, "perm", ["fexst", extname])
+            call s:F.main.eerror(selfname, "perm", ["fexst", a:plugdict.name,
+                        \                           extname])
             continue
         endif
-        let checkstr='s:g.reg.registered['.plugname.'].functions['.i.'][2]'
-        let check=s:F.comm.getcheck(acheck, checkstr)
+        let checkstr=a:plugdict.intprefix.'.functions['.i.'][2]'
+        let check=s:F.comm.getcheck(acheck, checkstr, a:plugdict)
         if a:plugdict.status==#"loaded"
             execute      "function ".extname."(...)\n".
                         \     (check).
@@ -1080,7 +1312,7 @@ function s:F.comm.mkfuncs(plugdict)
         else
             augroup LoadBeforeLoad
                 execute "autocmd! FuncUndefined ".extname
-                execute "autocmd FuncUndefined ".extname." ".loadcmd
+                execute "autocmd FuncUndefined ".extname." ".a:plugdict.loadcmd
             augroup END
         endif
         let i+=1
@@ -1088,33 +1320,36 @@ function s:F.comm.mkfuncs(plugdict)
     return 1
 endfunction
 "{{{3 comm.load:         Загрузить плагин
-function s:F.comm.load(plugname)
+function s:F.comm.load(plugname, plugtype)
     let selfname='comm.load'
-    call s:F.au.doevent("LoadPluginPre", a:plugname)
-    let plugdict=s:F.comm.getpldict(a:plugname)
+    let plid=a:plugtype.'/'.a:plugname
+    call s:F.au.doevent("LoadPluginPre", plid)
+    let plugdict=s:F.comm.getpldict(a:plugname, a:plugtype)
     if plugdict.status==#"loaded"
         return 1
+    elseif plugdict.status!=#"sourced"
+        execute plugdict.srccmd
     endif
-    execute plugdict.srccmd
     let plugdict.status="loaded"
     call s:F.comm.cf(plugdict)
-    if plugdict.requnsatisfied!={}
-        return s:F.main.eerror(selfname, "req", ["nreq"],
+    if !empty(plugdict.requnsatisfied)
+        return s:F.main.eerror(selfname, "req",
+                    \          ["nreq", plid],
                     \          join(keys(plugdict.requnsatisfied)))
     endif
     "{{{4 Ленивая загрузка
-    if has_key(s:g.reg.lazyload, a:plugname)
-        while !empty(s:g.reg.lazyload[a:plugname])
-            unlockvar! s:g.reg.lazyload[a:plugname][-1]
-            unlet s:g.reg.lazyload[a:plugname][-1]._plugname
-            unlet s:g.reg.lazyload[a:plugname][-1]._position
-            call extend(s:g.reg.lazyload[a:plugname][-1],
+    if has_key(s:g.reg.lazyload, plid)
+        while !empty(s:g.reg.lazyload[plid])
+            unlockvar! s:g.reg.lazyload[plid][-1]
+            unlet s:g.reg.lazyload[plid][-1]._plid
+            unlet s:g.reg.lazyload[plid][-1]._position
+            call extend(s:g.reg.lazyload[plid][-1],
                         \s:F.comm.cdict(plugdict))
-            unlet s:g.reg.lazyload[a:plugname][-1]
+            unlet s:g.reg.lazyload[plid][-1]
         endwhile
     endif
     "}}}4
-    call s:F.au.doevent("LoadPluginPost", a:plugname)
+    call s:F.au.doevent("LoadPluginPost", plid)
     return 1
 endfunction
 "{{{3 comm.cdict:        Создать словарь с функциями
@@ -1122,13 +1357,12 @@ function s:F.comm.cdict(plugdict)
     if !has_key(a:plugdict, "dictfunctions")
         return {}
     endif
-    let plugname=a:plugdict.quotedname
-    let intfuncprefix=a:plugdict.intfuncprefix
+    let intfuncprefix=a:plugdict.intprefix.'.F'
     let r={}
     let i=0
     for [dictname, intname, acheck] in a:plugdict.dictfunctions
-        let checkstr='s:g.reg.registered['.plugname.'].dictfunctions['.i.'][2]'
-        let check=s:F.comm.getcheck(acheck, checkstr)
+        let checkstr=a:plugdict.intprefix.'.dictfunctions['.i.'][2]'
+        let check=s:F.comm.getcheck(acheck, checkstr, a:plugdict)
         execute      "function r.".dictname."(...)\n".
                     \(check).
                     \"    return call(".intfuncprefix.".".intname.", ".
@@ -1144,90 +1378,106 @@ function s:F.comm.cdict(plugdict)
 endfunction
 "{{{3 comm.cf:           Создать команды и функции
 function s:F.comm.cf(plugdict)
-    for [rplugname, rplugversion] in items(a:plugdict.requires)
-        call s:F.comm.loadreq(a:plugdict, rplugname, rplugversion)
+    for [rplid, rplugversion] in items(a:plugdict.requires)
+        let [rplugname, rplugtype]=s:F.comm.parseplid(rplid)
+        call s:F.comm.loadreq(a:plugdict, rplugname, rplugtype, rplugversion)
+    endfor
+    for rplid in a:plugdict.preload
+        if !has_key(s:g.reg.preloaded, rplid)
+            if a:plugdict.status==#"loaded"
+                execute 'runtime! '.fnameescape(rplid)
+            endif
+        endif
     endfor
     if has_key(a:plugdict, "commands")
-        call map(keys(a:plugdict.commands), 's:F.comm.mkcmd(v:val, a:plugdict)')
+        call map(keys(a:plugdict.commands),
+                    \'s:F.comm.mkcmd(v:val, a:plugdict)')
     endif
     call s:F.comm.mkfuncs(a:plugdict)
 endfunction
 "{{{3 comm.loadreq:      Загрузить требуемое дополнение
-function s:F.comm.loadreq(plugdict, rplugname, rplugversion)
+function s:F.comm.loadreq(plugdict, rplugname, rplugtype, rplugversion)
     let selfname='comm.loadreq'
     let rplugdict={}
-    if !has_key(s:g.reg.registered, a:rplugname)
-        if !has_key(s:g.reg.required, a:rplugname)
-            let s:g.reg.required[a:rplugname]={}
+    let rplid=a:rplugtype.'/'.a:rplugname
+    if !has_key(s:g.reg.registered[a:rplugtype], a:rplugname)
+        if !has_key(s:g.reg.required, rplid)
+            let s:g.reg.required[rplid]={}
         endif
-        let s:g.reg.required[a:rplugname][a:plugdict.name]=1
+        let s:g.reg.required[rplid][a:plugdict.plid]=1
         if a:plugdict.status==#"loaded"
-            let rplugdict=s:F.comm.getpldict(a:rplugname, 0)
+            let rplugdict=s:F.comm.getpldict(a:rplugname, a:rplugtype, 0)
         endif
     else
-        let rplugdict=s:g.reg.registered[a:rplugname]
+        let rplugdict=s:g.reg.registered[a:rplugtype][a:rplugname]
     endif
-    if rplugdict!={}
+    if !empty(rplugdict)
         if rplugdict.apiversion[0]!=a:rplugversion[0]
-            return s:F.main.eerror(selfname, "req", 1, ["majap"],
-                        \          rplugdict.apiversion[0]."≠".
-                        \          a:rplugversion[0])
-        elseif len(a:rplugversion)>1 && rplugdict.apiversion[1]<a:rplugversion[1]
-            return s:F.main.eerror(selfname, "req", 1, ["minap"],
-                        \          rplugdict.apiversion[1]."<".
-                        \          a:rplugversion[1])
-        elseif !has_key(rplugdict.requiredby, a:plugdict.name)
-            let rplugdict.requiredby[a:plugdict.name]=1
+            return s:F.main.eerror(selfname, "req", 1, ["majap",
+                        \          rplid, a:plugdict.name,
+                        \          rplugdict.apiversion[0],
+                        \          a:rplugversion[0]])
+        elseif len(a:rplugversion)>1 &&
+                    \rplugdict.apiversion[1]<a:rplugversion[1]
+            return s:F.main.eerror(selfname, "req", 1, ["minap",
+                        \          rplid, a:plugdict.name,
+                        \          rplugdict.apiversion[1],
+                        \          a:rplugversion[1]])
+        elseif !has_key(rplugdict.requiredby, a:plugdict.plid)
+            let rplugdict.requiredby[a:plugdict.plid]=1
         endif
         if a:plugdict.status==#"loaded"
             if rplugdict.status!=#"loaded"
-                call s:F.comm.load(a:rplugname)
+                call s:F.comm.load(a:rplugname, a:rplugtype)
             endif
             if rplugdict.status==#"loaded" && has_key(a:plugdict.requnsatisfied,
-                        \                             a:rplugname)
-                unlet a:plugdict.requnsatisfied[a:rplugname]
+                        \                             rplid)
+                unlet a:plugdict.requnsatisfied[rplid]
             endif
         endif
     elseif a:plugdict.status==#"loaded"
-        return s:F.main.eerror(selfname, "req", 0, ["nplug"], a:rplugdict)
+        return s:F.main.eerror(selfname, "req", 0, ["nplug", rplid])
     endif
 endfunction
 "{{{3 comm.getpldict:    Получить словарь, связанный с плагином
-function s:F.comm.getpldict(plugname, ...)
+function s:F.comm.getpldict(plugname, plugtype, ...)
     let selfname="comm.getpldict"
-    if !has_key(s:g.reg.registered, a:plugname)
-        execute "runtime plugin/".a:plugname.".vim"
+    if !has_key(s:g.reg.registered[a:plugtype], a:plugname) &&
+                \has_key(s:g.reg.plugtypes, a:plugtype)
+        execute "runtime ".fnameescape(a:plugtype."/".a:plugname.".vim")
     endif
-    if !has_key(s:g.reg.registered, a:plugname)
-        return s:F.main.eerror(selfname, "value", (a:000==[]), ["nplug"],
-                    \a:plugname)
+    if !has_key(s:g.reg.registered[a:plugtype], a:plugname)
+        return s:F.main.eerror(selfname, "value", (a:000==[]),
+                    \          ["nplug", a:plugtype.'/'.a:plugname])
     endif
-    return s:g.reg.registered[a:plugname]
+    return s:g.reg.registered[a:plugtype][a:plugname]
 endfunction
 "{{{3 comm.getfunctions: Получить функции плагина
-function s:F.comm.getfunctions(plugname)
+function s:F.comm.getfunctions(plugname, plugtype)
     let selfname="comm.getfunctions"
-    let plugdict=s:F.comm.getpldict(a:plugname)
+    let plugdict=s:F.comm.getpldict(a:plugname, a:plugtype)
     if plugdict.status!=#"loaded"
-        call s:F.comm.load(a:plugname)
+        call s:F.comm.load(a:plugname, a:plugtype)
     endif
     return s:F.comm.cdict(plugdict)
 endfunction
 "{{{3 comm.lazyload:
-function s:F.comm.lazyload(plugname)
+function s:F.comm.lazyload(plugname, plugtype)
     let selfname="comm.lazyload"
-    if !has_key(s:g.reg.registered, a:plugname) ||
-                \s:g.reg.registered[a:plugname].status!=#"loaded"
-        if !has_key(s:g.reg.lazyload, a:plugname)
-            let s:g.reg.lazyload[a:plugname]=[]
+    let plid=a:plugtype.'/'.a:plugname
+    if !has_key(s:g.reg.registered[a:plugtype], a:plugname) ||
+                \s:g.reg.registered[a:plugtype][a:plugname].status!=#"loaded"
+        if !has_key(s:g.reg.lazyload, plid)
+            let s:g.reg.lazyload[plid]=[]
         endif
-        let result={"_plugname": a:plugname,
-                    \"_position": len(s:g.reg.lazyload[a:plugname])}
+        let result={"_plid": plid,
+                    \"_largs": [a:plugname, a:plugtype],
+                    \"_position": len(s:g.reg.lazyload[plid])}
         lockvar! result
-        call add(s:g.reg.lazyload[a:plugname], result)
+        call add(s:g.reg.lazyload[plid], result)
         return result
     else
-        return s:F.comm.cdict(s:g.reg.registered[a:plugname])
+        return s:F.comm.cdict(s:g.reg.registered[a:plugtype][a:plugname])
     endif
 endfunction
 "{{{3 comm.run:          Запустить функцию из «лениво» созданного словаря
@@ -1238,51 +1488,54 @@ function s:F.comm.run(lazydict, funcname, ...)
     elseif type(a:funcname)!=type("")
         return s:F.main.eerror(selfname, "syntax", ["2str"])
     endif
-    if has_key(a:lazydict, "_plugname") &&
-                \type(a:lazydict._plugname)==type("") &&
-                \has_key(s:g.reg.lazyload, a:lazydict._plugname) &&
+    if has_key(a:lazydict, "_plid") &&
+                \type(a:lazydict._plid)==type("") &&
+                \has_key(s:g.reg.lazyload, a:lazydict._plid) &&
                 \has_key(a:lazydict, "_position") &&
                 \type(a:lazydict._position)==type(0) &&
-                \s:g.reg.lazyload[a:lazydict._plugname][a:lazydict._position] is
+                \s:g.reg.lazyload[a:lazydict._plid][a:lazydict._position] is
                 \                                                     a:lazydict
-        if !s:F.comm.load(a:lazydict._plugname)
-            return s:F.main.eerror(selfname, "nfnd", 1, ["nplug"],
-                        \          a:lazydict._plugname)
+        if !call(s:F.comm.load, a:lazydict._largs, {})
+            return s:F.main.eerror(selfname, "nfnd", 1,
+                        \          ["nplug", a:lazydict._plid])
         endif
     endif
     if has_key(a:lazydict, a:funcname)
         return call(a:lazydict[a:funcname], a:000, a:lazydict)
     else
-        return s:F.main.eerror(selfname, "nfnd", 1, ["nfunc"], a:funcname)
+        return s:F.main.eerror(selfname, "nfnd", 1, ["nfunc", a:funcname])
     endif
 endfunction
 "{{{3 comm.rdict:        Вернуть словарь с функциями данного плагина
 function s:F.comm.rdict()
-    return s:F.comm.cdict(s:g.reg.registered.load)
+    return s:F.comm.cdict(s:g.reg.registered.plugin.load)
 endfunction
 let s:g.c.tstr={
-            \"model": "simple",
-            \"required": [["type", type("")]]
+            \"model": "optional",
+            \"required": [["type", type("")]],
+            \"optional": [[["keyof", s:g.reg.registered], {}, "plugin"]],
         \}
 lockvar! s:g.c.tstr
 let s:g.comm.f=[
             \["registerplugin",   "reg.register", {}],
-            \["unregister",       "reg.unreg",
-            \                   {"model": "simple",
-            \                    "required": [["keyof", s:g.reg.registered]]}],
+            \["unregister",       "reg.unreg",         s:g.c.tstr],
             \["getfunctions",     "comm.getfunctions", s:g.c.tstr],
             \["lazygetfunctions", "comm.lazyload",     s:g.c.tstr],
             \["run",              "comm.run",          {}],
+            \["restoresession", "ses.restore", {"model": "simple",
+            \                                "required": [["file", 'r']]}],
         \]
 lockvar! s:g.comm
 unlockvar! s:g.reg.registered
 "{{{3 comm.getdep:       Получить список зависимостей (для удаления)
 function s:F.comm.getdep(plugdict, hasdep)
     let r=[a:plugdict]
-    for plugname in keys(a:plugdict.requiredby)
-        if !has_key(a:hasdep, plugname)
-            let a:hasdep[plugname]=1
-            call extend(r, s:F.comm.getdep(s:F.comm.getpldict(plugname),
+    for plid in keys(a:plugdict.requiredby)
+        let [plugname, plugtype]=s:F.comm.parseplid(plid)
+        if !has_key(a:hasdep, plid)
+            let a:hasdep[plid]=1
+            call extend(r, s:F.comm.getdep(s:F.comm.getpldict(plugname,
+                        \                                     plugtype),
                         \                  a:hasdep))
         endif
     endfor
@@ -1301,23 +1554,23 @@ endfunction
 let s:F.int["s:DepComp"]=function("s:DepComp")
 let s:F.comm.depcomp=function("s:DepComp")
 "{{{3 comm.unload:       Удалить плагин
-function s:F.comm.unload(plugname)
-    let plugdict=s:g.reg.registered[a:plugname]
-    call s:F.au.doevent("UnloadPluginPre", a:plugname)
+function s:F.comm.unload(plugname, plugtype)
+    let plugdict=s:g.reg.registered[a:plugtype][a:plugname]
+    call s:F.au.doevent("UnloadPluginPre", plugdict.plid)
     let srccmd=""
     let hasdep={}
     let depends=sort(s:F.comm.getdep(plugdict, hasdep), s:F.comm.depcomp)
-    let plugins=filter(copy(depends), 'v:val.requiredby=={}')
-    let plugnames=map(copy(plugins), 'v:val.name')
-    call filter(depends, 'v:val.requiredby!={}')
+    let plugins=filter(copy(depends), 'empty(v:val.requiredby)')
+    let plids=map(copy(plugins), 'v:val.plid')
+    call filter(depends, '!empty(v:val.requiredby)')
     while depends!=[]
         let removedsmth=0
         let i=0
         while i<len(depends)
             if filter(keys(depends[i].requiredby),
-                        \'index(plugnames, v:val)==-1')==[]
+                        \'index(plids, v:val)==-1')==[]
                 call add(plugins, depends[i])
-                call add(plugnames, depends[i].name)
+                call add(plids, depends[i].plid)
                 call remove(depends, i)
                 let removedsmth=1
             else
@@ -1326,14 +1579,14 @@ function s:F.comm.unload(plugname)
         endwhile
         if !removedsmth && depends!=[]
             call add(plugins, depends[0])
-            call add(plugnames, depends[0].name)
+            call add(plids, depends[0].plid)
             call remove(depends, 0)
             continue
         endif
     endwhile
     for plugdict in plugins
         if plugdict.status!=#'loaded'
-            call s:F.comm.load(plugdict.name)
+            call s:F.comm.load(plugdict.name, plugdict.type)
         endif
     endfor
     let srccmd=join(map(reverse(copy(plugins)), 'v:val.srccmd'), "\n")
@@ -1341,25 +1594,30 @@ function s:F.comm.unload(plugname)
         if has_key(plugdict, "mappings")
             call s:F.maps.delmappings(plugdict)
         endif
-        call s:F.reg.unreg(plugdict.name)
-        if has_key(plugdict.F, "main") && has_key(plugdict.F.main, "destruct")
-            call plugdict.F.main.destruct()
+        call s:F.reg.unreg(plugdict.name, plugdict.type)
+        if has_key(plugdict, "F") && has_key(plugdict, "g")
+            if has_key(plugdict.F, "main") &&
+                        \has_key(plugdict.F.main, "destruct")
+                call plugdict.F.main.destruct()
+            endif
+            unlockvar plugdict.g
+            unlockvar plugdict.F
+            for key in keys(plugdict.g)
+                unlet plugdict.g[key]
+            endfor
+            for key in keys(plugdict.F)
+                unlet plugdict.F[key]
+            endfor
+            unlet plugdict.g
+            unlet plugdict.F
         endif
-        unlockvar plugdict.g
-        unlockvar plugdict.F
-        for key in keys(plugdict.g)
-            unlet plugdict.g[key]
-        endfor
-        for key in keys(plugdict.F)
-            unlet plugdict.F[key]
-        endfor
-        unlet plugdict.g
-        unlet plugdict.F
     endfor
-    call s:F.au.doevent("UnloadPluginPost", a:plugname)
+    if exists('s:F')
+        call s:F.au.doevent("UnloadPluginPost", a:plugtype.'/'.a:plugname)
+    endif
     return srccmd
 endfunction
-"{{{2 au
+"{{{2 au: regevent, delevent, doau
 "{{{3 s:g.au
 let s:g.au={}
 let s:g.au.events={}
@@ -1381,8 +1639,8 @@ function s:F.au.doau(Command, event, plugin)
 endfunction
 "{{{3 au.doevent
 function s:F.au.doevent(event, plugin)
-    for Cmd in get(s:g.au.events[a:event], a:plugin, [])
-        call s:F.au.doau(Cmd, a:event, a:plugin)
+    for l:Cmd in get(s:g.au.events[a:event], a:plugin, [])
+        call s:F.au.doau(l:Cmd, a:event, a:plugin)
     endfor
 endfunction
 "{{{3 au.regevent
@@ -1425,6 +1683,82 @@ call add(s:g.comm.f,
             \         "optional": [[["type", type("")], {}, ""],
             \                      [["type", type("")], {}, ""]]}])
 lockvar 2 s:g.comm.f
+"{{{2 ses: mksession, loadsession
+"{{{3 ses.mksession
+function s:F.ses.mksession(sfile)
+    let selfname='ses.mksession'
+    try
+        execute "mksession! ".fnameescape(a:sfile)
+    catch
+        return s:F.main.eerror(selfname, "ofail", 1, ["sesnf"], v:exception)
+    endtry
+    let xfile=fnamemodify(a:sfile, ':p:r').'x.vim'
+    if filewritable(fnamemodify(a:sfile, ':p:h'))==2
+        if filereadable(xfile)
+            if !filewritable(xfile)
+                return s:F.main.eerror(selfname, "ofail", 1, ["sesfx", xfile])
+            endif
+            " let sescontent=readfile(xfile, 'b')
+            let sescontent=[]
+        else
+            let sescontent=[]
+        endif
+        let sescontent+=[
+                    \'call load#LoadFuncdict().getfunctions("load").'.
+                    \           'restoresession(expand("<sfile>"))',
+                    \'finish',
+                    \'### YAML document starts here ###',
+                    \]
+        let plses={}
+        for plugtype in keys(s:g.reg.registered)
+            for plugdict in values(s:g.reg.registered[plugtype])
+                if has_key(plugdict.F, "main") && has_key(plugdict.F.main,
+                            \                            "session")
+                    let plses[plugdict.plid]=plugdict.F.main.session()
+                endif
+            endfor
+        endfor
+        if !(has_key(s:g.reg.registered.plugin, "yaml") &&
+                    \s:g.reg.registered.plugin.yaml.status==#"loaded")
+            call s:F.comm.load("yaml", "plugin")
+        endif
+        if !(has_key(s:g.reg.registered.plugin, "yaml") &&
+                    \s:g.reg.registered.plugin.yaml.status==#"loaded")
+            return s:F.main.eerror(selfname, "ofail", 1, ["yamlf"])
+        endif
+        call extend(sescontent, s:F.plug.yaml.dumps(plses, 0))
+        call add(sescontent, "")
+        call writefile(sescontent, xfile, 'b')
+    else
+        return s:F.main.eerror(selfname, "ofail", 1, ["sesdw",
+                    \                             fnamemodify(a:sfile, ':p:h')])
+    endif
+endfunction
+"{{{3 ses.restore
+function s:F.ses.restore(sfile)
+    let selfname='ses.restore'
+    let sescontent=readfile(a:sfile, 'b')
+    while sescontent[0]!=#'### YAML document starts here ###'
+        call remove(sescontent, 0)
+    endwhile
+    if !(has_key(s:g.reg.registered.plugin, "yaml") &&
+                \s:g.reg.registered.plugin.yaml.status==#"loaded")
+        call s:F.comm.load("yaml", "plugin")
+    endif
+    if !(has_key(s:g.reg.registered.plugin, "yaml") &&
+                \s:g.reg.registered.plugin.yaml.status==#"loaded")
+        return s:F.main.eerror(selfname, "ofail", 1, ["yamlf"])
+    endif
+    let plses=s:F.plug.yaml.loads(join(sescontent, "\n"))
+    for [plid, arg] in items(plses)
+        let plugdict=call(s:F.comm.getpldict, s:F.comm.parseplid(plid), {})
+        if has_key(plugdict.F, "main") && has_key(plugdict.F.main,
+                    \                            "session")
+            call plugdict.F.main.session(arg)
+        endif
+        unlet arg
+    endfor
+endfunction
 "{{{2 mng: main
 "{{{3 mng.main
 "{{{4 s:g.c.cmd
@@ -1435,24 +1769,25 @@ let s:g.c.cmd={
         \}
 let s:g.c.cmd.actions.unload={
             \   "model": "simple",
-            \"required": [["keyof", s:g.reg.registered]]
+            \"required": [["type", type("")]]
         \}
 let s:g.c.cmd.actions.reload=s:g.c.cmd.actions.unload
 let s:g.c.cmd.actions.show=s:g.c.nothing
 let s:g.c.cmd.actions.findnr={"model": "simple",
-            \                "required": [{"check": ["nums", [1]],
-            \                              "trans": ["earg", ""]}]}
+            \                "required": [["type", type("")]]}
 let s:g.c.cmd.actions.nrof={"model": "simple",
             \              "required": [{"check": ["regex", '^/']}]}
-let s:g.c.cmd.actions.autocmd={"model": "simple",
+let s:g.c.cmd.actions.autocmd={"model": "optional",
             \               "required": [["keyof", s:g.au.events],
             \                            ["type", type("")],
-            \                            ["type", type("")]]}
+            \                            ["type", type("")]],
+            \                   "next": ["type", type("")]}
 let s:g.c.cmd.actions["autocmd!"]={"model": "optional",
             \                   "required": [["keyof", s:g.au.events]],
-            \                   "optional": [[["keyof", s:g.reg.registered],
-            \                                 {}, 0],
-            \                                [["type", type("")], {}, 0]]}
+            \                   "optional": [[["type", type("")], {}, 0]],
+            \                       "next": ["type", type("")]}
+let s:g.c.cmd.actions.mksession={"model": "simple",
+            \                 "required": [["file", "w"]]}
 lockvar! s:g.c
 unlockvar! s:g.reg.registered
 for s:key in keys(s:g.au.events)
@@ -1472,25 +1807,34 @@ function s:F.mng.main(action, ...)
     "{{{4 Действия
     "{{{5 Выгрузить дополнение
     if action==#"unload"
-        return s:F.comm.unload(args[1])!=#""
+        return !empty(call(s:F.comm.unload, s:F.comm.parseplid(args[1]), {}))
     "{{{5 Перезагрузить дополнение
     elseif action==#"reload"
-        execute s:F.comm.unload(args[1])
+        execute call(s:F.comm.unload, s:F.comm.parseplid(args[1]), {})
         return 1
     "{{{5 Показать список загруженных дополнений
     elseif action==#"show"
-        let lines=values(map(copy(s:g.reg.registered),
-                    \'[v:val.scriptid, v:key, v:val.file, v:val.status]'))
+        let lines=[]
+        for plugtype in keys(s:g.reg.registered)
+            for [plugname, plugdict] in items(s:g.reg.registered[plugtype])
+                call add(lines, [plugtype, plugname, plugdict.file,
+                            \    plugdict.status])
+            endfor
+        endfor
         return s:F.stuf.printtable(s:g.p.th, lines)
     "{{{5 Найти функцию, соответствующую номеру
     elseif action==#"findnr"
-        let result=s:F.stuf.findnr(args[1])
-        if type(result)!=type("")
-            echo s:g.p.nfnd
+        let results=map(split(args[1], '\D\+'),
+                    \'[v:val, s:F.stuf.findnr(v:val)]')
+        call map(results,
+                    \'[v:val[0], '.
+                    \'((type(v:val[1])==type(""))?(v:val[1]):(s:g.p.nfnd))]')
+        if len(results)==1
+            echo results[0][1]
         else
-            echo result
-            return 1
+            echo join(map(results, 'join(v:val, ": ")'), "\n")
         endif
+        return 1
     "{{{5 Найти номер, соответствующий функции
     elseif action==#"nrof"
         let Result=s:F.stuf.findpath(args[1])
@@ -1509,10 +1853,16 @@ function s:F.mng.main(action, ...)
         endif
     "{{{5 autocmd
     elseif action==#"autocmd"
-        call s:F.au.regevent(args[1], args[2], args[3])
+        call s:F.au.regevent(args[1], args[2], join(args[3:]))
     "{{{5 autocmd!
     elseif action==#"autocmd!"
-        call s:F.au.delevent(args[1], args[2], args[3])
+        call s:F.au.delevent(args[1], args[2],
+                    \((len(args)>2)?
+                    \   (join(args[3:])):
+                    \   (0)))
+    "{{{5 mksession
+    elseif action==#"mksession"
+        call s:F.ses.mksession(args[1])
     endif
     "}}}4
 endfunction
@@ -1520,8 +1870,11 @@ endfunction
 "{{{3 comp.nrof
 function s:F.comp.nrof(arglead)
     let s=split(a:arglead, '/')
-    if len(s)<=1 && a:arglead[-1:][0]!=#'/'
+    if len(s)<=1 && a:arglead[-1:]!=#'/'
         return map(keys(s:g.reg.registered), '"/".v:val."/"')
+    elseif len(s)==2 && a:arglead[-1:]!=#'/' &&
+                \has_key(s:g.reg.registered, s[0])
+        return map(keys(s:g.reg.registered[s[0]]), '"/'.s[0].'/".v:val."/"')
     else
         let path='/'.join(s, '/')
         let P=s:F.stuf.findpath(path)
@@ -1538,6 +1891,14 @@ function s:F.comp.nrof(arglead)
     endif
     return []
 endfunction
+"{{{3 comp.plug
+function s:F.comp.plug(arglead)
+    let plugtype=matchstr(a:arglead, '/\=[^/]*')
+    if !has_key(s:g.reg.registered, plugtype)
+        let plugtype='plugin'
+    endif
+    return map(keys(s:g.reg.registered[plugtype]), '"'.plugtype.'/".v:val')
+endfunction
 "{{{3 comp._complete
 function s:F.comp._complete(...)
     if !has_key(s:F.comp, "__complete")
@@ -1549,7 +1910,7 @@ function s:F.comp._complete(...)
 endfunction
 "{{{3 s:g.comp
 let s:g.comp={}
-let s:g.comp.plug=["keyof", s:g.reg.registered]
+let s:g.comp.plug=["func", s:F.comp.plug]
 let s:g.comp.event=["keyof", s:g.au.events]
 let s:g.comp.a={"model": "actions"}
 let s:g.comp.a.actions={}
@@ -1565,6 +1926,8 @@ let s:g.comp.a.actions.autocmd={"model": "simple",
             \               "arguments": [s:g.comp.event, s:g.comp.plug]}
 let s:g.comp.a.actions["autocmd!"]={"model": "simple",
             \                   "arguments": [s:g.comp.event, s:g.comp.plug]}
+let s:g.comp.a.actions.mksession={"model": "simple",
+            \                 "arguments": [["file", '.vim']]}
 let s:g.comp._cname="load"
 "{{{1
 let s:g.reginfo=s:F.reg.register({
@@ -1579,15 +1942,16 @@ let s:g.reginfo=s:F.reg.register({
             \   "scriptfile": s:g.load.scriptfile,
             \      "oneload": 1,
             \"dictfunctions": s:g.comm.f,
-            \   "apiversion": "0.2",
+            \   "apiversion": "0.6",
         \})
 lockvar! s:g.reginfo
 let s:F.main.eerror=s:g.reginfo.functions.eerror
 let s:F.main.option=s:g.reginfo.functions.option
 unlet s:g.load
 " let s:F.plug.comp=s:F.comm.getfunctions("comp")
-let s:F.plug.comp=s:F.comm.lazyload("comp")
-let s:F.plug.stuf=s:F.comm.lazyload("stuf")
+let s:F.plug.comp=s:F.comm.lazyload("comp", "plugin")
+let s:F.plug.stuf=s:F.comm.lazyload("stuf", "plugin")
+let s:F.plug.yaml=s:F.comm.lazyload("yaml", "plugin")
 lockvar! s:F
 unlockvar s:F.plug
 unlockvar s:F.comp

@@ -28,7 +28,7 @@ Features:
     ∙ Support for creating numbered lines
     ∙ Folds support
 
-Plugin requires chk, comp, stuf and load plugins.
+Plugin requires chk, yaml, comp, stuf and load plugins.
 
 ==============================================================================
 2. Functionality provided                             *format-functionality*
@@ -230,6 +230,14 @@ ShowProgress :: 0, 1 or 2                          *format-opt-ShowProgress*
         determine actual window size if you resize vim while script is 
         running, so doing that may render progress bar useless. This does not 
         apply to gvim.
+
+ColorFile :: 0 or filename (file must be readable)    *format-opt-ColorFile*
+        If this option is not zero, then read colors from file {ColorFile} 
+        instead of config/formatvim/colors-default-'t_Co'.yaml. Relevant only 
+        for vim running in color terminal.
+        Note that this option must be set before format.vim is loaded. All 
+        changes made to this option will be ignored if plugin is already 
+        loaded (though you may use |load-action-reload|).
 
 DoNotLoad                                             *format-opt-DoNotLoad*
         If this key exists and plugin is not already loaded, then it will not 

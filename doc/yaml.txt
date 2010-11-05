@@ -1,0 +1,240 @@
+*yaml.txt*  Utility used to yaml JSON files
+==============================================================================
+CONTENTS                                                     *yaml-contents*
+
+    1. Intro                                      |yaml-intro|
+    2. Functionality provided                     |yaml-functionality|
+        2.1. Functions                            |yaml-functions|
+    3. Used classes                               |yaml-classes|
+        3.1. `Node' class                         |yaml-class-Node|
+        3.2. `*Constructor' classes               |yaml-class-BaseConstructor|
+        3.3. `Loader' class                       |yaml-class-Loader|
+
+==============================================================================
+1. Intro                                                        *yaml-intro*
+
+This plugin is a YAML-1.2 dumper/emitter. It is able to dump Vim data to 
+a YAML string, or load data from YAML encoded string.
+
+Plugin requires stuf, load and oop plugins.
+
+==============================================================================
+2. Functionality provided                               *yaml-functionality*
+
+This plugin provides 7 functions. Functions are accessed via dictionary 
+returned by |load-func-getfunctions| function.
+
+------------------------------------------------------------------------------
+2.1. Functions                                              *yaml-functions*
+
+All following functions are accessed via dictionary returned by 
+|load-func-getfunctions| function.
+
+loads({string})                                            *yaml-func-loads*
+        Load YAML data from string.
+
+load_all({string})                                      *yaml-func-load_all*
+        Like |yaml-func-loads|, but returns a list of YAML documents found in 
+        given string.
+
+dumps({data}[, {join}[, {opts}]])                          *yaml-func-dumps*
+        Encode {data} in YAML and return resulting string. If optional 
+        argument is present and it is not 1, then dumps function returns 
+        a list of lines. {opts} optional variables is a dictionary with the 
+        following keys:
+        Key             Description ~
+        preserve_locks  If this key is present and is 1, then it will add 
+                        a tag !!vim/Locked{type} to any locked variable, so 
+                        that locks can be restored
+        key_sort        If this key is present and is 1, then dictionary keys 
+                        are sorted before dumping. It also accepts 0 for no 
+                        sorting and any function that does accept |sort()| 
+                        built-in (note that it accepts only function 
+                        references, not function names). Default: keep list 
+                        returned by |keys()| function unsorted.
+        all_flow        If this key is present and is 1, then instead of using 
+                        block styles of collections and mappings and plain 
+                        (unquoted) flow scalar style, it will use only flow 
+                        and double-quoted styles.
+        custom_tags     If this key is present and contains a list of function 
+                        references, then for every dumped object if one of the 
+                        functions in custom_tags list being given this object 
+                        as a single argument, returns a list with two items: 
+                        a String and an object, then first item in this list 
+                        is taken as a tag and second is dumped. For example, 
+                        the following function can be used to preserve locks 
+                        for a List and Dictionary objects: >
+                            function DumpLocked(obj)
+                                if islocked('a:obj')
+                                    return ["!!vim/Locked", a:obj]
+                                endif
+                            endfunction
+
+add_constructor({tag}, {Constructor})            *yaml-func-add_constructor*
+        Define a constructor for a given tag. {Constructor} function must 
+        accept the only argument: dictionary that is an instance of a class 
+        "Node" created by vimoop plugin (and it also is given an instance of 
+        a class "Loader" as a |self| dictionary). This function must do the 
+        following:
+          1. Being given a Node instance it must construct and return 
+             appropriate value
+          2. Manually add constructed object to self.constructed_objects 
+             dictionary like that (only if you want to support recursive data 
+             structures): >
+                function Constructor(node) dict
+                    let data=[] " or `let data={}'
+                    let self.constructed_objects[a:node.id]=data
+                    " Some code that modifies `data' variable
+                    return data
+                endfunction
+<            Note that all |yaml-class-BaseConstructor| construct_* functions 
+             except construct_document define 
+             self.constructed_objects[a:node.id] for you, so you do not need 
+             to worry unless you want to support recursive data structures 
+             like that: >
+                # Infinitely nested list that contains a link to itself as 
+                # a first value
+                %YAML 1.2
+                --- &a
+                - *a
+<
+                                           *yaml-func-add_multi_constructor*
+add_multi_constructor({tag-prefix}, {Constructor})
+        Define a constructor for all tags that start with {tag-prefix}. 
+        {Constructor} function must accept two arguments: dictionary that is 
+        an instance of a class "Node" created by vimoop plugin and 
+        {tag-suffix}: part of a tag string after {tag-prefix} (and it also is 
+        given an instance of a class "Loader" as a |self| dictionary). This 
+        function must do the following:
+          1. Being given a Node instance it must construct and return 
+             appropriate value
+          2. Manually add constructed object to self.constructed_objects 
+             dictionary like that (only if you want to support recursive data 
+             structures): >
+                function Constructor(node, suffix) dict
+                    let data=[] " or `let data={}'
+                    let self.constructed_objects[a:node.id]=data
+                    " Some code that modifies `data' variable
+                    return data
+                endfunction
+<            Note that all |yaml-class-BaseConstructor| construct_* functions 
+             except construct_document define 
+             self.constructed_objects[a:node.id] for you, so you do not need 
+             to worry unless you want to support recursive data structures 
+             like that: >
+                # Infinitely nested list that contains a link to itself as 
+                # a first value
+                %YAML 1.2
+                --- &a
+                - *a
+
+del_constructor({tag})                           *yaml-func-del_constructor*
+del_multi_constructor({tag-prefix})        *yaml-func-del_multi_constructor*
+        These functions does the opposite to |yaml-func-add_constructor| and 
+        |yaml-func-add_multi_constructor|: it deletes constructor for given 
+        tag or tag prefix.
+
+==============================================================================
+3. Used classes                                               *yaml-classes*
+
+This section describe only that classes that may be helpful for writing custom 
+constructor.
+Some notes:
+- Description of the class may be incomplete since some functions are not 
+  intended to be used outside this plugin.
+- |yaml-class-Loader| inherits from all other classes except |yaml-class-Node| 
+  (and other *Node classes)
+
+------------------------------------------------------------------------------
+3.1. `Node' class                  *yaml-class-Node* *yaml-class-ScalarNode*
+                          *yaml-class-MappingNode* *yaml-class-SequenceNode*
+
+Internally, every instance of this class is a dictionary with the following 
+keys (see |oop.txt| for more details):
+
+__class__                                              *yaml-Node.__class__*
+            Name of the class. As class `Node' is not used directly, it will 
+            be one of the following:
+            - ScalarNode
+            - MappingNode
+            - SequenceNode
+id                                                           *yaml-Node.id*
+            Unique (for the current document) identificator of the node.
+value                                                     *yaml-Node.value*
+            Node value: depending on a type of the node it may be one of the 
+            following:
+            Class         Value ~
+            ScalarNode    String
+            MappingNode   List of Lists with two nodes:
+                          [[{key-node}, {value-node}], ...]
+            SequenceNode  List of nodes
+tag                                                         *yaml-Node.tag*
+            Node's YAML tag string.
+start_mark                                           *yaml-Node.start_mark*
+            Start mark, for use in |yaml-Loader._raise| function.
+end_mark                                               *yaml-Node.end_mark*
+            End mark, for use in |yaml-Loader._raise| function.
+
+------------------------------------------------------------------------------
+3.2. `*Constructor' classes                     *yaml-class-BaseConstructor*
+                                                *yaml-class-SafeConstructor*
+
+Internally, every instance of this class is a dictionary with the following 
+keys (see |oop.txt| for more details):
+
+construct_scalar                     *yaml-BaseConstructor.construct_scalar*
+            Function, being given a |yaml-class-ScalarNode| instance 
+            constructs a String with its value. If it is being given other 
+            class' instance then it throws a error.
+construct_sequence                 *yaml-BaseConstructor.construct_sequence*
+            Function, being given a |yaml-class-SequenceNode| instance 
+            constructs a List. If it is being given other class' instance then 
+            it throws a error.
+construct_mapping                   *yaml-SafeConstructor.construct_mapping*
+            Function, being given a |yaml-class-MappingNode| instance 
+            constructs a Dictionary. If it is being given other class' 
+            instance then it throws a error.
+flatten_mapping                       *yaml-SafeConstructor.flatten_mapping*
+            Function, being given a |yaml-class-MappingNode| instance flattens 
+            it: if it finds a key node with a tag `tag:yaml.org,2002:merge' 
+            and connected value node contains a |yaml-class-MappingNode| or 
+            a |yaml-class-SequenceNode| with a list of 
+            |yaml-class-MappingNode|s in a |yaml-Node.value| key then it 
+            merges found |yaml-class-MappingNode|s into 
+            |yaml-class-MappingNode| that is given as an argument. See 
+            http://yaml.org/type/merge.html.
+constructed_objects               *yaml-BaseConstructor.constructed_objects*
+            Dictionary that contains |yaml-Node.id| - {constructed-value} 
+            pairs.
+
+------------------------------------------------------------------------------
+3.3. `Loader' class                                      *yaml-class-Loader*
+
+Internally, every instance of this class is a dictionary with the following 
+keys (see |oop.txt| for more details):
+
+_raise                                                  *yaml-Loader._raise*
+            Raise a marked yaml error. Arguments (in order):
+            1. Name of the function where error occures. You may specify 0 if 
+               instead of function name to omit `In function ...:' header.
+            2. Name of some error class (without suffix `Error') that inherits 
+               from MarkedYAMLError. If you are writing a constructor, then 
+               use `Constructor' (that will throw ConstructorError) string 
+               here.
+            3. Message string. It must contain `@|' that will separate context 
+               description (like `While parsing a flow node') from problem 
+               description. If you do not want to have a context message, then 
+               just use `@|Problem message'. Note that it must contain only 
+               one `@|'.
+            4. Context mark. See |yaml-Node.start_mark| and 
+               |yaml-Node.end_mark|. If you do not want to print context mark, 
+               then specify 0 instead.
+            4. Problem mark. See |yaml-Node.start_mark| and 
+               |yaml-Node.end_mark|.
+            5. (Optional) note message. In fact, I never used it, so it is 
+               untested.
+_warn                                                    *yaml-Loader._warn*
+            Like |yaml-Loader._raise|, but without throwing an error.
+
+vim: ft=help:tw=78
+

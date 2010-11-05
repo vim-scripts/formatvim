@@ -5,7 +5,7 @@ CONTENTS                                                      *chk-contents*
     1. Intro                                      |chk-intro|
     2. Functionality provided                     |chk-functionality|
         2.1. Functions                            |chk-functions|
-        2.2. Checks                               |chk-check|
+        2.2. Checks                               |chk-checks|
         2.3. Models                               |chk-model|
         2.4. Transformations                      |chk-trans|
     3. Example usage                              |chk-usage|
@@ -36,7 +36,7 @@ returned by |load-func-getfunctions| function.
                                                     *chk-func-checkargument*
 checkargument({check}, {argument}) :: Check -> a -> Bool
         Checks data {argument} using check {check}. For possible {check} 
-        arguments see |chk-check|
+        arguments see |chk-checks|
                                                    *chk-func-checkarguments*
 checkarguments({model}, {arguments}) :: Model -> [a] -> Bool
         Checks argument list {arguments} (it must be a single list!) using 
@@ -61,7 +61,9 @@ regex       Regex (correct regular expression)
 func        (a -> Bool) (any function that takes {argument} and
                          returns 1 or 0)
             Checks, whether function being supplied by {argument} as an 
-            {argument} returns true.
+            {argument} returns true. Note that this function must not echo any 
+            warnings using |:echoerr|: they will be captured by |:try| and 
+            check will fail.
                                                             *chk-check-type*
 type        Int (any integer from 0 to 5)
             Checks, whether type of {argument} is {checkargument}.
@@ -79,7 +81,9 @@ bool        _ (argument is ignored)
                                                             *chk-check-eval*
 eval        String (any correct expression)
             Checks, whether eval({checkargument}) is true. Inside this check 
-            a:Arg is set to {argument}.
+            a:Arg is set to {argument}. Note that evaluated expression must 
+            not echo any warnings using |:echoerr|: they will be captured by 
+            |:try| and check will fail.
                                                            *chk-check-keyof*
 keyof       Dictionary
             Checks, whether {argument} is a key of {checkargument}. {argument} 
@@ -159,6 +163,14 @@ chklst      [ Check ] (list of checks)
             Checks whether {argument} is a list with length equal to length of 
             {checkargument} and every element in {argument} matches Check in 
             the identical position.
+                                                          *chk-check-optlst*
+optlst      ([ Check ], [ Check ]) (two lists of checks)
+            Checks whether {argument} is a list with length not less then 
+            length of {checkargument}[0] and not greater then sum of 
+            lengths of {checkargument}[0] and {checkargument}[1], first 
+            len({checkargument}[0]) elements of {argument} match checks in 
+            {checkargument}[0] and other elements of {argument} match checks 
+            in {checkargument}[1].
                                                           *chk-check-alllst*
 alllst      Check
             Checks whether {argument} is a list and every element in 
@@ -211,17 +223,23 @@ simple    Required keys: "required" :: [ ArgTrans ] (list of transformations)
 <
                                                         *chk-model-optional*
 optional  Required keys: no
-          Optional keys: "required" :: [ ArgTrans ] and
+          Optional keys: "required" :: [ ArgTrans ]
                          "optional" :: [(ArgTrans, ArgTrans, a)]
                               (list of lists of three elements: transformation 
                               for present argument, transformation for default 
                               value and default value)
+                         "next" :: ArgTrans
           Meaning: there must be at least len("required") arguments (or 0 if
                    it is not present) and at most len("optional") optional 
-                   arguments. If some optional argument is present it is 
-                   transformed by first ArgTrans. If it is not present, then 
-                   third value in list is transformed using the second 
-                   ArgTrans.
+                   arguments (unless "next" key is present). If some optional 
+                   argument is present it is transformed by first ArgTrans. If 
+                   it is not present, then third value in list is transformed 
+                   using the second ArgTrans. After all optional arguments 
+                   were processed, all other arguments are transformed using 
+                   ArgTrans from "next" key. If there is no "next" key and 
+                   number of arguments is greater then number of required plus 
+                   number of optional arguments, then 0 is returned, 
+                   indicating that an error occured.
           Example:
               If we need to check arguments to the |matchstr()| function: >
               matchstr(String, Regex[, UInteger[, UInteger]])
