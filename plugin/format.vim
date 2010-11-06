@@ -220,8 +220,20 @@ else
     let s:g.fmt.whatterm = "cterm"
     let s:g.fmt.colorfile=s:F.main.option("ColorFile")
     if type(s:g.fmt.colorfile)!=type("")
-        let s:g.fmt.colorfile=expand('<sfile>:h:h').
-                    \   '/config/formatvim/colors-default-'.&t_Co.'.yaml'
+        let s:g.fmt.colorfile=fnamemodify(expand('<sfile>:h:h'), ':p')
+        " According to the help, if file is a directory, fnamemodify will leave 
+        " path separator at the end of the filename when invoked with `:p' 
+        " modifier
+        let s:g.fmt.pathseparator=s:g.fmt.colorfile[-1:]
+        let s:g.fmt.colorfile.=
+                    \join(['config', 'formatvim',
+                    \      'colors-default-'.&t_Co.'.yaml'],
+                    \      s:g.fmt.pathseparator)
+        if !filereadable(s:g.fmt.colorfile)
+            let s:g.fmt.colorfile.=
+                        \join(['config', 'formatvim', 'colors-default.yaml'],
+                        \      s:g.fmt.pathseparator)
+        endif
     endif
     if !filereadable(s:g.fmt.colorfile)
         call s:F.main.eerror("<script>", "badf", ["misscol"])
