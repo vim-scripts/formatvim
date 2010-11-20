@@ -2,15 +2,15 @@ This is a mirror of http://www.vim.org/scripts/script.php?script_id=3113
 
 There are some things that included out-of-the-box 2html.vim plugin does not support, so I ended in writing my own format.vim script:
 
-    — 'list' and 'listchars' (tab, trail, eol, conceal, including the case when 'list' is on and 'lcs' does not contain tab)
-    — Foreground colors for lines with differencies (if I am not mistaking, implemented in latest 2html)
-    — Normal special character coloring
-    — Background color for the whole line with differencies and folds, not just for text
-    — Tags linked to their definition (slow, HTML only (unless you write specification by yourself), but partially on by default, also implemented by vimscript #2252 for 2html)
-    — Side-by-side diff (also present in latest 2html version)
-    — Full conceal support, including 'cole', 'lcs:conceal' and saving information about actual text present
-    — Foldcolumn support (2html generates foldcolumn only if dynamic_folds is on, and this foldcolumn is different from what Vim actually displays)
-    — My killer feature: exporting to any format you can write specification for. (for example, bbcode; bbcode specification for unixforum.org is included in the distribution)
+     'list' and 'listchars' (tab, trail, eol, conceal, including the case when 'list' is on and 'lcs' does not contain tab)
+     Foreground colors for lines with differencies (if I am not mistaking, implemented in latest 2html)
+     Normal special character coloring
+     Background color for the whole line with differencies and folds, not just for text
+     Tags linked to their definition (slow, HTML only (unless you write specification by yourself), but partially on by default, also implemented by vimscript #2252 for 2html)
+     Side-by-side diff (also present in latest 2html version)
+     Full conceal support, including 'cole', 'lcs:conceal' and saving information about actual text present
+     Foldcolumn support (2html generates foldcolumn only if dynamic_folds is on, and this foldcolumn is different from what Vim actually displays)
+     My killer feature: exporting to any format you can write specification for. (for example, bbcode; bbcode specification for unixforum.org is included in the distribution)
 
 Examples:
 http://kp-pav.narod2.ru/formatvim-2.2.1-side-by-side-diff.html
@@ -19,7 +19,7 @@ http://kp-pav.narod2.ru/formatvim-2.2.1-AllFolds.html (if you want to open/close
 http://kp-pav.narod2.ru/formatvim-2.3.2-formatconcealed-1.html
 http://kp-pav.narod2.ru/formatvim-2.3.2-formatconcealed-2.html (hover to see actual text present in the line)
 
-Documentation: http://kp-pav.narod2.ru/vim/doc/format.txt.html
+Documentation: http://vimpluginloader.sourceforge.net/doc/format.txt.html
 Project page: http://sourceforge.net/projects/formatvim
 Dependencies (you do not need to install them by yourself, see installation details):
 vimscript #3184, http://sourceforge.net/projects/vimpluginloader

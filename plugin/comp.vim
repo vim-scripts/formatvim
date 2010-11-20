@@ -52,12 +52,13 @@ elseif !exists("s:g.pluginloaded")
                 \          "sid": s:g.scriptid,
                 \   "scriptfile": s:g.load.scriptfile,
                 \"dictfunctions": s:g.chk.f,
-                \   "apiversion": "0.2",
+                \   "apiversion": "0.3",
                 \     "requires": [["load", '0.0'],
                 \                  ["chk",  '0.3'],
                 \                  ["stuf", '0.0']],
             \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
+    let s:F.main.option=s:g.reginfo.functions.option
     finish
 endif
 "{{{1 Вторая загрузка
@@ -77,7 +78,15 @@ call add(s:g.chk.f[0][2].required[0][1][1], s:g.p.emsg.idexists)
 "{{{2 Внешние дополнения
 let s:F.plug.stuf=s:F.plug.load.getfunctions("stuf")
 let s:F.plug.chk=s:F.plug.load.getfunctions("chk")
-"{{{2 main: eerror, destruct
+"{{{2 main: eerror, option, destruct
+"{{{3 s:g.defaultOptions, s:g.c.options
+let s:g.defaultOptions={
+            \"TrailingSeparator": 1,
+        \}
+let s:g.c={}
+let s:g.c.options={
+            \"TrailingSeparator": ["bool", ""],
+        \}
 "{{{3 main.destruct: выгрузить плагин
 function s:F.main.destruct()
     unlet s:g
@@ -147,6 +156,60 @@ function s:F.mod.words(comp, s)
     return []
 endfunction
 "{{{2 comp
+let s:g.comp={}
+"{{{3 comp.file
+let s:F.comp.file={}
+"{{{4 s:g.comp.file
+" Copied from vim-fileutils
+let s:g.comp.file={}
+if !exists('os#OS')
+    runtime! autoload/os.vim
+endif
+if exists('os#OS')
+    let s:g.comp.file.pathseparator=os#pathSeparator
+    let s:g.comp.file.os=os#OS
+else
+    let s:g.comp.file.pathseparator=fnamemodify(expand('<sfile>:h'), ':p')[-1:]
+    let s:g.comp.file.os="unknown"
+    for s:os in ["unix", "win16", "win32", "win64", "win32unix", "win95",
+                \"mac", "macunix"]
+        if has(s:os)
+            let s:g.comp.file.os=s:os
+            break
+        endif
+    endfor
+    unlet s:os
+endif
+let s:g.comp.file.eps=s:F.plug.stuf.regescape(s:g.comp.file.pathseparator)
+"{{{4 comp.file.getDirContents
+if !exists('*fileutils#GetDirContents')
+    runtime! autoload/fileutils.vim
+endif
+if exists('*fileutils#GetDirContents')
+    let s:F.comp.file.getDirContents=function('fileutils#GetDirContents')
+elseif s:g.comp.file.os=~#'unix'
+    function s:F.comp.file.getDirContents(directory)
+        let dirlist=split(glob(a:directory.'/*'), "\n", 1)
+        let r=[]
+        for directory in dirlist
+            if directory[0]!=#'/'
+                let r[-1].="\n".directory
+            else
+                call add(r, directory)
+            endif
+        endfor
+        return r
+    endfunction
+elseif s:g.comp.file.os=~#'win'
+    function s:F.comp.file.getDirContents(directory)
+        return split(glob(a:directory.'\\*'), "\n")
+    endfunction
+else
+    function s:F.comp.file.getDirContents(directory)
+        return split(glob(a:directory.
+                    \escape(s:g.comp.file.pathseparator, '`*[]\').'*'), "\n")
+    endfunction
+endif
 "{{{3 comp.getlist
 function s:F.comp.getlist(descr, arglead)
     let [type, l:Arg]=a:descr
@@ -178,7 +241,6 @@ function s:F.comp.getlist(descr, arglead)
     return s:F.comp.toarglead(a:arglead, eval(s:g.comp.list[type]))
 endfunction
 "{{{4 s:g.comp.list
-let s:g.comp={}
 let s:g.comp.list={
             \"func": "call(l:Arg, [a:arglead], {})",
             \"list": "l:Arg",
@@ -186,97 +248,114 @@ let s:g.comp.list={
         \}
 "{{{3 comp.getfiles
 function s:F.comp.getfiles(arglead, filter)
-    let fragments=split(a:arglead, '/')
+    let fragments=split(a:arglead, s:g.comp.file.eps)
     let globstart=''
-    if a:arglead[0]==#'/'
-        let globstart='/'
+    if a:arglead[0]==#s:g.comp.file.pathseparator
+        let globstart=s:g.comp.file.pathseparator
     endif
-    if a:arglead[-1:]==#'/'
+    if a:arglead[-1:]==#s:g.comp.file.pathseparator
         call add(fragments, "")
     endif
-    while fragments[0]==#'.' || fragments[0]==#'..'
-        let globstart.=remove(fragments, 0).'/'
+    while !empty(fragments) && (fragments[0]==#'.' || fragments[0]==#'..')
+        let globstart.=remove(fragments, 0).s:g.comp.file.pathseparator
     endwhile
-    let escapedfragments=map(copy(fragments), 's:F.plug.stuf.globescape(v:val)')
+    if empty(fragments)
+        if empty(globstart)
+            let globstart='./'
+        endif
+        call add(fragments, "")
+    endif
     let files=s:F.comp.recdownglob(globstart, fragments,
-                \len(fragments)-1, escapedfragments)
+                \len(fragments)-1)
     let newfiles=filter(copy(files), a:filter[0])
-    let r=((newfiles==[])?(files):(newfiles))
-    return map(r, 'substitute(v:val, "//", "/", "g")')
+    let r=((empty(newfiles))?(files):(newfiles))
+    if s:F.main.option("TrailingSeparator")
+        call map(r, '((isdirectory(v:val))?'.
+                    \   '(v:val.s:g.comp.file.pathseparator):'.
+                    \   '(v:val))')
+    endif
+    return map(r, 'substitute(v:val, s:g.comp.file.eps."\\{2}", '.
+                \   '"\\=s:g.comp.file.pathseparator", "g")')
 endfunction
 "{{{3 comp.recdownglob
-function s:F.comp.recdownglob(globstart, fragments, i, escapedfragments)
+function s:F.comp.recdownglob(globstart, fragments, i)
     if a:i<0
         return []
     endif
     let dotfragment=(a:fragments[a:i]==#'.' || a:fragments[a:i]==#'..')
     let glist=[]
     if dotfragment
-        let dir=join(a:fragments[:(a:i)], '/')
+        let dir=join(a:fragments[:(a:i)], s:g.comp.file.pathseparator)
         if isdirectory(dir)
             let glist=[dir]
         endif
     else
         let fstart=a:globstart.
                     \((a:i)?
-                    \   (join(a:escapedfragments[:(a:i-1)],
-                    \         '/')):
+                    \   (join(a:fragments[:(a:i-1)],
+                    \         s:g.comp.file.pathseparator)):
                     \   (""))
-        let fcur=a:escapedfragments[a:i]
-        if fstart!=#"" && fstart[-1:]!=#"/"
-            let fstart.="/"
+        let fcur=a:fragments[a:i]
+        if !empty(fstart) && fstart[-1:]!=#s:g.comp.file.pathseparator
+            let fstart.=s:g.comp.file.pathseparator
         endif
-        for gexpr in s:g.comp.rg.glistexpr
-            let glist=split(glob(eval(gexpr)), "\n")
-            if glist!=[]
-                break
-            endif
-        endfor
+        let dircontents=map(s:F.comp.file.getDirContents(fstart),
+                    \       'fnamemodify(v:val, ":t")')
+        let glist=map(s:F.comp.toarglead(fcur, dircontents),
+                    \   'fstart.(s:g.comp.file.pathseparator).v:val')
     endif
-    if glist==[]
-        return s:F.comp.recdownglob(a:globstart, a:fragments, a:i-1,
-                    \               a:escapedfragments)
+    if empty(glist)
+        return s:F.comp.recdownglob(a:globstart, a:fragments, a:i-1)
     endif
     if a:i==len(a:fragments)-1
         return glist
     endif
     return s:F.comp.recupglob(filter(glist, 'isdirectory(v:val)'), a:fragments,
-                \             a:i+1, a:escapedfragments)
+                \             a:i+1)
 endfunction
 "{{{3 comp.recupglob
-function s:F.comp.recupglob(files, fragments, i, escapedfragments)
+function s:F.comp.recupglob(files, fragments, i)
     let dotfragment=(a:fragments[a:i]==#'.' || a:fragments[a:i]==#'..')
     let glist=[]
     if dotfragment
-        let glist=[join(a:fragments[:(a:i)], '/')]
+        let glist=[join(a:fragments[:(a:i)], s:g.comp.file.pathseparator)]
     endif
-    let fcur=a:escapedfragments[a:i]
-    for gexpr in s:g.comp.rg.glistexpr
+    let fcur=a:fragments[a:i]
+    let directories={}
+    for filter in s:g.comp.filters
         let curglist=[]
         for file in a:files
-            let fstart=s:F.plug.stuf.globescape(file)."/"
-            let curglist+=split(glob(eval(gexpr)), "\n")
+            let fstart=file.s:g.comp.file.pathseparator
+            if has_key(directories, fstart)
+                let dircontents=directories[fstart]
+            else
+                let dircontents=map(s:F.comp.file.getDirContents(fstart),
+                            \       'fnamemodify(v:val, ":t")')
+                let directories[fstart]=dircontents
+            endif
+            let reg=s:F.plug.stuf.regescape(fcur)
+            let reg2=join(
+                        \map(
+                        \   split(fcur, s:g.comp.splitreg),
+                        \   's:F.plug.stuf.regescape(v:val)'),
+                        \'.*')
+            let curglist+=filter(copy(dircontents), filter)
         endfor
-        if curglist!=[]
+        if !empty(curglist)
             let glist=curglist
             break
         endif
     endfor
-    if a:i==len(a:fragments)-1 || glist==[]
+    let glist=map(glist, 'fstart.(s:g.comp.file.pathseparator).v:val')
+    if a:i==len(a:fragments)-1 || empty(glist)
         return glist
     endif
     return s:F.comp.recupglob(filter(glist, 'isdirectory(v:val)'), a:fragments,
-                \             a:i+1, a:escapedfragments)
+                \             a:i+1)
 endfunction
 "{{{4 s:g.comp.rg
 let s:g.comp.rg={}
 let s:g.comp.rg.pregex='[[:punct:]]\@<=\|[[:punct:]]\@='
-let s:g.comp.rg.glistexpr=[
-            \'fstart.fcur."*"',
-            \'fstart."*".fcur."*"',
-            \'fstart."*".join(map(split(a:fragments[a:i], s:g.comp.rg.pregex),'.
-            \                    '"s:F.plug.stuf.globescape(v:val)"), "*")."*"'
-        \]
 "{{{3 comp.toarglead
 let s:g.comp.filters=[
             \'v:val=~#"^".reg',
@@ -286,6 +365,7 @@ let s:g.comp.filters=[
             \'v:val=~#reg2',
             \'v:val=~?reg2',
         \]
+let s:g.comp.splitreg='[[:punct:]]\@<=\|[[:punct:]]\@='
 function s:F.comp.toarglead(arglead, list)
     if type(a:list)!=type([])
         return []
@@ -294,10 +374,10 @@ function s:F.comp.toarglead(arglead, list)
     let reg=s:F.plug.stuf.regescape(a:arglead)
     let reg2=join(
                 \map(
-                \   split(a:arglead, '[[:punct:]]\@<=\|[[:punct:]]\@='),
+                \   split(a:arglead, s:g.comp.splitreg),
                 \   's:F.plug.stuf.regescape(v:val)'),
                 \'.*')
-    let list=filter(a:list, 'type(v:val)=='.type(""))
+    let list=filter(copy(a:list), 'type(v:val)=='.type(""))
     for f in s:g.comp.filters
         let r=filter(copy(list), f)
         if r!=[]
@@ -307,31 +387,49 @@ function s:F.comp.toarglead(arglead, list)
     return []
 endfunction
 "{{{3 comp.split
-function s:F.comp.split(arglead, cmdline, position, input)
-    let r={"origin": [a:cmdline, a:arglead, a:position]}
-    if !a:input
-        let r.cmd=a:cmdline[:(a:position)]
+let s:g.comp.argsplitregex='\(\\\@<!\(\\.\)*\\\)\@<! '
+function s:F.comp.split(comp, input, ...)
+    let r={"origin": []}
+    " arglead, cmdline, postion -> cmdline, arglead, position
+    call add(r.origin, get(a:000, 1, ""))
+    call add(r.origin, get(a:000, 0, ""))
+    call add(r.origin, get(a:000, 2, 0))
+    let splitreg=get(a:comp, 'argsplitregex', s:g.comp.argsplitregex)
+    if a:input==0
+        let r.cmd=r.origin[0][:(r.origin[2])]
         let r.range=matchstr(r.cmd, '^'.s:g.reg.range)
         let r.cmd=r.cmd[len(r.range):]
         let r.command=matchstr(r.cmd, '^\(\u[[:alnum:]_]*\)!\=')
         let r.cmd=r.cmd[len(r.command):]
-    else
-        let r.cmd=a:cmdline
+    elseif a:input==1
+        let r.cmd=r.origin[0]
         let r.range=""
-        let curwordstart=matchstr(a:cmdline[:(a:position-1)], '\(\\.\|[^ ]\)*$')
-        let curwordend=matchstr(a:cmdline, '^\(\\.\|[^ ]\)*', a:position)
+        let curwordstart=matchstr(r.origin[0][:(r.origin[2]-1)],
+                    \             '\(\\.\|[^ ]\)*$')
+        let curwordend=matchstr(r.origin[0], '^\(\\.\|[^ ]\)*', r.origin[2])
         let curword=curwordstart.curwordend
-        let start=a:position-len(curwordstart)
-        let end=a:position+len(curwordend)-1
+        let start=r.origin[2]-len(curwordstart)
+        let end=r.origin[2]+len(curwordend)-1
         let r.cmd=r.cmd[:(end)]
         if start
             let r.prefix=r.cmd[:(start-1)]
         else
             let r.prefix=""
         endif
+    elseif a:input==2
+        let r.origin[2]=col('.')-1
+        let r.cmd=getline('.')[:(col('.')-2)]
+        let r.range=""
+        let r.start=s:F.comp.getstart(a:comp, r.cmd)
+        if type(r.start)!=type(0) || r.start<=0
+            return 0
+        endif
+        let curword=r.cmd[(r.start-1):]
+        let r.arguments=split(r.cmd[:(r.start-2)], splitreg)+[curword]
+        return r
     endif
-    let r.arguments=split(r.cmd, '\(\\\@<!\(\\.\)*\\\)\@<! ')
-    if (a:input && empty(curword)) || (!a:input && empty(a:arglead))
+    let r.arguments=split(r.cmd, splitreg)
+    if (a:input && empty(curword)) || (!a:input && empty(r.origin[1]))
         call add(r.arguments, '')
     endif
     return r
@@ -351,18 +449,48 @@ let s:g.reg.range='\(%\|'.
             \         '[;,]\='.
             \       '\)*'.
             \     '\)\='
+"{{{3 comp.getstart
+"{{{4 s:g.comp.start
+let s:g.comp.start={
+            \"regexs": {
+            \   '_cword': '\%(\k*\|\%(\k\@!\S\)*\)$',
+            \   '_cWORD': '\S*$',
+            \   '_cfile': '\f*$',
+            \}
+        \}
+"}}}4
+function s:F.comp.getstart(comp, line)
+    let l:Start=get(a:comp, 'start', '_cword')
+    if type(l:Start)==type('')
+        if l:Start[0]=='_'
+            let l:Start=get(s:g.comp.start.regexs, l:Start, l:Start)
+        endif
+        return matchstr(a:line, l:Start)+1
+    else
+        return call(l:Start, [a:line], {})
+    endif
+endfunction
 "{{{3 comp.main
-function s:F.comp.main(comp, arglead, cmdline, position)
+function s:F.comp.main(comp, ...)
     let model=a:comp.model
     let input=0
     if model[:4]==#'input'
         let model=model[5:]
         let input=1
+    elseif model[:5]==#'insert'
+        let model=model[6:]
+        let input=2
     endif
-    let s=s:F.comp.split(a:arglead, a:cmdline, a:position, input)
+    let s=call(s:F.comp.split, [a:comp, input]+a:000, {})
+    if empty(s)
+        return []
+    endif
     let r=s:F.mod[model](a:comp, s)
-    if input
+    if input==1
         call map(r, 's.prefix . v:val')
+    elseif input==2
+        call complete(s.start, r)
+        return ""
     endif
     return r
 endfunction
@@ -390,13 +518,20 @@ call add(s:g.chk.alist, s:g.chk.list)
 let s:g.chk.pref=["dict", [[["any", ""], s:g.chk.list]]]
 let s:g.chk.model=["and",]
 let s:g.chk.actions=["dict", [[["any", ""], s:g.chk.model]]]
-let s:g.chk.modcheck=["in", keys(s:F.mod)+map(keys(s:F.mod), '"input".v:val')]
+let s:g.chk.modcheck=["in", keys(s:F.mod)+map(keys(s:F.mod), '"input".v:val')
+            \                            +map(keys(s:F.mod), '"insert".v:val')]
+let s:g.chk.insertstart=["or", [["isfunc", 1],
+            \                   ["keyof", s:g.comp.start.regexs],
+            \                   ["isreg", '']]]
 call add(s:g.chk.model,  [["hkey", "model"],
             \             ["dict", [[["equal", "model"], s:g.chk.modcheck],
             \                       [["equal", "actions"], s:g.chk.actions],
             \                       [["equal", "arguments"], s:g.chk.alist],
             \                       [["equal", "prefix"], s:g.chk.pref],
-            \                       [["equal", "words"], s:g.chk.list]]]])
+            \                       [["equal", "words"], s:g.chk.list],
+            \                       [["equal", "start"], s:g.chk.insertstart],
+            \                       [["equal", "argsplitregex"], ["isreg", '']],
+            \                      ]]])
 let s:g.chk.f[0][2].required[1]=s:g.chk.model
 "{{{2 out
 "{{{3 out.constructcompletion

@@ -139,7 +139,7 @@ if 1
     let s:g.yaml.printchar='\%(\p\|[\x09\x0A\x0D]\|\%u0085\)'
 endif
 " http://www.yaml.org/spec/1.2/spec.html#c-flow-indicator
-let s:g.yaml.flowindicator='\[\]{},'
+let s:g.yaml.flowindicator='[\]{},'
 " http://www.yaml.org/spec/1.2/spec.html#s-white
 let s:g.yaml.whitespace='\t '
 " http://www.yaml.org/spec/1.2/spec.html#b-char
@@ -158,7 +158,7 @@ let s:g.yaml.directivestart='%'
 let s:g.yaml.aliasstart='*'
 let s:g.yaml.anchorstart='&'
 " http://www.yaml.org/spec/1.2/spec.html#c-indicator
-let s:g.yaml.indicator='\-?:,\[\]{}#&*!|>''"%@`'
+let s:g.yaml.indicator='\-?:,[\]{}#&*!|>''"%@`'
 " http://www.yaml.org/spec/1.2/spec.html#ns-char
 let s:g.yaml.nschar='\%(['.(s:g.yaml.wslbr).']\@!'.
             \(s:g.yaml.printchar).'\)'
@@ -166,7 +166,7 @@ let s:g.yaml.nschar='\%(['.(s:g.yaml.wslbr).']\@!'.
 let s:g.yaml.nsdirectivenamereg=s:g.yaml.nschar.'\+'
 " http://www.yaml.org/spec/1.2/spec.html#ns-uri-char
 let s:g.yaml.nsurichar='\%(%\x\x\|['.s:g.yaml.nsword.
-            \                     '#;/?:@&=+$,_.!~*''()\[\]]\)'
+            \                     '#;/?:@&=+$,_.!~*''()[\]]\)'
 " http://www.yaml.org/spec/1.2/spec.html#ns-tag-char
 let s:g.yaml.nstagreg='\%(%\x\x\|['.s:g.yaml.nsword.'#;/?:@&=+$,_.~*''()]\)'
 let s:g.yaml.nstag=s:g.yaml.nsword.'%#;/?:@&=+$,_.~*''()'

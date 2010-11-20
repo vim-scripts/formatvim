@@ -7,6 +7,7 @@ CONTENTS                                                     *comp-contents*
         2.1. Functions                            |comp-functions|
     3. Models                                     |comp-models|
     4. Argument descriptions                      |comp-listdescription|
+    5. Options                                    |comp-options|
 
 ==============================================================================
 1. Intro                                                        *comp-intro*
@@ -87,7 +88,44 @@ pref                                                       *comp-model-pref*
                               *comp-model-inputwords* *comp-model-inputpref*
 input{model}                                              *comp-model-input*
         Like {model}, but for use in |input()| completion.
+                        *comp-model-insertactions* *comp-model-insertsimple*
+                            *comp-model-insertwords* *comp-model-insertpref*
+insert{model}                                            *comp-model-insert*
+        Like {model}, but for use in insert mode completion (see 
+        |complete()|). For insert-mode models additional key is allowed: 
+        `start': it defines where completed word starts and is either a string 
+        starting with `_', regular expression or function reference.
 
+        If `start' key is a function reference, it must take current line 
+        contents (string, not including part starting from the cursor 
+        position) and return column number which will be passed as a first 
+        argument to |complete()| function. If this function will return 
+        something other then positive integer, then completion will be aborted 
+        and nothing will be completed.
+
+        If `start' key is a regular expression (which must not start with `_', 
+        use |/\%(| if you need to have `_' at the start of regular 
+        expression), then |match()| with current line contents (not including 
+        part starting from the cursor position, so |/$| will match before 
+        cursor position) as a first argument and this regex as a second must 
+        give starting column (first argument to |complete()|). If |match()| 
+        fails, then completion will be aborted and nothing will be completed. 
+
+        Value of `start' key may be also one of the following strings:
+        String  Description ~
+        _cword  Complete |word| before the cursor. Considers words that 
+                contains only blank characters to be empty. It is the default 
+                behavior if `start' key was not specified.
+        _cWORD  Complete |WORD| before the cursor. Considers WORDs that 
+                contains only blank characters to be empty.
+        _cfile  Complete filename before the cursor.
+
+There is also an additional key that is valid for any model: argsplitregex. 
+This key must contain a regular expression which will be passed to |split()| 
+when plugin will try to split current line into an arguments list. Default 
+value: '\(\\\@<!\(\\.\)*\\\)\@<! ' (splits on non-escaped spaces). Note that 
+for insert-mode completion `start' has an advantage over `argsplitregex', so 
+the last word is determined by it and won't be split.
 
 ==============================================================================
 4. Argument descriptions                              *comp-listdescription*
@@ -129,6 +167,14 @@ first   [{ListDescription}]                               *comp-descr-first*
         Process {ListDescription}s given in {Argument}, return first non-empty 
         list of possible values or empty list if all descriptions gave an 
         empty list.
+
+==============================================================================
+5. Options                                                    *comp-options*
+
+TrailingSeparator :: Bool                       *comp-opt-TrailingSeparator*
+    If this option is present and is true (default), then |comp-descr-file| 
+    and |comp-descr-file!| add path separator at the end of each directory 
+    name.
 
 vim: ft=help:tw=78
 

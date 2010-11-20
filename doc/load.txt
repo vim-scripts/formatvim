@@ -119,6 +119,7 @@ registerplugin({regdict})
             type       Type of the plugin, see |load-reg-name| for information 
                        about how it is obtained.
             functions  Some useful functions:
+                                                               *load-f-eerror*
                        eerror({srcname}, {etype}, {arg1}, ...)
                             Display the error message with pattern
                                 {plugtype}/{plugname}/{srcname}:{etypestr}({msgs})
@@ -140,6 +141,7 @@ registerplugin({regdict})
                             3. In other cases add {argN} to {msgs}.
                             String {msgs} is a list of strings separated by
                             ": ".
+                                                               *load-f-option*
                         option({optname})
                             Try getting option named {optname} first from 
                             b:{optionPrefix}Options, then from 
@@ -154,38 +156,43 @@ registerplugin({regdict})
 
 unregister({plugname}[, {plugtype}])                  *load-func-unregister*
         Unregister plugin. For {plugname} and {plugtype} arguments see 
-        |load-reg-name|. “Unregister” means:
+        |load-reg-name|. `Unregister' means:
         1. delete all global functions;
         2. delete all commands;
         3. remove plugin dictionary.
-
-getfunctions({plugname}[, {plugtype}])             *load-func-getfunctions*
+                                                    *load-func-getfunctions*
+getfunctions({plugname}[, {plugtype}[, {from}]])
         Get the dictionary functions listed in |load-reg-dictfunctions| 
-        argument provided when plugin {plugname} was registered. For 
-        {plugname} and {plugtype} arguments see |load-reg-name|.
+        argument provided when plugin {plugname} was registered. If {from} 
+        argument is given and it is equal to string `functions', then it will 
+        return functions listed in |load-reg-functions| instead of 
+        |load-reg-getfunctions|, which can be useful if you expect user to 
+        override default prefix. For {plugname} and {plugtype} arguments see 
+        |load-reg-name|.
 
-                                               *load-func-lazygetfunctions*
-lazygetfunctions({plugname}[, {plugtype}])
+                                                *load-func-lazygetfunctions*
+lazygetfunctions({plugname}[, {plugtype}[, {from}]])
         Get the dictionary which will be populated with plugin's dictionary 
         functions when this plugin will be loaded. Can be used to resolve 
         cyclic dependencies. See |load-func-run| for information about how to 
-        run functions from this dictionary.
+        run functions from this dictionary. See |load-func-getfunctions| about 
+        the meaning of {from} argument.
 
-run({dict}, {funcname}[, {arg1}[, ...]])                    *load-func-run*
+run({dict}, {funcname}[, {arg1}[, ...]])                     *load-func-run*
         Run function {funcname} from dictionary {dict} with arguments 
         {arg1}..{argN} (N may be 0). If {dict} was obtained by 
         |load-func-lazygetfunctions| and was not modified then first load the 
         plugin and then run the function. Trows an exception, if function is 
         not found in dictionary.
 
-autocmd({event}, {plugin}, {command})                   *load-func-autocmd*
+autocmd({event}, {plugin}, {command})                    *load-func-autocmd*
         Register an autocommand. For a description of {event} see 
         |load-autocommands|. {plugin} is any string of a form 
         {plugtype}/{plugname}. {command} is either a string which will be 
         executed (see |:execute|) or a function reference which will be called 
         with two arguments: {event} and {plugin}.
 
-delautocmd({event}[, {plugin}[, {command}]])         *load-func-delautocmd*
+delautocmd({event}[, {plugin}[, {command}]])          *load-func-delautocmd*
         Delete `autocommand(s)': if only {event} is given, then all 
         `autocommands' attached to this event are cleared. If {plugin} is 
         given, then it deletes all `autocommands' associated with the given 
@@ -267,8 +274,8 @@ Registration is done via calling |load-func-register| function with a single
 dictionary as an argument. The following keys are required: oprefix, funcdict, 
 globdict, sid, scriptfile, apiversion. Possible keys:
                                                     *load-reg-dictfunctions*
-dictfunctions :: [({dictname}, {internalname}, {check})]
-        List of lists of three items:
+dictfunctions :: [({dictname}, {internalname}[, {check}[, {with}]])]
+        List of lists with the following items:
         {dictname}     any string, which will be the function name in the
                        dictionary returned by |load-func-getfunctions|.
         {internalname} string, which consist of alphanumeric characters,
@@ -280,6 +287,22 @@ dictfunctions :: [({dictname}, {internalname}, {check})]
         {check}        Argument check for a function or an empty dictionary if
                        no check is required. See |chk-func-checkarguments| for 
                        more details.
+        {with}         List of lists with two or three items: it is either 
+                       ({varname}, {value}), or ({saver}, {setter}, 
+                       {restorer}). In the first case value of {varname} will 
+                       be stored into local variable, then {value} will be 
+                       assigned to {varname} and, after the function was run, 
+                       restored value will be assigned to {varname} (note that 
+                       variable {varname} must exist, but may be actually an 
+                       option). In the second case {saver} and {setter} are 
+                       run before the function and {restorer} will be run 
+                       after it. All of {saver}, {setter} and {restorer} must 
+                       be strings; in this strings `%.' will be replaced with 
+                       internal variable name. So, lists >
+                            ["&magic", 1]
+<                      and >
+                            ["let %.=&magic", "let &magic=1", "let &magic=%."]
+<                      are equivalent.
 fprefix :: String                                         *load-reg-fprefix*
         String which starts either with g: or with uppercase latin letter and 
         contains any number of latin letters, digits and underscores. It is 
@@ -318,10 +341,10 @@ commands :: Dictionary                                   *load-reg-commands*
                   of the function (depending on other keys, some of them may 
                   not be present):
                   '<bang>', '<reg>', <LINE1>, <LINE2>, <count>, <f-args>.
-        nargs     “+”, “?”, “*”, “0”, natural number or an empty string.
+        nargs     `+', `?', `*', `0', natural number or an empty string.
                   See |:command-nargs|. Adds <f-args> to the function 
                   arguments.
-        range     “%”, non-negative number or an empty string.
+        range     `%', non-negative number or an empty string.
                   See |:command-range|. Adds <LINE1> and <LINE2> to function 
                   arguments.
         count     Non-negative number or an empty string.
@@ -341,20 +364,13 @@ commands :: Dictionary                                   *load-reg-commands*
         This key is used to construct plugin's commands. Note that existing 
         commands will not be redefined. Key `cprefix' must also be present.
                                                         *load-reg-functions*
-functions :: [({functiontail}, {internalname}, {check})]
-        List of lists of three items:
+functions :: [({functiontail}, {internalname}[, {check}[, {with}]])]
+        List of lists with the following items:
         {functiontail} string, which consist of any number of latin letters,
                        digits and underscores. It is used to construct plugin 
                        global function's name ({fprefix}{functiontail}).
-        {internalname} string, which consist of alphanumeric characters, 
-                       underscores and dots, where dot must not start or end 
-                       the string or follow another dot. Dictionary function 
-                       with name |load-reg-F|.{internalname} must exist. Value 
-                       returned by this function will be returned by 
-                       constructed function.
-        {check}        Argument check for a function or an empty dictionary if
-                       no check is required. See |chk-func-checkarguments| for 
-                       more details.
+        For the description of other list items, see |load-reg-dictfunctions|.
+
         This key is used to construct plugin's global functions. Note that 
         existing functions will not be redefined. Key `fprefix' must also be 
         present.
@@ -468,6 +484,10 @@ _disablemaps :: Bool                                *load-opt-_disablemaps*
         Global. If true then all plugin mappings are disabled. May be set to 
         1 in |load-reg-g|.defaultOptions in order to disable mappings by
         default.
+_disable_option_checks :: Bool            *load-opt-_disable_option_checks*
+        Global. If true then |load-f-option| will omit checking plugin 
+        options. Use |load-opt-DisableOptionChecks| to disable option checking 
+        for all plugins.
 
 This plugin also has its own options:
 
@@ -475,5 +495,9 @@ DisableLoadChecks :: Bool                      *load-opt-DisableLoadChecks*
         Disables checking of |load-func-registerplugin| argument, speeding up 
         loading of plugins that use it. On by default, should be turned off by 
         plugin developers.
+DisableOptionChecks :: Bool                  *load-opt-DisableOptionChecks*
+        If this option is true, then |load-f-option| will not check plugin 
+        options by default. This option may be overriden by 
+        |load-opt-_disable_option_checks|.
 
 vim: ft=help:tw=78
