@@ -120,12 +120,16 @@ insert{model}                                            *comp-model-insert*
                 contains only blank characters to be empty.
         _cfile  Complete filename before the cursor.
 
-There is also an additional key that is valid for any model: argsplitregex. 
-This key must contain a regular expression which will be passed to |split()| 
-when plugin will try to split current line into an arguments list. Default 
-value: '\(\\\@<!\(\\.\)*\\\)\@<! ' (splits on non-escaped spaces). Note that 
-for insert-mode completion `start' has an advantage over `argsplitregex', so 
-the last word is determined by it and won't be split.
+There are also two additional keys that are valid for any model: argsplitregex 
+and escape. Key `argsplitregex' must contain a regular expression which will 
+be passed to |split()| when plugin will try to split current line into an 
+arguments list. Default value: '\(\\\@<!\(\\.\)*\\\)\@<! ' (splits on 
+non-escaped spaces). Note that for insert-mode completion `start' has an 
+advantage over `argsplitregex', so the last word is determined by it and won't 
+be split. Key `escape' determines, whether completion list will be escaped by 
+|fnameescape()| function (2), using |escape()| with `\\|\" \n' as a second 
+argument (1) or not escaped at all (0). Default value: 1 for normal 
+(command-line) models, 0 for input and insert models.
 
 ==============================================================================
 4. Argument descriptions                              *comp-listdescription*
@@ -139,19 +143,45 @@ list    List                                               *comp-descr-list*
 keyof   Dictionary                                        *comp-descr-keyof*
         Take possible variants from the list of keys of the specified 
         dictionary.
+                                                          *comp-descr-=file*
 file    String                                             *comp-descr-file*
         Take possible variants from the list of files created by zsh-like 
-        completion function. {Argument} restricts file ends to match 
-        {Argument} (case ignored) if there are any matches, otherwise 
-        {Argument} is ignored.
+        completion function. {Argument} is a string with the following form: >
+            ([drwW])*(.{ext})*(/{regex})*
+<       This string consist of the following atoms:
+        1. One or more characters that describe type of the file: `d' stands 
+           for `directory', `r' for `readable file' (but not readable 
+           directory), `w' for `writeable file', `W' for `writeable file or 
+           directory'. Note that directories will always be completed, even if 
+           both `d' and `W' are absent. Use `d' if you want to complete only 
+           directories.
+        2. .{ext} describes extension of the files. It may appear more then 
+           once. Note that {ext} may contain escaped dot, so if you need to 
+           complete gzipped tar archives, you can use `.tar\.gz.tgz'. 
+           Extensions are matched case insensitively.
+        3. /{regex} describes regular expression which must be matched by file 
+           name. By default, regex is matched case insensitively, but you may 
+           use |/\C|.
+        Note: `W.tar.7z/\.\(zip\|rar\)$' means the following: complete 
+              writeable files (`W') that end with `\.tar' (`.tar'), `.7z' 
+              (.7z), `.zip' or `.rar' (`/\.\(zip\|rar\)$')
+              ([drwW] AND (.{ext1} OR .{ext2} OR ...
+                           OR /{regex1} OR /{regex2} OR ...)).
+        Note: You may use `=file' instead of `file' as a type of argument 
+              description. Equality sign enables strict matching: if it is not 
+              enabled, then absense of matches will disable filter, otherwise 
+              it will complete nothing.
+                                                         *comp-descr-=file!*
 file!   {Check}                                           *comp-descr-file!*
         Like file, but resulting file list is filtered through 
         |chk-func-checkargument|. If there are no matches, {Argument} is 
         ignored. For example, argument description ["file", ".txt"] and 
         ["file!", ["regex", '\.txt$']] are just the same, but first version is 
         faster.
-        Note that neither file nor file! support filenames that have newline 
-        characters ("\n") (see |glob()| for more details).
+        Note: You may use `=file!' instead of `file!' as a type of argument 
+              description. Equality sign enables strict matching: if it is not 
+              enabled, then absense of matches will disable filter, otherwise 
+              it will complete nothing.
 func    Function reference                                 *comp-descr-func*
         Take possible variants from the returned value of a function provided 
         as {Argument} called with an only argument: {ArgLead}. This function 

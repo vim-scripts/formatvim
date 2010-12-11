@@ -198,7 +198,8 @@ CollapsFiller :: UnsignedInteger                  *format-opt-CollapsFiller*
         If this value is not zero, number of deleted lines is equal or greater 
         than CollapsFiller and there is "collapsedfiller" key in format 
         specification then this key is used instead of repeating "difffiller" 
-        for every deleted line.
+        for every deleted line. If "difffiller" key is absent, then this 
+        option is ignored and plugin will act as if this option was set to 1.
 
 IgnoreCursor :: Bool                               *format-opt-IgnoreCursor*
         If this option is true (default) then cursor position is ignored 
@@ -234,8 +235,22 @@ ShowProgress :: 0, 1 or 2                          *format-opt-ShowProgress*
 ColorFile :: 0 or filename (file must be readable)    *format-opt-ColorFile*
         If this option is not zero, then read colors from file {ColorFile} 
         instead of config/formatvim/colors-default-'t_Co'.yaml. Relevant only 
-        for vim running in color terminal.
-        Note that this option must be set before format.vim is loaded. All 
+        for vim running in color terminal. Format of the file must be the 
+        following (it is a very limited subset of YAML): >
+            # Comment
+            --- # Document start (may be omitted)
+            # Default color
+            - "#000000" # Color 0
+            - "#abcdef" # Color 1
+            # Yet another comment
+            - "#dead00" # Color 2
+            ... # Document end (may be omitted)
+            # Note the following: each non-comment line must start with `- ' 
+            # (a dash and a space, exactly at the start of line) followed by 
+            # an opening quote (either «'» or «"»), a hash, four hexadecimal 
+            # digits and a closing quote («'» or «"» depending on what you 
+            # have chosen before).
+<       Note that this option must be set before format.vim is loaded. All 
         changes made to this option will be ignored if plugin is already 
         loaded (though you may use |load-action-reload|).
 
@@ -632,6 +647,9 @@ of ordinary variables):
         italic     Italic syntax attribute.
         inverse    Inverse syntax attribute.
         underline  Underline syntax attribute.
+@~@                                                        *format-spec-@~@*
+        Dictionary with style specification. For a list of its keys, see 
+        |format-spec-@key@|.
 @_{option}@                                             *format-spec-@_opt@*
         Value of the specified option. Possible {option}s:
         {option}      Value ~
@@ -681,6 +699,10 @@ The following arguments are unique for the |format-spec-key-concealed|:
         String with style computed for actual style specification. It is an 
         alias for |format-spec-@:@| unless used inside 
         |format-spec-key-concealed|.
+@^@                                                        *format-spec-@^@*
+        Dictionary with actual style specification. For a list of possible 
+        keys, see |format-spec-@key@|. It is an alias for |format-spec-@~@| 
+        unless used outside |format-spec-key-concealed|.
 
 Note that these expressions are replaced in arbitrary order, so you need to 
 avoid such ambigious constructions as @_columns@-@=@. Use spaces or brackets 
@@ -704,6 +726,50 @@ bbcode-unixforum                            *format-format-bbcode-unixforum*
 latex-xcolor                                    *format-format-latex-xcolor*
         Experimental support for dumping to LaTeX format. Uses xcolor and 
         ttfamily fonts.
+tokens                                                *format-format-tokens*
+        Format useful only if you require to process elements in a known 
+        order. If you want to use it, start your script with something like 
+        that: >
+            let f=load#LoadFuncdict('format')
+            let tokenlist=map(f.format('tokens'), 'eval(v:val)')
+            for token in tokenlist
+                " do something
+            endfor
+<       Variable `tokenlist' in the above example will contain a list of lists 
+        where each list has the following structure: >
+            [{type}, {data1}, ..., {dataN}]
+<       Here is a list of possible {type}'s and corresponding datas:
+            Type    Description and datas ~
+            b       Beginning of the document, appears only once as a first 
+                    token. Datas: style specification dictionary, filename, 
+                    buffer number.
+            e       End of the document, appears only once as a last token. 
+                    Datas: style specification dictionary, @_tags@ dictionary.
+            ss      Side-by-side diff line. Datas are `l*' tokens from diffed 
+                    buffers.
+            fs      Fold start. Datas: style specification dictionary, 
+                    fold text and fold level.
+            fe      Fold end. Datas are the same as for `fs' token.
+            lf      Folded line. Datas are the same as for `lr' token.
+            ld      Diff filler line. Datas are the same as for `lr' token.
+            lc      Collapsed filler line. Datas are the same as for `lr' 
+                    token.
+            lr      Regular line. Datas: line style specification dictionary 
+                    and list of inline tokens.
+        Inline tokens (`style' means `style specification dictionary'):
+            Type    Description and datas ~
+            fc      Fold column. Datas: fold column text and style.
+            ln      Line number. Datas: line number and style.
+            ts      Tag start. Datas: tag name.
+            te      Tag end. Datas: tag name.
+            l       Regular text. Datas: text, its style.
+            c       Concealed text. Datas: shown text, its style, concealed 
+                    text, its style.
+            f       Folded text. Datas: shown text, its style.
+            df      Diff filler line. Datas: empty string, style of filler 
+                    line.
+            cf      Collapsed filler line. Datas: number of deleted lines, 
+                    style of filler line.
 
 vim: ft=help:tw=78
 

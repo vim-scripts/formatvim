@@ -107,8 +107,7 @@ elseif !exists("s:g.pluginloaded")
                 \     "requires": [["load", '0.0'],
                 \                  ["comp", '0.0'],
                 \                  ["chk",  '0.3'],
-                \                  ["stuf", '0.0'],
-                \                  ["yaml", '0.0']],
+                \                  ["stuf", '0.0']],
             \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
     let s:F.main.option=s:g.reginfo.functions.option
@@ -177,7 +176,6 @@ let s:g.p={
 "{{{2 Внешние дополнения
 let s:F.plug.stuf=s:F.plug.load.getfunctions("stuf")
 let s:F.plug.comp=s:F.plug.load.getfunctions("comp")
-let s:F.plug.yaml=s:F.plug.load.getfunctions("yaml")
 let s:F.plug.chk =s:F.plug.load.getfunctions("chk")
 "{{{2 stuf: strlen, htmlstrlen, bbstrlen
 "{{{3 stuf.strlen
@@ -238,8 +236,9 @@ else
     if !filereadable(s:g.fmt.colorfile)
         call s:F.main.eerror("<script>", "badf", ["misscol"])
     endif
-    let s:g.fmt.colors=s:F.plug.yaml.loads(
-                \join(readfile(s:g.fmt.colorfile, 'b'), "\n"))
+    let s:g.fmt.colors=map(filter(readfile(s:g.fmt.colorfile, 'b'),
+                \                 'v:val[:1]==#"- "'),
+                \          'v:val[3:9]')
 endif
 "{{{4 s:g.fmt.expressions
 let s:g.fmt.expressions={
@@ -321,6 +320,7 @@ let s:g.fmt.args={
             \"@": ["begin", "end", "sbsdstart", "sbsdsep", "sbsdend"],
         \}
 function s:F.fmt.compile(Str, opts, key)
+    "{{{4 Объявление переменных
     let requires=[]
     let args=[]
     let str=a:Str
@@ -329,6 +329,7 @@ function s:F.fmt.compile(Str, opts, key)
         let noreturn=1
     endif
     let str=s:F.plug.stuf.squote(str)
+    "{{{4 Замена %*
     let str=substitute(str,
                 \'%\(=\([^\\%]\|\\.\)\+=%\|''.\{-}''%\|!.\{-}!%\|>.*\|.\)',
                 \'\=substitute("''.".'.
@@ -336,33 +337,35 @@ function s:F.fmt.compile(Str, opts, key)
                 \   '"^''\\.''\\|''\\.''$", "", "g")',
                 \'g')
     let str=substitute(str, '\r', "\n", 'g')
+    "{{{4 @@@:     a:str, исходная строка
     if index(s:g.fmt.args["@"], a:key)!=-1
         let str=substitute(str, '@@@', "''", 'g')
     else
         let str=substitute(str, '@@@',  '\=add(requires, "a:str")[-1]', 'g')
         call add(args, "str")
     endif
-
+    "{{{4 Удаление лишних штрихов
     let str=substitute(str, "^''\\.\\|\\.''$", "", "g")
-
+    "{{{4 @word@:  a:spec[0], спецификация; @~@
     let str=substitute(str, '@\([a-z]\+\)@',
                 \'\="a:spec[0].".add(requires, submatch(1))[-1]', 'g')
+    let str=substitute(str, '@\~@','\=add(requires, "a:spec[0]")[-1]', 'g')
     call add(args, "spec")
-
+    "{{{4 @-@:     a:line, номер строки
     if index(s:g.fmt.args["-"], a:key)!=-1
         let str=substitute(str, '@-@', '0', 'g')
     else
         let str=substitute(str, '@-@', '\=add(requires, "a:line")[-1]', 'g')
         call add(args, "line")
     endif
-
+    "{{{4 @.@:     a:char, номер текущего символа
     if index(s:g.fmt.args["."], a:key)!=-1
         let str=substitute(str, '@\.@', '0', 'g')
     else
         let str=substitute(str, '@\.@', '\=add(requires, "a:char")[-1]',   'g')
         call add(args, "char")
     endif
-
+    "{{{4 @=@:       cur, длина строки
     if match(str, '@=@')!=-1
         call add(requires, '=')
         let str=substitute(str, '\(^\|''\@<=\.\)'.
@@ -379,35 +382,40 @@ function s:F.fmt.compile(Str, opts, key)
         endif
     endif
     call add(args, "cur")
-
+    "{{{4 @_word@: a:opts, настройка
     let str=substitute(str, '@_\([a-z]\+\)@',
                 \'\="a:opts.".add(requires, "_".submatch(1))[-1][1:]', 'g')
     call add(args, "opts")
-
+    "{{{4 Добавление стиля в список аргмунетов
     if a:key==#"begin" || a:key==#"end"
         call add(args, "style")
     endif
+    "{{{4 @?@:     a:concealed, скрытый символ; @&word@, @^@ и @&@
     if a:key==#"concealed"
         let str=substitute(str, '@?@', '\=add(requires, "a:concealed")[-1]','g')
         let str=substitute(str, '@&\([a-z]\+\)@',
                     \'\="a:cspec[0].".add(requires, "&".submatch(1))[-1][1:]',
                     \'g')
         let str=substitute(str, '@&@', '\=add(requires, "a:cspec[1]")[-1]', 'g')
+        let str=substitute(str, '@\^@','\=add(requires, "a:cspec[0]")[-1]', 'g')
         call add(args, "concealed")
         call add(args, "cspec")
     else
         let str=substitute(str, '@?@', "''", 'g')
         let str=substitute(str, '@&\([a-z]\)\+@',
                     \'\="a:spec[0].".add(requires, submatch(1))[-1]', 'g')
+        let str=substitute(str, '@\^@','\=add(requires, "a:spec[0]")[-1]', 'g')
     endif
+    "{{{4 @:@, @&@: a:spec[1] или a:style, стиль
     let str=substitute(str, '@[:&]@', '\=add(requires, "'.
                 \((index(["begin", "end"], a:key)!=-1)?
                 \   ("a:style"):
                 \   ("a:spec[1]")).
                 \'")[-1]',  'g')
-
+    "{{{4 %%@, %@ → @
     let str=substitute(str, '%%@', '%@', 'g')
     let str=substitute(str,  '%@',  '@', 'g')
+    "{{{4 Создание функции
     let r={}
     execute      "function r.r(".join(args, ", ").")\n".
                 \'    '.str."\n".
@@ -762,6 +770,29 @@ let s:g.fmt.formats["latex-xcolor"]={
             \"lineend":      '\par',
             \"end":          '\end{document}',
             \"leadingspace": '\enskip{}',
+        \}
+"{{{4 tokens
+let s:g.fmt.linetypes=['lr', 'lf', 'ld', 'lc']
+let s:g.fmt.formats.tokens={
+            \"begin":           "%>string(['b', @~@, expand('%'), bufnr('%')])",
+            \"sbsdstart":       "['ss', ",
+            \"foldstart":       "['fs', %:, %'string(@@@)'%, %C]",
+            \"foldend":         "['fe', %:, %'string(@@@)'%, %C]",
+            \"linestart":       "['%'s:g.fmt.linetypes[@@@]'%', %:, ",
+            \"foldcolumn":      "['fc', %'string(@@@)'%, %:], ",
+            \"linenr":          "['ln', %s,              %:], ",
+            \"tagstart":        "['ts', %'string(@@@)'%], ",
+            \"line":            "['l' , %'string(@@@)'%, %:], ",
+            \"concealed":       "%'string(['c', @@@, @~@, @?@, @^@])'%, ",
+            \"tagend":          "['te', %'string(@@@)'%], ",
+            \"fold":            "['f' , %'string(@@@)'%, %:], ",
+            \"difffiller":      "['df', '',              %:], ",
+            \"collapsedfiller": "['cf', %'string(@@@)'%, %:], ",
+            \"style":           "%>string(@~@)",
+            \"lineend":         "]",
+            \"sbsdsep":         ", ",
+            \"sbsdend":         "]",
+            \"end":             "%>string(['e', @~@, @_tags@])",
         \}
 "{{{3 fmt.getspecdict
 function s:F.fmt.getspecdict(id, ...)
@@ -1422,6 +1453,10 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
         let collapsafter=((a:options.collapsfiller==-1)?
                     \       (s:F.main.option("CollapsFiller")):
                     \       (a:options.collapsfiller))
+        if !has_key(cformat, 'difffiller') &&
+                    \has_key(cformat, 'collapsedfiller')
+            let collapsafter=1
+        endif
         if collapsafter && has_key(cformat, "collapsedfiller")
             let persistentfiller=0
         elseif has_key(cformat, "difffiller")
@@ -1474,7 +1509,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             endif
             call extend(formatfunction, [
             \"while fcurline<=".endline,
-            \"    if foldclosed(fcurline)>-1",
+            \"    if foldclosed(fcurline)!=-1",
             \"        call add(closedfoldslist, fcurline)",
             \"        let closedfolds[fcurline]=".
             \               ((has_key(cformat, "linestart"))?
@@ -1960,6 +1995,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             \               ('.cformat.lineend(1, foldspec, curline, 0, "", '.
             \                                 'opts)'):
             \               ('')),
+            \'    call add(r, curstr)',
             \'    let curline=foldclosedend(curline)+1',
             \'    continue',
             \'else',

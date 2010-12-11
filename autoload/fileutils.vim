@@ -5,11 +5,21 @@ endif
 let s:loaded_plugin=1
 "{{{1 GetDirContents :: (path) -> [filenames]
 function fileutils#GetDirContents(directory)
-    if type(a:directory)!=type("") || !isdirectory(a:directory)
+    if type(a:directory)!=type("")
         return -1
     endif
-    " fnamemodify adds trailing path separator when expanding with :p
-    let fullpath=fnamemodify(a:directory, ':p')[:-2]
+    " fnamemodify("", ":p") already gives the name of the current directory, but 
+    " I am not sure whether I can rely on it
+    " fnamemodify will expand ~ which isdirectory does not accept
+    let fullpath=fnamemodify((empty(a:directory)?('.'):(a:directory)), ':p')
+    if !isdirectory(fullpath)
+        return -1
+    endif
+    " fnamemodify adds trailing path separator when expanding with :p, but this 
+    " does not work if we are trying to get contents of the root directory using 
+    " python's os.listdir: it will get empty. Added workaround into python 
+    " function variants
+    let fullpath=fullpath[:-2]
     return s:GetDirContents(fullpath)
 endfunction
 if has('python')
@@ -18,7 +28,11 @@ if has('python')
         python import os
         function s:GetDirContents(directory)
             python import os, vim
-            python vim.command('return ['+','.join(['"'+(x.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n'))+'"' for x in os.listdir(vim.eval('a:directory'))])+']')
+            let directory=a:directory
+            if empty(a:directory)
+                let directory=g:os#pathSeparator
+            endif
+            python vim.command('return ['+','.join(['"'+(x.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n'))+'"' for x in os.listdir(vim.eval('directory'))])+']')
         endfunction
     catch
     endtry
@@ -28,7 +42,11 @@ elseif has('python3')
         py3 import os
         function s:GetDirContents(directory)
             py3 import os, vim
-            py3 vim.command('return ['+','.join(['"'+(x.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n'))+'"' for x in os.listdir(vim.eval('a:directory'))])+']')
+            let directory=a:directory
+            if empty(a:directory)
+                let directory=g:os#pathSeparator
+            endif
+            py3 vim.command('return ['+','.join(['"'+(x.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n'))+'"' for x in os.listdir(vim.eval('directory'))])+']')
         endfunction
     catch
     endtry
