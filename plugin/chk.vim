@@ -43,7 +43,7 @@ elseif !exists("s:g.pluginloaded")
                 \"dictfunctions": s:g.load.f,
                 \          "sid": s:g.load.sid,
                 \   "scriptfile": s:g.load.scriptfile,
-                \   "apiversion": "0.5",
+                \   "apiversion": "0.6",
                 \     "requires": [["load", '0.6']],
             \})
     let s:F.main._eerror=s:g.reginfo.functions.eerror
@@ -140,6 +140,10 @@ let s:g.p={
             \     "hnf": "Highlight group not found",
             \   "cfunc": "Reference to function %s is not callable",
             \    "fnex": "Function with name %s does not exist",
+            \   "dupor": "The following prefixes are present both ".
+            \            "in prefrequired and prefoptional: %s",
+            \    "udpr": "Unknown or duplicate prefix in position %u: %s",
+            \   "nropr": "List prefix is neither required nor optional: %s",
             \},
             \"etype": {
             \     "value": "InvalidValue",
@@ -418,7 +422,17 @@ function s:F.mod.prefixed(chk, args, shift)
     if has_key(a:chk, "prefrequired")
         let rchk=copy(a:chk.prefrequired)
     endif
+    let duppref=filter(keys(rchk), 'has_key(ochk, v:val)')
+    if !empty(duppref)
+        return s:F.main.error(selfname, "check", ["dupor", string(duppref)])
+    endif
     let chk=keys(ochk)+keys(rchk)
+    let noaltchk=copy(chk)
+    let hasaltpref=has_key(a:chk, "altpref")
+    if hasaltpref
+        let chk+=filter(copy(a:chk.altpref), 'type(v:val)=='.type("").
+                    \                    ' && index(chk, v:val)==-1')
+    endif
     "{{{4 Получаем необязательные аргументы
     let prefchk=["in", chk]
     let result=s:F.cchk.getoptional(a:chk, a:args, blen, prefchk)
@@ -433,7 +447,7 @@ function s:F.mod.prefixed(chk, args, shift)
     if haspreflist && !s:F.achk._main(plcheck, a:chk.preflist)
         return 0
     endif
-    let allowtrun=!(len(result.result) || haspreflist)
+    let allowtrun=(empty(result.result) && !haspreflist)
     unlet result
     if allowtrun && has_key(a:chk, "allowtrun")
         if !s:F.achk._main(s:g.mod.atcheck, a:chk.allowtrun)
@@ -442,29 +456,70 @@ function s:F.mod.prefixed(chk, args, shift)
         let allowtrun = a:chk.allowtrun
     endif
     "{{{4 Собственно, префиксы
-    if has_key(a:chk, "prefoptional") || has_key(a:chk, "prefrequired")
+    if has_key(a:chk, "prefoptional") || has_key(a:chk, "prefrequired") ||
+                \has_key(a:chk, "altpref")
         "{{{5 Объявление переменных
         let i=blen
         let result={}
         let pref=""
+        let arg=""
         let inlist=0
+        let isalt=0
+        let largs=len(a:args)
         "{{{5 Получение префиксов
-        while i<len(a:args)
+        while i<largs
             "{{{6 Если ещё нет префикса
             if pref==#""
+                unlet pref
                 let pref=a:args[i]
                 let inlist=0
+                let isalt=0
                 if type(pref)!=type("")
                     return s:F.main.eerror(selfname, "value", ["estr", i])
                 elseif allowtrun
-                    let foundpref=s:F.cchk.gettrun(pref, chk)
+                    let foundpref=s:F.cchk.gettrun(pref, chk, !hasaltpref)
                     if type(foundpref)!=type("")
-                        return s:F.main.eerror(selfname, "value",
-                                    \["upr", pref, i])
+                        if hasaltpref && pref[:1]==#'no'
+                            let foundpref=s:F.cchk.gettrun(pref[2:],
+                                        \                  a:chk.altpref)
+                            if type(foundpref)!=type("")
+                                return s:F.main.eerror(selfname, "value",
+                                            \          ["upr", pref, i])
+                            endif
+                            let result[foundpref]=0
+                            let foundpref=""
+                        else
+                            return s:F.main.eerror(selfname, "value",
+                                        \          ["upr", pref, i])
+                        endif
+                    elseif hasaltpref
+                        let isalt=(index(a:chk.altpref, foundpref)!=-1)
+                        if isalt
+                            let result[foundpref]=1
+                            if index(noaltchk, foundpref)==-1
+                                let foundpref=""
+                            endif
+                        endif
                     endif
                     let pref=foundpref
+                    unlet foundpref
                 elseif index(chk, pref)==-1
-                    return s:F.main.eerror(selfname, "value", ["upr", pref, i])
+                    if hasaltpref && pref[:1]==#'no' &&
+                                \index(a:chk.altpref, pref[2:])!=-1
+                        let result[pref[2:]]=0
+                        let pref=""
+                    else
+                        return s:F.main.eerror(selfname, "value",
+                                    \          ["upr", pref, i])
+                    endif
+                elseif hasaltpref
+                    let isalt=(index(a:chk.altpref, pref)!=-1)
+                    if isalt
+                        let result[pref]=1
+                        if index(noaltchk, pref)==-1
+                            let pref=""
+                        endif
+                    endif
                 endif
                 if haspreflist && index(a:chk.preflist, pref)!=-1
                     let result[pref]=[]
@@ -472,21 +527,30 @@ function s:F.mod.prefixed(chk, args, shift)
                     if has_key(ochk, pref)
                         let listchk=ochk[pref][0]
                         unlet ochk[pref]
-                    else
+                    elseif has_key(rchk, pref)
                         let listchk=rchk[pref]
                         unlet rchk[pref]
+                    else
+                        return s:F.main.eerror(selfname, "check",
+                                    \          ["nropr", pref])
                     endif
                 endif
                 let i+=1
                 continue
             endif
             "{{{6 Получение аргумента
+            unlet arg
             let arg=a:args[i]
             "{{{7 Если мы внутри списка,
             " то надо остановиться на аргументе, являющемся префиксом
-            if inlist && index(chk, arg)!=-1
+            if (inlist || isalt) &&
+                        \(index(chk, arg)!=-1 ||
+                        \ (arg[:1]==#'no' &&
+                        \  index(a:chk.altpref, arg[2:])!=-1))
                 let pref=""
-                unlet listchk
+                if inlist
+                    unlet listchk
+                endif
                 continue
             endif
             "{{{7 Получения значения, соответствующего префиксу
@@ -495,13 +559,23 @@ function s:F.mod.prefixed(chk, args, shift)
             elseif has_key(ochk, pref)
                 let gres=s:F.comm.getarg(ochk[pref][0], arg)
                 unlet ochk[pref]
-            else
+            elseif has_key(rchk, pref)
                 let gres=s:F.comm.getarg(rchk[pref], arg)
                 unlet rchk[pref]
+            elseif isalt
+                let pref=""
+                continue
+            else
+                return s:F.main.eerror(selfname, "value", ["udpr", i-1, pref])
             endif
-            if type(gres)!=type({})
-                return s:F.main.eerror(selfname, "value", ["eival", i+1])
             "{{{7 Запись полученного значения
+            if type(gres)!=type({})
+                if isalt
+                    let pref=""
+                    unlet gres
+                    continue
+                endif
+                return s:F.main.eerror(selfname, "value", ["eival", i+1])
             elseif has_key(gres, "result")
                 if inlist
                     call add(result[pref], gres.result)
@@ -515,9 +589,12 @@ function s:F.mod.prefixed(chk, args, shift)
             let i+=1
         endwhile
         "{{{5 Проверка завершенности
-        if pref!=#"" && !inlist
+        if pref!=#"" && !(inlist || isalt)
             return s:F.main.eerror(selfname, "value", ["ina", len(a:args)])
         endif
+        "{{{5 Удаление полученных префиксов
+        call filter(rchk, '!has_key(result, v:key)')
+        call filter(ochk, '!has_key(result, v:key)')
         "{{{5 Проверка наличия всех обязательных префиксов
         if !empty(rchk)
             return s:F.main.eerror(selfname, "value", ["pmis",
@@ -533,6 +610,14 @@ function s:F.mod.prefixed(chk, args, shift)
             endif
             unlet gres
         endfor
+        "{{{5 Получение «альтернативных» префиксов
+        if hasaltpref
+            for pref in a:chk.altpref
+                if !has_key(result, pref)
+                    let result[pref]=0
+                endif
+            endfor
+        endif
         "}}}5
         call add(args, result)
     endif
@@ -557,8 +642,9 @@ function s:F.mod.aslist(chk, args, shift)
 endfunction
 "{{{2 cchk: _main, gettrun, getoptional, getrequired
 "{{{3 cchk.gettrun
-function s:F.cchk.gettrun(trun, fulls)
+function s:F.cchk.gettrun(trun, fulls, ...)
     let selfname="cchk.gettrun"
+    let doerror=get(a:000, 0, 1)
     if type(a:fulls)==type({})
         let fulls=keys(a:fulls)
     else
@@ -567,10 +653,10 @@ function s:F.cchk.gettrun(trun, fulls)
     if index(fulls, a:trun)!=-1
         return a:trun
     endif
-    let reg='^'.s:F.stuf.regescape(a:trun)
+    let ltrun=len(a:trun)-1
     let fullsfound=0
     for full in fulls
-        if full=~#reg
+        if full[:ltrun]==#a:trun
             let fullsfound+=1
             let foundfull=full
             if fullsfound>1
@@ -582,7 +668,10 @@ function s:F.cchk.gettrun(trun, fulls)
     if exists("foundfull")
         return foundfull
     endif
-    return s:F.main.eerror(selfname, "value", ["nfull", a:trun])
+    if doerror
+        return s:F.main.eerror(selfname, "value", ["nfull", a:trun])
+    endif
+    return 0
 endfunction
 "{{{3 cchk.getoptional
 function s:F.cchk.getoptional(chk, args, reqlen, ...)
@@ -931,6 +1020,8 @@ function s:F.achk.optlst(chk, Arg)
     let selfname="achk.optlst"
     if type(a:Arg)!=type([])
         return s:F.main.eerror(selfname, "value", ["list"])
+    elseif len(a:chk)<2
+        return s:F.main.eerror(selfname, "check", ["<len", 2, len(a:chk)])
     elseif len(a:Arg)<len(a:chk[0])
         return s:F.main.eerror(selfname, "value", ["<len", len(a:chk[0]),
                     \                              len(a:Arg)])

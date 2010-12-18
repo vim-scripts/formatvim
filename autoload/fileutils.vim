@@ -52,12 +52,28 @@ elseif has('python3')
     endtry
 endif
 if !exists('*s:GetDirContents')
+    function s:globdir(directory, ...)
+        return split(glob(escape(a:directory.g:os#pathSeparator, '`*[]\').
+                    \     get(a:000, 0, '*')),
+                    \"\n", 1)
+    endfunction
     if os#OS=~#'unix'
         function s:GetDirContents(directory)
-            let dirlist = split(glob(a:directory.'/*'),  "\n", 1)+
-                        \ split(glob(a:directory.'/.*'), "\n", 1)
+            let dirlist = s:globdir(a:directory)+s:globdir(a:directory, '.*')
+            let nlnum=len(split(a:directory, "\n", 1))-1
             let r=[]
+            let i=0
+            let addfragment=""
             for directory in dirlist
+                if i<nlnum
+                    let i+=1
+                    let addfragment=directory."\n"
+                    continue
+                else
+                    let directory=addfragment.directory
+                    let i=0
+                    let addfragment=""
+                endif
                 let tail=fnamemodify(directory, ':t')
                 if tail==#'.' || tail==#'..'
                     continue
@@ -70,15 +86,9 @@ if !exists('*s:GetDirContents')
             endfor
             return r
         endfunction
-    elseif os#OS=~#'win'
-        function s:GetDirContents(directory)
-            return map(split(glob(a:directory.'\\*'), "\n"), 'fnamemodify(v:val, ":t")')
-        endfunction
     else
-        let s:escapedPathSeparator=escape(os#pathSeparator, '`*[]\')
         function s:GetDirContents(directory)
-            return map(split(glob(a:directory.
-                        \s:escapedPathSeparator.'*'), "\n"), 'fnamemodify(v:val, ":t")')
+            return map(s:globdir(a:directory), 'fnamemodify(v:val, ":t")')
         endfunction
     endif
 endif

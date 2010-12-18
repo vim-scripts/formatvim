@@ -99,9 +99,9 @@ equal       a (everything)
 var         String (either empty or contains comma-delimited variable type
                     names: buffer, window, tabpage, global, vim, option, any)
             Checks, whether {argument} is a variable name, this 
-            variable exists and has specified type. (`option' variable names must 
-            start with `&', others with `b:', `w:', `t:', `g:' or `v:' for 
-            buffer, window, tabpage, global or vim responsively. See 
+            variable exists and has specified type. (`option' variable names 
+            must start with `&', others with `b:', `w:', `t:', `g:' or `v:' 
+            for buffer, window, tabpage, global or vim responsively. See 
             |internal-variables| for details.)
                                                              *chk-check-any*
 any         _ (argument is ignored)
@@ -263,6 +263,7 @@ prefixed  Required keys: no
                          "preflist" :: [ String ] (list of
                                                    strings)
                          "allowtrun" :: Bool
+                         "altpref" :: [ prefix ] (list of strings)
           Meaning:
               Command must look like that: >
                    Command [required_arguments]
@@ -279,11 +280,16 @@ prefixed  Required keys: no
               keys from "prefrequired" and "prefoptional" not listed in 
               "preflist" if in the arguments list there is a sequence [{key}, 
               {value}], then extend the last entry in arguments list (it will 
-              always be a dictionary) with { {key}: {value} } pair. If some 
-              key from "prefrequired" or "prefoptional" is listed in 
-              "preflist" then all arguments starting with one equal to this 
-              key and ending with one of the keys from "prefrequired" or 
-              "prefoptional" are added to the list. Last entry in arguments 
+              always be a dictionary) with { {key}: {value} } pair. Prefixes 
+              listed in "altpref" does not require any values, though they 
+              make take one if they are present in "prefrequired" or 
+              "prefoptional" as well, so if `prefix' is in "altpref" and in 
+              "prefrequired", then either of `prefix' (=`prefix 1'), 
+              `noprefix' (=`prefix 0', default) and `prefix {value}' are 
+              possible. If some key from "prefrequired" or "prefoptional" is 
+              listed in "preflist" then all arguments starting with one equal 
+              to this key and ending with one of the keys from "prefrequired" 
+              or "prefoptional" are added to the list. Last entry in arguments 
               list will be extended with { {key}: {list} } pair then. Key 
               "allowtrun" denies or allows (default: allow) reducing prefixes. 
               For example, if there are prefixes “columns”, “count” and 

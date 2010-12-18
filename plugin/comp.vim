@@ -1,12 +1,12 @@
-"{{{1 Начало
+"▶1 Начало
 scriptencoding utf-8
 if (exists("s:g.pluginloaded") && s:g.pluginloaded) ||
             \exists("g:compOptions.DoNotLoad")
     finish
-"{{{1 Первая загрузка
+"▶1 Первая загрузка
 elseif !exists("s:g.pluginloaded")
-    "{{{2 Объявление переменных
-    "{{{3 Словари с функциями
+    "▶2 Объявление переменных
+    "▶3 Словари с функциями
     " Функции для внутреннего использования
     let s:F={
                 \"plug": {},
@@ -14,9 +14,10 @@ elseif !exists("s:g.pluginloaded")
                 \ "mod": {},
                 \"comp": {},
                 \ "out": {},
+                \"stuf": {},
             \}
     lockvar 1 s:F
-    "{{{3 Глобальная переменная
+    "▶3 Глобальная переменная
     let s:g={}
     let s:g.pluginloaded=0
     let s:g.load={}
@@ -37,13 +38,13 @@ elseif !exists("s:g.pluginloaded")
                 \        "required": [["keyof", s:g.out]]}],
             \]
     let s:g.plugname=fnamemodify(s:g.load.scriptfile, ":t:r")
-    "{{{3 sid
+    "▶3 sid
     function s:SID()
         return matchstr(expand('<sfile>'), '\d\+\ze_SID$')
     endfun
     let s:g.scriptid=s:SID()
     delfunction s:SID
-    "}}}2
+    "▲2
     let s:F.plug.load=load#LoadFuncdict()
     let s:g.reginfo=s:F.plug.load.registerplugin({
                 \     "funcdict": s:F,
@@ -52,20 +53,22 @@ elseif !exists("s:g.pluginloaded")
                 \          "sid": s:g.scriptid,
                 \   "scriptfile": s:g.load.scriptfile,
                 \"dictfunctions": s:g.chk.f,
-                \   "apiversion": "0.4",
-                \     "requires": [["load", '0.0'],
+                \   "apiversion": "0.6",
+                \     "requires": [["load", '0.7'],
                 \                  ["chk",  '0.3'],
                 \                  ["stuf", '0.0']],
+                \      "preload": [["fileutils", "autoload"],
+                \                  ["os",        "autoload"]],
             \})
     let s:F.main.eerror=s:g.reginfo.functions.eerror
     let s:F.main.option=s:g.reginfo.functions.option
     finish
 endif
-"{{{1 Вторая загрузка
+"▶1 Вторая загрузка
 let s:g.pluginloaded=1
-"{{{2 Чистка
+"▶2 Чистка
 unlet s:g.load
-"{{{2 Выводимые сообщения
+"▶2 Выводимые сообщения
 let s:g.p={
             \"emsg": {
             \   "idexists": "This completion ID already exists",
@@ -78,35 +81,20 @@ let s:g.p={
             \},
         \}
 call add(s:g.chk.f[0][2].required[0][1][1], s:g.p.emsg.idexists)
-"{{{1 Вторая загрузка — функции
-"{{{2 Внешние дополнения
+"▶1 Вторая загрузка — функции
+"▶2 Внешние дополнения
 let s:F.plug.stuf=s:F.plug.load.getfunctions("stuf")
 let s:F.plug.chk=s:F.plug.load.getfunctions("chk")
-"{{{3 plug.file
+"▶3 plug.file
 let s:F.plug.file={}
-"{{{4 s:g.plug.file
+let s:F.plug.file.getDirContents=function('fileutils#GetDirContents')
+"▶4 s:g.plug.file
 let s:g.plug={"file": {}}
-if !exists('os#OS')
-    runtime! autoload/os.vim
-endif
-if exists('os#OS')
-    let s:g.plug.file.pathseparator=os#pathSeparator
-    let s:g.plug.file.os=os#OS
-else
-    call s:F.main.eerror("", "imp", ["filefail", 'autoload/os.vim'])
-endif
+let s:g.plug.file.pathseparator=os#pathSeparator
+let s:g.plug.file.os=os#OS
 let s:g.plug.file.eps=s:F.plug.stuf.regescape(s:g.plug.file.pathseparator)
-"{{{4 plug.file.getDirContents
-if !exists('*fileutils#GetDirContents')
-    runtime! autoload/fileutils.vim
-endif
-if exists('*fileutils#GetDirContents')
-    let s:F.plug.file.getDirContents=function('fileutils#GetDirContents')
-else
-    call s:F.main.eerror("", "imp", ["filefail", 'autoload/fileutils.vim'])
-endif
-"{{{2 main: eerror, option, destruct
-"{{{3 s:g.defaultOptions, s:g.c.options
+"▶2 main: eerror, option, destruct
+"▶3 s:g.defaultOptions, s:g.c.options
 let s:g.defaultOptions={
             \"TrailingSeparator": 1,
         \}
@@ -114,36 +102,47 @@ let s:g.c={}
 let s:g.c.options={
             \"TrailingSeparator": ["bool", ""],
         \}
-"{{{3 main.destruct: выгрузить плагин
+"▶3 main.destruct: выгрузить плагин
 function s:F.main.destruct()
     unlet s:g
     unlet s:F
     return 1
 endfunction
-"{{{2 mod
-"{{{3 mod.actions
+"▶2 stuf
+"▶3 stuf.gettrun
+function s:F.stuf.gettrun(trun, fulls)
+    if type(a:fulls)==type({})
+        let fulls=keys(a:fulls)
+    else
+        let fulls=copy(a:fulls)
+    endif
+    if index(fulls, a:trun)!=-1
+        return a:trun
+    endif
+    let ltrun=len(a:trun)-1
+    for full in fulls
+        if full[:ltrun]==?a:trun
+            return full
+        endif
+    endfor
+    return a:trun
+endfunction
+"▶2 mod
+"▶3 mod.actions
 function s:F.mod.actions(comp, s)
-    if a:s.arguments==[]
-        return ((has_key(a:comp, "actions"))?(keys(a:comp.actions)):([]))
+    if empty(a:s.arguments)
+        return get(a:comp, "actions", [])
     endif
     if has_key(a:comp, "actions")
         let action=tolower(a:s.arguments[0])
         if len(a:s.arguments)==1 && !has_key(a:comp.actions, action)
             return s:F.comp.toarglead(a:s.arguments[-1], keys(a:comp.actions))
         endif
+        if get(a:comp, 'allowtrun', 1)
+            let action=s:F.stuf.gettrun(action, a:comp.actions)
+        endif
         if !has_key(a:comp.actions, action)
-            let la=len(action)
-            let found=0
-            for a in keys(a:comp.actions)
-                if len(a)>=la && a[:la-1]==?action
-                    let action=a
-                    let found=1
-                    break
-                endif
-            endfor
-            if !found
-                return []
-            endif
+            return []
         endif
         let comp=a:comp.actions[action]
         let a:s.arguments=a:s.arguments[1:]
@@ -151,18 +150,18 @@ function s:F.mod.actions(comp, s)
     endif
     return []
 endfunction
-"{{{3 mod.simple
+"▶3 mod.simple
 function s:F.mod.simple(comp, s)
     if has_key(a:comp, "arguments")
         let lsarg=len(a:s.arguments)
-        if lsarg<=len(a:comp.arguments)
+        if lsarg && lsarg<=len(a:comp.arguments)
             return s:F.comp.getlist(a:comp.arguments[lsarg-1],
                         \           a:s.arguments[-1])
         endif
     endif
     return []
 endfunction
-"{{{3 mod.pref
+"▶3 mod.pref
 function s:F.mod.pref(comp, s)
     let larg=len(a:s.arguments)
     if has_key(a:comp, "arguments")
@@ -174,29 +173,111 @@ function s:F.mod.pref(comp, s)
         endif
     endif
     let larg=len(a:s.arguments)
-    if has_key(a:comp, "prefix")
-        if !(larg%2)
-            let pref=a:s.arguments[-2]
-            if has_key(a:comp.prefix, pref)
-                return s:F.comp.getlist(a:comp.prefix[pref],
-                            \           a:s.arguments[-1])
+    if has_key(a:comp, "prefix") || has_key(a:comp, "altpref")
+        let preflist=get(a:comp, 'preflist', [])
+        let allowtrun=get(a:comp, 'allowtrun', 1) && empty(preflist)
+        let omitpresent=get(a:comp, 'omitpresent', 1)
+        let altpref=get(a:comp, 'altpref', [])
+        let prefdict=get(a:comp, 'prefix', {})
+        let hasaltpref=!empty(altpref)
+        let chk=keys(prefdict)+altpref
+        let prefomit={}
+        let args=a:s.arguments
+        let largs=len(args)
+        let prevprefidx=-1
+        let lastprefidx=0
+        let inlistprefix=0
+        let isaltpref=0
+        while lastprefidx<largs
+            let prevprefidx=lastprefidx
+            let pref=args[lastprefidx]
+            if allowtrun
+                let fullpref=s:F.stuf.gettrun(pref, chk)
+                if empty(fullpref) && hasaltpref && pref[:1]==#'no'
+                    let fullpref=s:F.stuf.gettrun(pref[2:], altpref)
+                    if !empty(fullpref)
+                        let isaltpref=2
+                    else
+                        let isaltpref=0
+                    endif
+                else
+                    let isaltpref=0
+                endif
+                let pref=fullpref
+            elseif index(chk, pref)==-1 && pref[:1]==#'no' &&
+                        \index(altpref, pref[2:])
+                let pref=pref[2:]
+                let isaltpref=2
+            else
+                let isaltpref=0
             endif
-        else
-            return s:F.comp.toarglead(a:s.arguments[-1], keys(a:comp.prefix))
+            if omitpresent && !empty(pref)
+                let prefomit[pref]=1
+            endif
+            if !isaltpref
+                let isaltpref=(index(altpref, pref)!=-1)
+                if !has_key(prefdict, pref)
+                    let lastprefidx+=1
+                    let inlistprefix=0
+                elseif index(preflist, pref)==-1
+                    let lastprefidx+=2
+                    let inlistprefix=0
+                else
+                    let lastprefidx+=1
+                    let inlistprefix=1
+                    let arg=get(args, lastprefidx)
+                    while lastprefidx<largs &&
+                                \(!has_key(prefdict, arg) ||
+                                \ (hasaltpref && arg[:1]==#'no' &&
+                                \  index(altpref, arg[2:])==-1))
+                        let lastprefidx+=1
+                        unlet arg
+                        let arg=get(args, lastprefidx)
+                    endwhile
+                    unlet arg
+                endif
+            else
+                let lastprefidx+=1
+                let inlistprefix=0
+            endif
+        endwhile
+        let prefixes=keys(prefdict)+
+                    \filter(copy(altpref), '!has_key(prefdict, v:val)')
+        call filter(prefixes, '!has_key(prefomit, v:val)')
+        let pref=args[prevprefidx]
+        if allowtrun
+            let fullpref=s:F.stuf.gettrun(pref, prefdict)
+            if empty(fullpref) && hasaltpref && pref[:1]==#'no'
+                let fullpref=s:F.stuf.gettrun(pref[2:], altpref)
+            endif
+            let pref=fullpref
         endif
+        let result=[]
+        if inlistprefix || isaltpref || prevprefidx==largs-1
+            let result+=s:F.comp.toarglead(a:s.arguments[-1], prefixes)
+            if hasaltpref
+                let result+=map(filter(copy(prefixes),
+                            \          'index(altpref, v:val)!=-1'),
+                            \   '"no".v:val')
+            endif
+        endif
+        if has_key(prefdict, pref)
+            let result+=s:F.comp.getlist(prefdict[pref], a:s.arguments[-1])
+        endif
+        return result
     endif
     return []
 endfunction
-"{{{3 mod.words
+"▶3 mod.words
 function s:F.mod.words(comp, s)
     if has_key(a:comp, "words")
         return s:F.comp.getlist(a:comp.words, a:s.arguments[-1])
     endif
     return []
 endfunction
-"{{{2 comp
+"▶2 comp
 let s:g.comp={}
-"{{{3 comp.getlist
+"▶3 comp.getlist
 function s:F.comp.getlist(descr, arglead)
     let [type, l:Arg]=a:descr
     let forcefilter=0
@@ -268,13 +349,13 @@ function s:F.comp.getlist(descr, arglead)
     endif
     return s:F.comp.toarglead(a:arglead, eval(s:g.comp.list[type]))
 endfunction
-"{{{4 s:g.comp.list
+"▶4 s:g.comp.list
 let s:g.comp.list={
             \"func": "call(l:Arg, [a:arglead], {})",
             \"list": "l:Arg",
             \"keyof": "keys(l:Arg)",
         \}
-"{{{3 comp.getfiles
+"▶3 comp.getfiles
 function s:F.comp.getfiles(arglead, filter, forcefilter)
     let fragments=split(a:arglead, s:g.plug.file.eps)
     let globstart=''
@@ -316,7 +397,7 @@ function s:F.comp.getfiles(arglead, filter, forcefilter)
     return map(r, 'substitute(v:val, s:g.plug.file.eps."\\{2}", '.
                 \   '"\\=s:g.plug.file.pathseparator", "g")')
 endfunction
-"{{{3 comp.recdownglob
+"▶3 comp.recdownglob
 function s:F.comp.recdownglob(globstart, fragments, i)
     if a:i<0
         return []
@@ -360,7 +441,7 @@ function s:F.comp.recdownglob(globstart, fragments, i)
                 \                    'isdirectory(fnamemodify(v:val, ":p"))'),
                 \             a:fragments, a:i+1)
 endfunction
-"{{{3 comp.recupglob
+"▶3 comp.recupglob
 function s:F.comp.recupglob(files, fragments, i)
     let dotfragment=(a:fragments[a:i]==#'.' || a:fragments[a:i]==#'..')
     let glist=[]
@@ -408,10 +489,10 @@ function s:F.comp.recupglob(files, fragments, i)
                 \                    'isdirectory(fnamemodify(v:val, ":p"))'),
                 \             a:fragments, a:i+1)
 endfunction
-"{{{4 s:g.comp.rg
+"▶4 s:g.comp.rg
 let s:g.comp.rg={}
 let s:g.comp.rg.pregex='[[:punct:]]\@<=\|[[:punct:]]\@='
-"{{{3 comp.toarglead
+"▶3 comp.toarglead
 let s:g.comp.filters=[
             \'v:val=~#"^".reg',
             \'v:val=~?"^".reg',
@@ -441,7 +522,7 @@ function s:F.comp.toarglead(arglead, list)
     endfor
     return []
 endfunction
-"{{{3 comp.split
+"▶3 comp.split
 let s:g.comp.argsplitregex='\(\\\@<!\(\\.\)*\\\)\@<! '
 function s:F.comp.split(comp, input, ...)
     let r={"origin": []}
@@ -489,7 +570,7 @@ function s:F.comp.split(comp, input, ...)
     endif
     return r
 endfunction
-"{{{4 s:g.reg
+"▶4 s:g.reg
 let s:g.reg={}
 let s:g.reg.range='\(%\|'.
             \       '\('.
@@ -504,8 +585,8 @@ let s:g.reg.range='\(%\|'.
             \         '[;,]\='.
             \       '\)*'.
             \     '\)\='
-"{{{3 comp.getstart
-"{{{4 s:g.comp.start
+"▶3 comp.getstart
+"▶4 s:g.comp.start
 let s:g.comp.start={
             \"regexs": {
             \   '_cword': '\%(\k*\|\%(\k\@!\S\)*\)$',
@@ -513,7 +594,7 @@ let s:g.comp.start={
             \   '_cfile': '\f*$',
             \}
         \}
-"}}}4
+"▲4
 function s:F.comp.getstart(comp, line)
     let l:Start=get(a:comp, 'start', '_cword')
     if type(l:Start)==type('')
@@ -525,7 +606,7 @@ function s:F.comp.getstart(comp, line)
         return call(l:Start, [a:line], {})
     endif
 endfunction
-"{{{3 comp.main
+"▶3 comp.main
 function s:F.comp.main(comp, ...)
     let model=a:comp.model
     let input=0
@@ -559,7 +640,7 @@ function s:F.comp.main(comp, ...)
     endif
     return r
 endfunction
-"{{{4 Проверки
+"▶4 Проверки
 let s:g.chk.alist=["alllst",]
 let s:g.chk.list=["and", [["len", [2]],
             \             ["eval", 'type(a:Arg[0])==type("")'],
@@ -589,6 +670,7 @@ let s:g.chk.modcheck=["in", keys(s:F.mod)+map(keys(s:F.mod), '"input".v:val')
 let s:g.chk.insertstart=["or", [["isfunc", 1],
             \                   ["keyof", s:g.comp.start.regexs],
             \                   ["isreg", '']]]
+let s:g.chk.preflist=["alllst", ['type', type("")]]
 call add(s:g.chk.model,  [["hkey", "model"],
             \             ["dict", [[["equal", "model"], s:g.chk.modcheck],
             \                       [["equal", "actions"], s:g.chk.actions],
@@ -598,10 +680,14 @@ call add(s:g.chk.model,  [["hkey", "model"],
             \                       [["equal", "start"], s:g.chk.insertstart],
             \                       [["equal", "argsplitregex"], ["isreg", '']],
             \                       [["equal", "escape"], ["in", [0, 1, 2]]],
+            \                       [["equal", "allowtrun"], ["bool", ""]],
+            \                       [["equal", "preflist"], s:g.chk.preflist],
+            \                       [["equal", "altpref"],  s:g.chk.preflist],
+            \                       [["equal", "omitpresent"], ["bool", ""]],
             \                      ]]])
 let s:g.chk.f[0][2].required[1]=s:g.chk.model
-"{{{2 out
-"{{{3 out.constructcompletion
+"▶2 out
+"▶3 out.constructcompletion
 function s:F.out.constructcompletion(id, comp)
     let s:g.out[a:id]=[a:comp]
     let id=s:F.plug.stuf.squote(a:id)
@@ -612,14 +698,14 @@ function s:F.out.constructcompletion(id, comp)
                 \"endfunction"
     return r._complete
 endfunction
-"{{{3 out.delcompletion
+"▶3 out.delcompletion
 function s:F.out.delcompletion(id)
     unlet s:g.out[a:id]
 endfunction
-"{{{1
+"▶1
 lockvar! s:F
 lockvar s:g
 unlockvar! s:g.out
 let t=s:F
-" vim: ft=vim:ts=8:fdm=marker:fenc=utf-8
+" vim: ft=vim:ts=4:et:sts=4:fdm=marker:fmr=▶,▲:fenc=utf-8
 

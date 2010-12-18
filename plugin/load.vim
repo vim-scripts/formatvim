@@ -180,7 +180,7 @@ function s:F.cons.eerror(plugin, from, type, ...)
     let msg=(a:plugin.type.'/'.a:plugin.name)."/".
                 \s:F.stuf.string(a:from).":".(etype).(comm)
     echohl ErrorMsg
-    echo msg
+    echomsg msg
     echohl None
     if dothrow
         throw msg
@@ -672,10 +672,7 @@ function s:F.reg.register(regdict)
     endif
     "}}}5
     if !(plugtype==#'plugin' && (plugname==#"chk" || plugname==#"load"))
-        if !has_key(s:F.plug, "chk")
-            let s:F.plug.chk=s:F.comm.getfunctions("chk", "plugin",
-                        \                          "dictfunctions")
-        endif
+        call s:F.comm.load("chk", "plugin")
         if !s:F.main.option("DisableLoadChecks") &&
                     \!s:F.plug.chk.checkargument(s:g.c.register, a:regdict)
             return s:F.main.eerror(selfname, "value", 1, ["ireg"])
@@ -892,8 +889,8 @@ let s:g.c.register=["and", [
             \                                          [s:g.c.plugtype]]]]
             \   ],
             \   [["equal", "preload"], ["alllst", ["optlst",
-            \                                      [["type", type("")]],
-            \                                      [s:g.c.plugtype]]]],
+            \                                      [[["type", type("")]],
+            \                                       [s:g.c.plugtype]]]]],
             \   [["equal", "leader"],     ["type", type("")]],
             \   [["any", ''], ["any", '']],
             \ ]
@@ -1958,7 +1955,7 @@ endfunction
 function s:F.comp.nrof(arglead)
     let s=split(a:arglead, '/')
     if len(s)<=1 && a:arglead[-1:]!=#'/'
-        return map(keys(s:g.reg.registered), '"/".v:val."/"')
+        return map(s:F.comp.plug(a:arglead), '"/".v:val."/"')
     elseif len(s)==2 && a:arglead[-1:]!=#'/' &&
                 \has_key(s:g.reg.registered, s[0])
         return map(keys(s:g.reg.registered[s[0]]), '"/'.s[0].'/".v:val."/"')
@@ -2039,6 +2036,7 @@ unlet s:g.load
 let s:F.plug.comp=s:F.comm.lazyload("comp", "plugin", "dictfunctions")
 let s:F.plug.stuf=s:F.comm.lazyload("stuf", "plugin", "dictfunctions")
 let s:F.plug.yaml=s:F.comm.lazyload("yaml", "plugin", "dictfunctions")
+let s:F.plug.chk =s:F.comm.lazyload("chk",  "plugin", "dictfunctions")
 lockvar! s:F
 unlockvar s:F.plug
 unlockvar s:F.comp

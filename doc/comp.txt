@@ -52,6 +52,7 @@ additional keys depending on the value of the `model' key. Possible models
 
 actions                                                 *comp-model-actions*
         Optional keys: actions :: { {action}: {model} }
+                       allowtrun :: Bool
         Defines a completion for command that looks like this: >
             Command action1 some_argument
             Command action2 some_argument some_other argument
@@ -59,7 +60,8 @@ actions                                                 *comp-model-actions*
             ...
 <
         Each value defines a model for the corresponding key which represents 
-        the action name.
+        the action name. Key `allowtrun' describes whether actions can be 
+        truncated (they can by default).
 simple                                                   *comp-model-simple*
         Optional keys: arguments :: [{ListDescription}]
         Defines a completion for command that takes a list of arguments, for 
@@ -74,6 +76,10 @@ words                                                     *comp-model-words*
 pref                                                       *comp-model-pref*
         Optional keys: arguments :: [{ListDescription}]
                        prefix :: { {prefix}: {ListDescription} }
+                       preflist :: [{prefix}]
+                       omitpresent :: Bool
+                       allowtrun :: Bool
+                       altpref :: [{prefix}]
         Defines a completion for command that takes a list of arguments, 
         followed by prefixed arguments. Example: >
             Command print columns 3
@@ -83,7 +89,14 @@ pref                                                       *comp-model-pref*
             Command print columns 3 buffer %
 <
         Key `argument' is handled just like in |comp-model-simple|. Key 
-        `prefix' describes prefixes and corresponding arguments.
+        `prefix' describes prefixes and corresponding arguments. Key 
+        `omitpresent' describes whether completion of already present prefixes 
+        should be omitted. Key `preflist' lists prefixes that can take 
+        multiple values. Key `allowtrun' describes whether prefixes can be 
+        truncated (they can by default). Key `altpref' lists `alternating' 
+        prefixes (prefixes that can appear either as `prefix', `noprefix' or 
+        `prefix value' (latter is possible only if it is present in `prefix' 
+        key)).
                           *comp-model-inputactions* *comp-model-inputsimple*
                               *comp-model-inputwords* *comp-model-inputpref*
 input{model}                                              *comp-model-input*
