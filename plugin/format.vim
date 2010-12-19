@@ -39,15 +39,18 @@ elseif !exists("s:g.pluginloaded")
                 \           "columns":         [["num", [-1]],     {},  0],
                 \           "collapsfiller":   [["num", [ 1]],     {}, -1],
                 \           "foldcolumn":      [["num", [-1]],     {}, -2],
-                \           "nonr":            [["in", [0, 1]],    {}, -1],
-                \           "rnr":             [["in", [0, 1]],    {}, -1],
-                \           "allfolds":        [["in", [0, 1]],    {}, -1],
-                \           "ignorefolds":     [["in", [0, 1]],    {}, -1],
-                \           "ignorelist":      [["in", [0, 1]],    {}, -1],
-                \           "ignoretags":      [["in", [0, 1, 2]], {}, -1],
-                \           "progress":        [["in", [0, 1, 2]], {}, -1],
-                \           "formatconcealed": [["in", [0, 1, 2]], {}, -1],
+                \           "folds":           [["bool", ""],      {}, -1],
+                \           "allfolds":        [["bool", ""],      {}, -1],
+                \           "number":          [["bool", ""],      {}, -1],
+                \           "relativenumber":  [["bool", ""],      {}, -1],
+                \           "list":            [["bool", ""],      {}, -1],
+                \           "tags":            [["in", ['all']],   {}, -1],
+                \           "progress":        [["in", ['lines']], {}, -1],
+                \           "concealed":       [["in", ['real']],  {}, -1],
                 \       },
+                \       "altpref": ["relativenumber", "number", "folds", "list",
+                \                   "allfolds", "tags", "progress", "concealed",
+                \                   "foldcolumn", "collapsfiller"],
                 \   }
                 \]
             \]
@@ -105,7 +108,7 @@ elseif !exists("s:g.pluginloaded")
                 \"dictfunctions": s:g.chk.f,
                 \   "apiversion": '2.3',
                 \     "requires": [["load", '0.0'],
-                \                  ["comp", '0.0'],
+                \                  ["comp", '0.6'],
                 \                  ["chk",  '0.3'],
                 \                  ["stuf", '0.0']],
             \})
@@ -252,22 +255,24 @@ let s:g.fmt.expressions={
         \}
 "{{{4 s:g.fmt.complexexpressions
 let s:g.fmt.complexexpressions={
-            \'#': "((a:opts.donr || a:opts.dornr)?(".
-            \       "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', '.".
-            \       "a:opts.linenumlen.'-len(@@@)).@@@'):(''''''))",
+            \'#': "'((@_donr@ || @_dornr@)?".
+            \       "(repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', ".
+            \               "@_linenumlen@-len(@@@)).@@@):".
+            \       "(''''))'",
             \'-': "'repeat('.s:F.plug.stuf.squote(a:opts.difffillchar).', (".
             \             "(@_columns@)-(@=@))/'.".
             \             "a:opts.strlen(a:opts.difffillchar).')'",
             \'+': "'repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', (".
             \             "(@_columns@)-(@=@))/'.".
             \             "a:opts.strlen(a:opts.leadingspace).')'",
-            \'_': "s:F.plug.stuf.squote(repeat(a:opts.leadingspace, ".
-            \                                "((a:opts.donr || a:opts.dornr)?(".
-            \                                  "a:opts.linenumlen):(0))))",
+            \'_': "'((@_donr@ || @_dornr@)?".
+            \       "(repeat('.s:F.plug.stuf.squote(a:opts.leadingspace).', ".
+            \               "@_linenumlen@)):".
+            \       "(''''))'",
             \' ': "s:F.plug.stuf.squote(a:opts.leadingspace)",
-            \'^': "((a:opts.donr || a:opts.dornr)?".
-            \       "s:F.plug.stuf.squote(a:opts.leadingspace):".
-            \       "(''''''))",
+            \'^': "'((a:opts.donr || a:opts.dornr)?('.".
+            \       "s:F.plug.stuf.squote(a:opts.leadingspace).'):".
+            \       "(''''))'",
             \'~': "s:F.plug.stuf.squote(a:opts.difffillchar)",
         \}
 "}}}4
@@ -450,33 +455,6 @@ function s:F.fmt.prepare(format, startline, endline, options)
                 \   (get(a:format, 'columns', winwidth(0))))
     let opts.strlen=get(a:format, 'strlen', s:F.stuf.strlen)
     let opts.linenumlen=len(a:endline)
-    if has_key(a:format, "linenr")
-        let opts.donr=((a:options.nonr==-1)?
-                    \    (s:F.main.option("NoLineNR")):
-                    \    (a:options.nonr))
-        if opts.donr!=-1
-            let opts.donr=!opts.donr
-        endif
-        let opts.dornr=((a:options.rnr==-1)?
-                    \    (s:F.main.option("RelativeNumber")):
-                    \    (a:options.rnr))
-        if opts.donr==-1
-            let opts.donr=&number
-        endif
-        if opts.dornr==-1
-            if exists("&relativenumber")
-                let opts.dornr=&relativenumber
-            else
-                let opts.dornr=0
-            endif
-        endif
-        if opts.dornr
-            let opts.donr=0
-        endif
-    else
-        let opts.donr=0
-        let opts.dornr=0
-    endif
     let id=hlID("normal")
     let opts.fgcolor=s:F.fmt.getcolor(synIDattr(id, "fg#", s:g.fmt.whatterm))
     let opts.bgcolor=s:F.fmt.getcolor(synIDattr(id, "bg#", s:g.fmt.whatterm))
@@ -1055,9 +1033,9 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     "{{{5 Складки
     " Складки игнорируются, если истинна настройка «IgnoreFolds», отсутствует 
     " ключ «fold» или Vim собран без поддержки складок
-    let ignorefolds=((a:options.ignorefolds==-1)?
+    let ignorefolds=((a:options.folds==-1)?
                 \       (s:F.main.option("IgnoreFolds")):
-                \       (a:options.ignorefolds)) ||
+                \       (!a:options.folds)) ||
                 \!has("folding")
     let allfolds=!(ignorefolds || sbsd) &&
                 \((a:options.allfolds==-1)?
@@ -1085,12 +1063,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     " Номер преобразовываемой линии
     call add(formatfunction, "let curline=".startline)
     "{{{5 «Скрытые» символы
+    let formatconcealed=0
     if has("conceal") && &conceallevel
-        let formatconcealed=((a:options.formatconcealed==-1)?
-                    \           (s:F.main.option("FormatConcealed")):
-                    \           (a:options.formatconcealed))
-    else
-        let formatconcealed=0
+        if a:options.concealed is -1
+            let formatconcealed=s:F.main.option("FormatConcealed")
+        elseif a:options.concealed is 'real'
+            let formatconcealed=2
+        else
+            let formatconcealed=a:options.concealed
+        endif
     endif
     if formatconcealed==2 && !has_key(cformat, "concealed")
         let formatconcealed=1
@@ -1213,15 +1194,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     let donr=0
     let dornr=0
     if has_key(cformat, "linenr")
-        let donr=((a:options.nonr==-1)?
+        let donr=((a:options.number==-1)?
                     \(s:F.main.option("NoLineNR")):
-                    \(a:options.nonr))
-        if opts.donr!=-1
-            let opts.donr=!opts.donr
+                    \(!a:options.number))
+        if donr!=-1
+            let donr=!donr
         endif
-        let dornr=((a:options.rnr==-1)?
+        let dornr=((a:options.relativenumber==-1)?
                     \(s:F.main.option("RelativeNumber")):
-                    \(a:options.rnr))
+                    \(a:options.relativenumber))
         if dornr==-1
             if exists("&relativenumber")
                 let dornr=&relativenumber
@@ -1387,11 +1368,16 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
         return r
     endif
     "{{{5 Тёги
-    let ignoretags=((a:options.ignoretags==-1)?
-                \       (s:F.main.option("IgnoreTags")):
-                \       (a:options.ignoretags))
-                \&& (has_key(cformat, 'tagstart') ||
-                \    has_key(cformat, 'tagend'))
+    let ignoretags=2
+    if has_key(cformat, 'tagstart') || has_key(cformat, 'tagend')
+        if a:options.tags is -1
+            let ignoretags=s:F.main.option("IgnoreTags")
+        elseif a:options.tags is 'all'
+            let ignoretags=0
+        else
+            let ignoretags=(2-a:options.ignoretags)
+        endif
+    endif
     if ignoretags!=2
         let opts.tags=s:F.fmt.tags(ignoretags)
         let tagregex=join(map(reverse(sort(keys(opts.tags))),
@@ -1401,12 +1387,15 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
         let tagregex=""
     endif
     "{{{5 Progress bar
-    if !has("statusline")
-        let showprogress=0
-    else
-        let showprogress=((a:options.progress==-1)?
-                    \           (s:F.main.option("ShowProgress")):
-                    \           (a:options.progress))
+    let showprogress=0
+    if has("statusline")
+        if a:options.progress is -1
+            let showprogress=s:F.main.option("ShowProgress")
+        elseif a:options.progress is 'lines'
+            let showprogress=2
+        else
+            let showprogress=a:options.progress
+        endif
     endif
     let s:g.fmt.progress.showprogress=showprogress
     if showprogress
@@ -1475,9 +1464,9 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
     endif
     "{{{5 listchars: отображение некоторых символов в соответствии с 'listchars'
     let listchars={}
-    if &list && !((a:options.ignorelist)?
+    if &list && !((a:options.list)?
                 \   (s:F.main.option("IgnoreList")):
-                \   (a:options.ignorelist))
+                \   (!a:options.list))
         let lcs=split(&listchars,
                     \',\ze\(eol\|tab\|trail\|extends\|precedes\|nbsp\):')
         for lc in lcs
@@ -2619,16 +2608,18 @@ let s:g.chk.cmd={
             \                     {"trans": ["call", ["DefaultFormat"]]},
             \                     s:F.main.option]],
             \       "prefoptional": {
-            \           "columns":         [["nums", [-1]],          {},  0],
-            \           "foldcolumn":      [["nums", [-1]],          {}, -2],
-            \           "nonr":            [["in", ['0', '1']],      {}, -1],
-            \           "rnr":             [["in", ['0', '1']],      {}, -1],
-            \           "ignorefolds":     [["in", ['0', '1']],      {}, -1],
-            \           "ignorelist":      [["in", ['0', '1']],      {}, -1],
-            \           "ignoretags":      [["in", ['0', '1', '2']], {}, -1],
-            \           "progress":        [["in", ['0', '1', '2']], {}, -1],
-            \           "formatconcealed": [["in", ['0', '1', '2']], {}, -1],
+            \           "columns":         [["nums", [-1]],       {},  0],
+            \           "foldcolumn":      [["nums", [-1]],       {}, -2],
+            \           "folds":           [["in",   ['0', '1']], {}, -1],
+            \           "number":          [["in",   ['0', '1']], {}, -1],
+            \           "relativenumber":  [["in",   ['0', '1']], {}, -1],
+            \           "list":            [["in",   ['0', '1']], {}, -1],
+            \           "tags":            [["in", ['all']],      {}, -1],
+            \           "progress":        [["in", ['lines']],    {}, -1],
+            \           "concealed":       [["in", ['real']],     {}, -1],
             \       },
+            \       "altpref": ["relativenumber", "number", "folds", "list",
+            \                   "tags", "progress", "concealed", "foldcolumn"],
             \   },
             \   "format": {
             \       "model": "prefixed",
@@ -2636,18 +2627,21 @@ let s:g.chk.cmd={
             \                     {"trans": ["call", ["DefaultFormat"]]},
             \                     s:F.main.option]],
             \       "prefoptional": {
-            \           "columns":         [["nums", [-1]],          {},  0],
-            \           "collapsfiller":   [["nums", [0]],           {}, -1],
-            \           "foldcolumn":      [["nums", [-1]],          {}, -2],
-            \           "nonr":            [["in", ['0', '1']],      {}, -1],
-            \           "rnr":             [["in", ['0', '1']],      {}, -1],
-            \           "allfolds":        [["in", ['0', '1']],      {}, -1],
-            \           "ignorefolds":     [["in", ['0', '1']],      {}, -1],
-            \           "ignorelist":      [["in", ['0', '1']],      {}, -1],
-            \           "ignoretags":      [["in", ['0', '1', '2']], {}, -1],
-            \           "progress":        [["in", ['0', '1', '2']], {}, -1],
-            \           "formatconcealed": [["in", ['0', '1', '2']], {}, -1],
+            \           "columns":         [["nums", [-1]],       {},  0],
+            \           "collapsfiller":   [["nums", [0]],        {}, -1],
+            \           "foldcolumn":      [["nums", [-1]],       {}, -2],
+            \           "folds":           [["in",   ['0', '1']], {}, -1],
+            \           "allfolds":        [["in",   ['0', '1']], {}, -1],
+            \           "number":          [["in",   ['0', '1']], {}, -1],
+            \           "relativenumber":  [["in",   ['0', '1']], {}, -1],
+            \           "list":            [["in",   ['0', '1']], {}, -1],
+            \           "tags":            [["in", ['all']],      {}, -1],
+            \           "progress":        [["in", ['lines']],    {}, -1],
+            \           "concealed":       [["in", ['real']],     {}, -1],
             \       },
+            \       "altpref": ["relativenumber", "number", "folds", "list",
+            \                   "allfolds", "tags", "progress", "concealed",
+            \                   "foldcolumn", "collapsfiller"],
             \   },
             \   "delete": {
             \       "model": "simple",
@@ -2699,31 +2693,27 @@ let s:g.comp.a.actions.format={
             \   "columns":         ["func", s:F.comp.getcolumns],
             \   "collapsfiller":   ["list", []],
             \   "foldcolumn":      ["list", []],
-            \   "nonr":            ["list", ['0', '1']],
-            \   "rnr":             ["list", ['0', '1']],
-            \   "allfolds":        ["list", ['0', '1']],
-            \   "ignorefolds":     ["list", ['0', '1']],
-            \   "ignorelist":      ["list", ['0', '1']],
-            \   "ignoretags":      ["list", ['0', '1', '2']],
-            \   "progress":        ["list", ['0', '1', '2']],
-            \   "formatconcealed": ["list", ['0', '1', '2']],
-            \}
+            \   "tags":            ["list", ['all']],
+            \   "progress":        ["list", ['lines']],
+            \   "concealed":       ["list", ['real']],
+            \},
+            \"altpref": ["relativenumber", "number", "folds", "list",
+            \            "allfolds", "tags", "progress", "concealed",
+            \            "foldcolumn", "collapsfiller"],
         \}
 if has("diff")
     let s:g.comp.a.actions.diffformat={
                 \"model": "pref",
                 \"arguments": [["keyof", s:g.fmt.formats]],
                 \"prefix": {
-                \   "columns":         ["func", s:F.comp.getcolumns],
-                \   "foldcolumn":      ["list", []],
-                \   "nonr":            ["list", ['0', '1']],
-                \   "rnr":             ["list", ['0', '1']],
-                \   "ignorefolds":     ["list", ['0', '1']],
-                \   "ignorelist":      ["list", ['0', '1']],
-                \   "ignoretags":      ["list", ['0', '1', '2']],
-                \   "progress":        ["list", ['0', '1', '2']],
-                \   "formatconcealed": ["list", ['0', '1', '2']],
-                \}
+                \   "columns":    ["func", s:F.comp.getcolumns],
+                \   "foldcolumn": ["list", []],
+                \   "tags":       ["list", ['all']],
+                \   "progress":   ["list", ['lines']],
+                \   "concealed":  ["list", ['real']],
+                \},
+                \"altpref": ["relativenumber", "number", "folds", "list",
+                \            "tags", "progress", "concealed", "foldcolumn"],
             \}
 else
     unlet s:g.comp.a.actions.format.prefix.collapsfiller

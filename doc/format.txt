@@ -51,21 +51,30 @@ via dictionary returned by |load-func-getfunctions| function.
             is not given, format the whole file. For list of built-in formats 
             see |format-formats|. Possible options:
             Option         Value and description ~
-            columns        Unsigned integer greater then zero or -1. Used to 
-                           specify number of columns (screen width). Overrides 
-                           |format-spec-key-columns|.
-            collapsfiller  Unsigned integer. Overrides 
-                           |format-option-CollapsFiller|.
-            foldcolumn     Unsigned integer or -1. Overrides 
-                           |format-option-FoldColumn|.
-            allfolds       Bool. Overrides |format-option-AllFolds|.
-            ignorefolds    Bool. Overrides |format-option-IgnoreFolds|.
-            ignorelist     Bool. Overrides |format-option-IgnoreList|.
-            nonr           Bool. Overrides |format-option-NoLineNR|.
-            rnr            Bool. Overrides |format-option-RelativeNumber|.
-            progress       0, 1 or 2. Overrides |format-option-ShowProgress|.
-            formatconcealed  0, 1 or 2. Overrides 
-                           |format-option-FormatConcealed|.
+            columns        Unsigned integer greater then zero or -1. This 
+                           option is used to specify number of columns (screen 
+                           width). Overrides |format-spec-key-columns|.
+            collapsfiller  `nocollapsfiller' or unsigned integer.
+                           Overrides |format-option-CollapsFiller|.
+            foldcolumn     `nofoldcolumn', unsigned integer or -1.
+                           Overrides |format-option-FoldColumn|.
+            allfolds       Bool (`allfolds' or `noallfolds').
+                           Overrides |format-option-AllFolds|.
+            folds          Bool (`folds' or `nofolds').
+                           Overrides |format-option-IgnoreFolds|.
+                           Does the opposite to IgnoreFolds option.
+            list           Bool (`list' or `nolist').
+                           Overrides |format-option-IgnoreList|.
+                           Does the opposite to IgnoreList option.
+            number         Bool (`number' or `nonumber').
+                           Overrides |format-option-NoLineNR|.
+                           Does the opposite to NoLineNR option.
+            relativenumber Bool (`relativenumber' or `norelativenumber').
+                           Overrides |format-option-RelativeNumber|.
+            progress       `progress', `noprogress' or `progress lines'.
+                           Overrides |format-option-ShowProgress|.
+            concealed      `concealed', `noconcealed' or `concealed real'.
+                           Overrides |format-option-FormatConcealed|.
                                                   *format-action-diffformat*
 :{range}FormatCommand diffformat [{formatName} [{option1} {value1}]]
             Like |format-action-format|, but create a side-by-side diff file. 

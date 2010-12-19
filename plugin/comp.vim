@@ -211,7 +211,7 @@ function s:F.mod.pref(comp, s)
             else
                 let isaltpref=0
             endif
-            if omitpresent && !empty(pref)
+            if omitpresent && lastprefidx!=largs-1 && !empty(pref)
                 let prefomit[pref]=1
             endif
             if !isaltpref
@@ -254,12 +254,13 @@ function s:F.mod.pref(comp, s)
         endif
         let result=[]
         if inlistprefix || isaltpref || prevprefidx==largs-1
-            let result+=s:F.comp.toarglead(a:s.arguments[-1], prefixes)
+            let tofilter=copy(prefixes)
             if hasaltpref
-                let result+=map(filter(copy(prefixes),
+                let tofilter+=map(filter(copy(prefixes),
                             \          'index(altpref, v:val)!=-1'),
                             \   '"no".v:val')
             endif
+            let result+=s:F.comp.toarglead(a:s.arguments[-1], tofilter)
         endif
         if has_key(prefdict, pref)
             let result+=s:F.comp.getlist(prefdict[pref], a:s.arguments[-1])
