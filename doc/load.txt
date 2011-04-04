@@ -73,9 +73,11 @@ options in g:loadOptions dictionary (Note that it is a very bad idea).
                     return 1
 :LoadCommand reload {plugin}                            *load-action-reload*
             Reload plugin named {plugin}. Just like |load-action-unload|, but 
-            after unloading |load-reg-file|s are sourced. Note that reloading 
-            some widely used plugins like vimargumentchec (chk) or even this 
-            (load) plugin itself may render other plugins useless.
+            after unloading |load-reg-file|s are sourced.
+:LoadCommand sesreload {plugin}                      *load-action-sesreload*
+            Reload plugin named {plugin}. Just like |load-action-reload|, but 
+            before unloading plugins session information is saved and after 
+            loading plugins it is restored.
 :LoadCommand show                                         *load-action-show*
             Show |load-reg-scriptid|, |load-reg-name|, |load-reg-file| and 
             status for all plugins. Possible statuses: registered and loaded. 
@@ -86,6 +88,12 @@ options in g:loadOptions dictionary (Note that it is a very bad idea).
 :LoadCommand nrof {fname}                                 *load-action-nrof*
             Display a number of function {fname}. {fname} must have the 
             following structure: /{plugname}/{pathToFunction}.
+:LoadCommand function {fname}                         *load-action-function*
+            Display a code of function {fname}, just like builtin |:function|. 
+            {fname} argument is described in |load-action-nrof|.
+:LoadCommand breakadd {fname}[ {line}]                *load-action-breakadd*
+            Set a breakpoint at line {line} (default 1) of a function {fname}. 
+            {fname} argument is described in |load-action-nrof|.
 :LoadCommand autocmd {event} {plugin} {command}        *load-action-autocmd*
             Create an `autocommand', see |load-autocommands|. For 
             a description of arguments see |load-func-autocmd|. Note that you 
@@ -153,6 +161,38 @@ registerplugin({regdict})
                             |chk-func-checkargument|. Throw an exception if 
                             check failed. Note that all option names starting 
                             with underscore are reserved.
+                                                              *load-f-bufdict*
+                        bufdict([{Constructor}[, {Destructor}]])
+                            Setup buffers dictionary: it is a dictionary where 
+                            keys are buffer numbers, use it if you want to 
+                            hide buffer-local variables from user. When a new 
+                            buffer is created, {Constructor} is called. If it 
+                            returns something different from 0, returned value 
+                            is assigned to the {bufdict}[{bufnr}], where 
+                            {bufdict} is created buffers dictionary. If it 
+                            returns 0 or {Constructor} itself is not 
+                            a function reference, then no new keys are created 
+                            in buffers dictionary. {Destructor} (if it is 
+                            a function reference) is called when buffer which 
+                            number is a key of a buffers dictionary gets 
+                            deleted, just before value is removed from it. 
+                            Both {Constructor} and {Destructor} are called 
+                            with buffer number and a buffers dictionary as 
+                            their arguments.
+                                                            *load-f-autocmd*
+                        autocmd({AuG-suffix}, {event}, {pattern}, {command}[, 
+                                {nested}])
+                            Create a new autocommand, see |:au|. {event} may 
+                            be a |List| of events, {AuG-suffix} is an 
+                            autocommand group suffix (with length limited to 
+                            sixteen characters, may be empty), other arguments 
+                            are self-explanatory after you read |:au|. Returns 
+                            name of autocmd group (which is currently 
+                            "LoadPlugin_{plugname}{N}[_{AuG-suffix}]") or 0 if 
+                            creation fails. No errors are echoed or thrown. If 
+                            {command} is a function reference, then this 
+                            function will be called with <amatch>, <abuf> (as 
+                            a number) and <afile> in arguments.
 
 unregister({plugname}[, {plugtype}])                  *load-func-unregister*
         Unregister plugin. For {plugname} and {plugtype} arguments see 
@@ -233,6 +273,40 @@ load#CreateDictFunction({arguments}, {body})     *load#CreateDictFunction()*
         variables. For example, to create an |eval()| function that does not 
         have access to script variables you should do the following call: >
             let s:F.safeeval=load#CreateDictFunction("s", "return eval(a:s)")
+<                                                             *load#Setup()*
+load#Setup({apiversion}[, {oprefix}[, {cprefix}[, {fprefix}[, {oneload}]]]])
+        Does some common plugin setup actions:
+        1. Creates s:F, s:F.plug and s:F.main dictionaries, populates 
+           s:F.plug.load with load plugin functions.
+        2. Creates s:g and s:g._load dictionaries, sets s:g._pluginloaded to 
+           {oneload} (or 0), populates _load dictionary with the following 
+           keys:
+           Key         Description ~
+           funcdict    See |load-reg-funcdict|
+           globdict    See |load-reg-globdict|
+           sid         See |load-reg-sid|
+           scriptfile  See |load-reg-scriptfile|
+           apiversion  {apiversion}, see |load-reg-apiversion|
+           oprefix     If {oprefix} is defined and is a string, then 
+                       {oprefix}, otherwise root (|%:r|) of the filename with 
+                       invalid characters removed. See |load-reg-oprefix|.
+           cprefix     If {cprefix} is defined and is a string, then 
+                       {cprefix}. If {cprefix} is 1 then `oprefix' with first 
+                       letter capitalized, if it is not defined or is 0 then 
+                       `cprefix' is not defined at all.
+                       See |load-reg-cprefix|.
+           fprefix     Just like `cprefix', but using {fprefix} value.
+                       See |load-reg-fprefix|.
+           oneload     {oneload} or 0. See |load-reg-oneload|.
+        Example usage: >
+            if (exists("s:g._pluginloaded") && s:g._pluginloaded) ||
+                        \exists("g:fooOptions.DoNotLoad")
+                finish
+            elseif !exists("s:g._pluginloaded")
+                execute load#Setup('0.1', 1, 0, 1)
+                let s:g._load.functions=[["bar", "baz.bar", {}]]
+                let s:g.reginfo=s:F.plug.load.register(s:g._load)
+            endif
 
 -----------------------------------------------------------------------------
 2.3. `Autocommands'                                      *load-autocommands*
@@ -379,6 +453,7 @@ mappings :: {{MapName}: {MapOptions}}                    *load-reg-mappings*
         are reserved, they also must not start with `+') and values are 
         dictionaries with the following keys:
         Key       Description ~
+                                                         *load-map-function*
         function  String, which consist of alphanumeric characters, 
                   underscores and dots, where dot must not start or end the 
                   string or follow another dot. Required Dictionary function 
@@ -389,8 +464,10 @@ mappings :: {{MapName}: {MapOptions}}                    *load-reg-mappings*
                   sequence of keys which invoked it (mapping string) and 
                   buffer number, if it was mapping local to buffer or -1 if it 
                   was not.
+                                                          *load-map-default*
         default   String, defines a default {lhs} of the mapping. May be 
-                  overriden by g:{oprefix}Options._maps.
+                  overriden by |load-opt-_maps|.
+                                                             *load-map-type*
         type      Char, defines a type of the mapping. Possible types and 
                   corresponding commands:
                   Type        Command ~
@@ -398,10 +475,91 @@ mappings :: {{MapName}: {MapOptions}}                    *load-reg-mappings*
                    !          noremap!
                   n, v, x, s, o, i, l, c
                               {Type}noremap
+                  In order to specify more then one type, just concatenate 
+                  characters. For example, to specify one mapping both for 
+                  visual and normal mode, use "nv".
+                                                           *load-map-silent*
         silent    Bool. If true, then <silent> argument is added to the map 
                   command.
+                                                            *load-map-remap*
+        remap     If this key is present, then *map commands will be used 
+                  instead of *noremap commands when defining a mapping. See 
+                  |noremap| and |recursive_mapping|.
+                                                           *load-map-leader*
         leader    Bool. If true, then either |load-reg-leader| or 
                   |load-opt-_leader| is prepended to the default mapping.
+                                                             *load-map-getc*
+        getc      String, just like in |load-map-function|. If it is present, 
+                  then before mapping function is invoked, vimpluginloader 
+                  will use getc function to obtain additional keys like this: 
+                  it will call this function with a dictionary and a key 
+                  obtained from user as arguments and check for return value:
+                  0 either aborts mapping (if no characters were accepted) or 
+                    causes it to use previously accepted string (from the 
+                    first character to the last charactor for which 2 was 
+                    returned, subsequent characters are appended to the result 
+                    of |load-map-function|). Note that vimpluginloader will 
+                    use deep copy of a dictionary which was used as an 
+                    argument to getc function (see |deepcopy()|).
+                  1 accepts current character and tells vimpluginloader that 
+                    more characters are required.
+                  2 accepts current character and tells vimpluginloader that 
+                    more characters can be accepted (it will take 'timeout' 
+                    and 'timeoutlen'  options into account).
+                  3 accepts current character and invokes |load-map-function| 
+                    immediately.
+                  Dictionary is preserved for the current key sequence, so 
+                  this function must store its `static' variables there. If 
+                  this key is present, then this dictionary will be the fifth 
+                  argument to |load-map-function|. This dictionary is 
+                  initialized with the following keys:
+                  Key      Description ~
+                  type     Type (|load-map-type|) of the mapping (first 
+                           argument of |load-map-function|): mode from which 
+                           mapping is called. Note that for
+                           '<Space>' (normal+visual+operator-pending),
+                           'v' (visual+select), '!' (insert+command-line) and
+                           'l' (insert+command-line+lang-arg) mappings, it 
+                           will always be equal to one value, use |mode()| for 
+                           more precise results. There will be difference if 
+                           you define mapping with `type' containing more then 
+                           one character.
+                  name     Name (key of |load-reg-mappings| dictionary) of the 
+                           mapping (second argument of |load-map-function|).
+                  string   Sequence of keys which was used to invoke the 
+                           mapping (third argument of |load-map-function|).
+                  buffer   Buffer number (if the mapping is local to buffer) 
+                           or -1 (if mapping is global) (fourth argument of 
+                           |load-map-function|).
+                  self     Reference to getc function itself.
+                  mottype  For |load-map-operator| mappings: type of the 
+                           motion (fifth argument to |load-map-function|).
+
+                  Note that in order to work correctly, this option requires 
+                  |+float| and |+reltime| features. In case they are absent, 
+                  plugin works like if 'timeout' was unset.
+                                                          *load-map-nochars*
+        nochars   If it is present, then mappings that use getc also accept 
+                  zero additional characters.
+                                                         *load-map-operator*
+        operator  If it is present, then |load-map-function| is considered to 
+                  be an operator function, so it will be invoked outside of 
+                  |textlock| and get three additional arguments: type of 
+                  motion operated upon (see |g@|), position of the first 
+                  character operated upon (obtained via |getpos()|), position 
+                  of the last character operated upon. For normal mode it uses 
+                  getpos("'[") and getpos("']"), for visual mode it uses 
+                  getpos("'<") and getpos("'>") because getpos("']") will not 
+                  return column that is past the end-of-line (but it matters 
+                  whether EOL is included or not).
+                  Note: for |insert-mode|, |Replace-mode| and |select-mode| it 
+                  will use <C-o>g@ (thus temporary changing the mode, see 
+                  |i_CTRL-O| and |v_CTRL-O|) to invoke an operator function 
+                  because using g@ does not make sense in this modes. It will 
+                  use |g@| for other modes including such modes as 
+                  |Command-line|, |Ex| and others where |g@| means something 
+                  different from `invoke an operator function'.
+
 leader :: String                                           *load-reg-leader*
         Defines the mapping leader.
 sid :: String                                            *load-reg-scriptid*

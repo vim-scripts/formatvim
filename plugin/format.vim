@@ -1,34 +1,17 @@
 "{{{1 Начало
 scriptencoding utf-8
-if (exists("s:g.pluginloaded") && s:g.pluginloaded) ||
+if (exists("s:g._pluginloaded") && s:g._pluginloaded) ||
             \exists("g:formatOptions.DoNotLoad")
     finish
 "{{{1 Первая загрузка
-elseif !exists("s:g.pluginloaded")
+elseif !exists("s:g._pluginloaded")
     "{{{2 Объявление переменных
-    "{{{3 Словари с функциями
-    " Функции для внутреннего использования
-    let s:F={
-                \"plug": {},
-                \"stuf": {},
-                \"main": {},
-                \ "mng": {},
-                \"comp": {},
-                \ "fmt": {},
-            \}
+    execute load#Setup('2.3', 1, 1, 1)
+    call map(["stuf", "mng", "comp", "fmt"], 'extend(s:F, {v:val : {}})')
     lockvar 1 s:F
-    "{{{3 Глобальная переменная
-    let s:g={}
-    let s:g.load={}
-    let s:g.fmt={}
-    let s:g.fmt.formats={}
-    let s:g.pluginloaded=0
-    let s:g.chk={}
-    let s:g.load.scriptfile=expand("<sfile>")
-    let s:g.srccmd="source ".(s:g.load.scriptfile)
-    let s:g.plugname=fnamemodify(s:g.load.scriptfile, ":t:r")
-    "{{{3 Словарные функции
-    let s:g.chk.f=[
+    let s:g.fmt={"formats":{}}
+    "{{{2 Словарные функции
+    let s:g._load.dictfunctions=[
                 \["format", "fmt.format", {
                 \       "model": "prefixed",
                 \       "required": [["keyof", s:g.fmt.formats]],
@@ -54,14 +37,8 @@ elseif !exists("s:g.pluginloaded")
                 \   }
                 \]
             \]
-    "{{{3 Команды
-    " Определяет команды. Для значений ключей словаря см. :h :command. Если 
-    " некоторому ключу «key» соответствует непустая строка «str», то в аргументы 
-    " :command передаётся -key=str, иначе передаётся -key. Помимо ключей 
-    " :command, в качестве ключа словаря также используется строка «func». Ключ 
-    " «func» является обязательным и содержит функцию, которая будет вызвана при 
-    " запуске команды (без префикса s:F.).
-    let s:g.load.commands={
+    "{{{2 Команды
+    let s:g._load.commands={
                 \"Command": {
                 \      "nargs": '+',
                 \       "func": "mng.main",
@@ -70,8 +47,8 @@ elseif !exists("s:g.pluginloaded")
                 \   "complete": "customlist,s:_complete",
                 \},
             \}
-    "{{{3 Функции
-    let s:g.chk.ff=[
+    "{{{2 Функции
+    let s:g._load.functions=[
                 \["Add", "fmt.add", {
                 \       "model": "simple",
                 \       "required": [
@@ -87,37 +64,22 @@ elseif !exists("s:g.pluginloaded")
                 \   }
                 \]
             \]
-    "{{{3 sid
-    function s:SID()
-        return matchstr(expand('<sfile>'), '\d\+\ze_SID$')
-    endfunction
-    let s:g.scriptid=s:SID()
-    delfunction s:SID
+    let s:g.extfuncdicts={}
+    call map(copy(s:g._load.functions),
+                \'extend(s:g.extfuncdicts, {v:val[0]: v:val[2]})')
     "{{{2 Регистрация дополнения
-    let s:F.plug.load=load#LoadFuncdict()
-    let s:g.reginfo=s:F.plug.load.registerplugin({
-                \     "funcdict": s:F,
-                \     "globdict": s:g,
-                \      "oprefix": "format",
-                \      "cprefix": "Format",
-                \      "fprefix": "Format",
-                \          "sid": s:g.scriptid,
-                \   "scriptfile": s:g.load.scriptfile,
-                \     "commands": s:g.load.commands,
-                \    "functions": s:g.chk.ff,
-                \"dictfunctions": s:g.chk.f,
-                \   "apiversion": '2.3',
-                \     "requires": [["load", '0.0'],
-                \                  ["comp", '0.6'],
-                \                  ["chk",  '0.3'],
-                \                  ["stuf", '0.0']],
-            \})
-    let s:F.main.eerror=s:g.reginfo.functions.eerror
-    let s:F.main.option=s:g.reginfo.functions.option
+    let s:g._load.requires=[["load", '0.0'],
+                \           ["comp", '0.6'],
+                \           ["chk",  '0.3'],
+                \           ["stuf", '0.0']]
+    let s:g._load.reginfo=s:F.plug.load.registerplugin(s:g._load)
+    let s:F.main.eerror=s:g._load.reginfo.functions.eerror
+    let s:F.main.option=s:g._load.reginfo.functions.option
     finish
 endif
 "{{{1 Вторая загрузка
-let s:g.pluginloaded=1
+let s:g._pluginloaded=1
+unlet s:g._load
 "{{{2 Настройки
 let s:g.defaultOptions={
             \"DefaultFormat":    "html",
@@ -137,6 +99,7 @@ let s:g.defaultOptions={
             \"AddTagCmdEscapes": '[]*.~',
             \"ColorFile":         0,
         \}
+let s:g.chk={}
 let s:g.chk.options={
             \"DefaultFormat":    ["keyof", s:g.fmt.formats],
             \"KeepColorCache":   ["bool", ""],
@@ -156,8 +119,6 @@ let s:g.chk.options={
             \"ColorFile":        ["or", [["equal", 0],
             \                            ["file", "r"]]],
         \}
-"{{{2 Чистка
-unlet s:g.load
 "{{{2 Выводимые сообщения
 let s:g.p={
             \"emsg": {
@@ -318,6 +279,7 @@ function s:F.fmt.getexpr(str, opts)
     endif
 endfunction
 "{{{3 fmt.compile
+" { {@key@}: [{where it is constant}] }
 let s:g.fmt.args={
             \".": ["linestart", "linenr", "fold", "collapsedfiller",
             \      "begin", "end", "sbsdstart", "style"],
@@ -960,7 +922,7 @@ let s:g.chk.format=[
             \                   [["equal", "haslf"],  ["bool",  1]],
             \                   [["equal", "nolf"],   ["bool",  1]]]]]],
         \]
-let s:g.chk.ff[0][2].required[1]=s:g.chk.format
+let s:g.extfuncdicts.Add.required[1]=s:g.chk.format
 "{{{4 s:g.fmt
 let s:g.fmt.compiled={}
 let s:g.fmt.progress={}
@@ -1262,7 +1224,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
                 let virtstartline=curline
             endif
             if curline==endline
-                let virtendline=curline
+                let virtendline=virtcurline
                 break
             endif
             let virtcurline+=1
@@ -1319,7 +1281,7 @@ let formatfunction=["function s:F.fmt.compiledformat()"]
             let opts.columns=width
             let width+=oldcolumns+1
             let opts.sbsd=sbsd
-            if r==[]
+            if empty(r)
                 let r=r2
                 if has_key(cformat, "sbsdstart")
                     call map(r, 'cformat.sbsdstart(normalspec, v:key, "", '.
@@ -2743,6 +2705,7 @@ let s:g.comp.a.actions.purgecolorcaches={
         \}
 let s:F.comp._complete=s:F.plug.comp.ccomp(s:g.comp._cname, s:g.comp.a)
 "{{{1
+unlet s:g.extfuncdicts
 lockvar! s:F
 unlockvar s:F.fmt
 lockvar! s:g

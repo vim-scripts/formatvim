@@ -1,32 +1,17 @@
 "{{{1 Начало
 scriptencoding utf-8
-if (exists("s:g.pluginloaded") && s:g.pluginloaded) ||
+if (exists("s:g._pluginloaded") && s:g._pluginloaded) ||
             \exists("g:yamlOptions.DoNotLoad")
     finish
 "{{{1 Первая загрузка
-elseif !exists("s:g.pluginloaded")
+elseif !exists("s:g._pluginloaded")
     "{{{2 Объявление переменных
-    "{{{3 Словари с функциями
-    " Функции для внутреннего использования
-    let s:F={
-                \"plug": {},
-                \"main": {},
-                \ "mng": {},
-                \"comm": {},
-                \"yaml": {},
-                \"load": {},
-                \"dump": {},
-            \}
+    execute load#Setup('0.1')
+    call map(["comm", "yaml", "load", "dump"], 'extend(s:F, {v:val : {}})')
     lockvar 1 s:F
-    "{{{3 Глобальная переменная
-    let s:g={}
-    let s:g.load={}
-    let s:g.pluginloaded=0
+    "{{{2 Словарные функции
     let s:g.constructors=[{}, {}]
-    let s:g.c={}
-    let s:g.load.scriptfile=expand("<sfile>")
-    "{{{3 Словарные функции
-    let s:g.load.dumps_opts=[
+    let s:dumps_opts=[
                 \["dict", [[["equal", "preserve_locks"], ["bool", ""]],
                 \          [["equal", "key_sort"], ["or", [["bool", ""],
                 \                                          ["isfunc", 1]]]],
@@ -34,7 +19,8 @@ elseif !exists("s:g.pluginloaded")
                 \          [["equal", "custom_tags"],
                 \           ["allst", ["isfunc", 1]]]]],
                 \{}, {}]
-    let s:g.load.f=[["loads", "load.loads", {  "model": "simple",
+    let s:g._load.dictfunctions=[
+                \   ["loads", "load.loads", {  "model": "simple",
                 \                           "required": [["type", type("")]]}],
                 \   ["load_all", "load.load_all",
                 \                           {  "model": "simple",
@@ -42,7 +28,7 @@ elseif !exists("s:g.pluginloaded")
                 \   ["dumps", "dump.dumps", {  "model": "optional",
                 \                           "required": [["any", ""]],
                 \                           "optional": [[["bool", ""],{},1],
-                \                                        s:g.load.dumps_opts]}],
+                \                                        s:dumps_opts]}],
                 \   ["add_constructor", "load.add_constructor",
                 \                           {  "model": "simple",
                 \                           "required": [["and",
@@ -78,47 +64,28 @@ elseif !exists("s:g.pluginloaded")
                 \                                                          ]]]]
                 \                           }],
             \]
-    "{{{3 Команды
-    let s:g.load.commands={
-                \"Command": {
-                \      "nargs": '1',
-                \       "func": "mng.main",
-                \},
-            \}
-                " \   "complete": "customlist,s:_complete",
-    "{{{3 sid
-    function s:SID()
-        return matchstr(expand('<sfile>'), '\d\+\ze_SID$')
-    endfun
-    let s:g.scriptid=s:SID()
-    delfunction s:SID
+    unlet s:dumps_opts
+    let s:g.extfuncdicts={}
+    call map(copy(s:g._load.dictfunctions),
+                \'extend(s:g.extfuncdicts, {v:val[0]: v:val[2]})')
     "{{{2 Регистрация дополнения
-    let s:F.plug.load=load#LoadFuncdict()
-    let s:g.reginfo=s:F.plug.load.registerplugin({
-                \"apiversion": "0.1",
-                \"sid": s:g.scriptid,
-                \"funcdict": s:F,
-                \"globdict": s:g,
-                \"scriptfile": s:g.load.scriptfile,
-                \"oprefix": "yaml",
-                \"cprefix": "YAML",
-                \"commands": s:g.load.commands,
-                \"dictfunctions": s:g.load.f,
-                \"requires": [["load", '0.0'],
-                \             ["stuf", '0.5'],
-                \             ["oop",  '0.1']],
-            \})
-    let s:F.main.eerror=s:g.reginfo.functions.eerror
-    let s:F.main.option=s:g.reginfo.functions.option
+    let s:g._load.requires=[["load", '0.0'],
+                \           ["stuf", '0.5'],
+                \           ["oop",  '0.1']]
+    let s:g._load.reginfo=s:F.plug.load.registerplugin(s:g._load)
+    let s:F.main.eerror=s:g._load.reginfo.functions.eerror
+    let s:F.main.option=s:g._load.reginfo.functions.option
     finish
     "}}}2
 endif
 "{{{1 Вторая загрузка
-let s:g.pluginloaded=1
+let s:g._pluginloaded=1
+unlet s:g._load
 "{{{2 Настройки
 let s:g.defaultOptions={
             \"UsePython": 1,
         \}
+let s:g.c={}
 let s:g.c.options={
             \"UsePython": ["bool", ""],
         \}
@@ -329,7 +296,9 @@ let s:g.p={
             \                "found ambigious ':'",
             \},
             \"emsg": {
+            \       "inutf": "not a utf-8 character",
             \        "spna": "special characters are not allowed",
+            \       "nprnt": "non-printable unicode characters are not allowed",
             \     "cexists": "Constructor for this tag already exists",
             \       "infun": "In function %s:",
             \       "unexc": "Got %sError:",
@@ -346,10 +315,9 @@ let s:g.p={
             \             "position %u",
             \"ambcolonnote": "Assuming that it separates key from value",
         \}
-call add(s:g.load.f[3][2].required[0][1][1], s:g.p.emsg.cexists)
-call add(s:g.load.f[4][2].required[0][1][1], s:g.p.emsg.cexists)
-"{{{2 Чистка
-unlet s:g.load
+call add(s:g.extfuncdicts.add_constructor.required[0][1][1], s:g.p.emsg.cexists)
+call add(s:g.extfuncdicts.add_multi_constructor.required[0][1][1],
+            \s:g.p.emsg.cexists)
 "{{{1 Вторая загрузка — функции
 "{{{2 Внешние дополнения
 let s:F.plug.stuf=s:F.plug.load.getfunctions("stuf")
@@ -357,9 +325,10 @@ let s:F.plug.oop =s:F.plug.load.getfunctions("oop")
 "{{{2 main: eerror, destruct, option
 "{{{3 main.destruct: выгрузить плагин
 function s:F.main.destruct()
-    for l:Cdf in s:g.load.classdeletes
-        call call(l:Cdf, [], {})
-        unlet l:Cdf
+    let d={}
+    for d.Cdf in s:g.classdeletes
+        call call(d.Cdf, [], {})
+        unlet d.Cdf
     endfor
     unlet s:g
     unlet s:F
@@ -906,13 +875,35 @@ function s:F.load.Reader.update(length)
                 call self.__raise("Reader", self.name, position,
                             \     char2nr(character), "utf-8", "")
             endif
+            call self.check_printable(data)
+            let self.raw_buffer=self.raw_buffer[(converted):]
         else
-            let data=split(self.raw_buffer, '\zs')
-            let converted=len(self.raw_buffer)
+            let data=[]
+            let position=self.index+(len(self.buffer)-self.pointer)
+            while !empty(self.raw_buffer)
+                let nr=char2nr(self.raw_buffer)
+                let ch=nr2char(nr)
+                let lch=len(ch)
+                if self.raw_buffer[:(lch-1)]!=#ch
+                    let position=self.index+
+                                \(len(self.buffer)-self.pointer)+
+                                \index
+                    call self.__raise("Reader", self.name, position,
+                                \               char2nr(ch), "utf-8",
+                                \               s:g.p.emsg.inutf)
+                elseif position==0 && nr==0xFEFF
+                    " pass: BOM is allowed
+                elseif !s:F.comm.isprintnr(nr)
+                    call self.__raise("Reader", self.name, position,
+                                \               char2nr(ch), "utf-8",
+                                \               s:g.p.emsg.nprnt)
+                endif
+                call add(data, ch)
+                let position+=1
+                let self.raw_buffer=self.raw_buffer[(lch):]
+            endwhile
         endif
-        call self.check_printable(data)
         let self.buffer+=data
-        let self.raw_buffer=self.raw_buffer[(converted):]
         if self.eof
             call add(self.buffer, "")
             let self.raw_buffer=""
@@ -972,16 +963,14 @@ endfunction
 "{{{4 load.Reader.check_printable :: (self + ([ Char ])) -> _
 function s:F.load.Reader.check_printable(data)
     let selfname='Reader.check_printable'
-    let index=0
+    let position=self.index+(len(self.buffer)-self.pointer)
     for ch in a:data
-        if !empty(ch) && !s:F.comm.isprintchar(ch) && !(self.index==0 &&
-                    \                                   index==0 &&
+        if !empty(ch) && !s:F.comm.isprintchar(ch) && !(position==0 &&
                     \                                   ch==#"\uFEFF")
-            let position=self.index+(len(self.buffer)-self.pointer)+index
             call self.__raise("Reader", self.name, position, char2nr(ch),
                         \     "utf-8", s:g.p.emsg.spna)
         endif
-        let index+=1
+        let position+=1
     endfor
 endfunction
 "{{{3 load.Scanner
@@ -3100,14 +3089,15 @@ function s:F.load.BaseConstructor.construct_object(node)
             endif
         endif
     endif
+    let d={}
     if tag_suffix is 0
-        let l:Data=call(constructor.f, [a:node], self)
+        let d.Data=call(constructor.f, [a:node], self)
     else
-        let l:Data=call(constructor.f, [a:node, tag_suffix], self)
+        let d.Data=call(constructor.f, [a:node, tag_suffix], self)
     endif
-    let self.constructed_objects[a:node.id]=l:Data
+    let self.constructed_objects[a:node.id]=d.Data
     silent! unlet self.recursive_objects[a:node.id]
-    return l:Data
+    return d.Data
 endfunction
 "{{{4 load.BaseConstructor.construct_scalar :: NodeConstructor
 function s:F.load.BaseConstructor.construct_scalar(node, ...)
@@ -3141,18 +3131,17 @@ function s:F.load.BaseConstructor.construct_mapping(node)
     endif
     let mapping={}
     let self.constructed_objects[a:node.id]=mapping
+    let d={}
     for [key_node, value_node] in a:node.value
-        let l:Key=self.construct_object(key_node)
-        let tkey=type(l:Key)
+        let d.Key=self.construct_object(key_node)
+        let tkey=type(d.Key)
         if tkey!=type("")
             if tkey==type(0)
-                let l:Key=string(l:Key)
+                let d.Key=string(d.Key)
                 call self._warn(selfname, "Constructor", "numstr",
                             \   a:node.start_mark, key_node.start_mark)
             elseif tkey==type(0.0)
-                let tmp=string(l:Key)
-                unlet l:Key
-                let l:Key=tmp
+                let d.Key=string(d.Key)
                 call self._warn(selfname, "Constructor", "fltstr",
                             \   a:node.start_mark, key_node.start_mark)
             elseif tkey==type([])
@@ -3165,14 +3154,13 @@ function s:F.load.BaseConstructor.construct_mapping(node)
                 call self._raise(selfname, "Constructor", "dctfunc"
                             \    a:node.start_mark, key_node.start_mark)
             endif
-        elseif l:Key==#""
+        elseif empty(d.Key)
             call self._raise(selfname, "Constructor", "nullhash",
                         \    a:node.start_mark, key_node.start_mark)
         endif
-        let l:Value=self.construct_object(value_node)
-        let mapping[l:Key]=l:Value
-        unlet l:Key
-        unlet l:Value
+        let d.Value=self.construct_object(value_node)
+        let mapping[d.Key]=d.Value
+        unlet d.Key d.Value
     endfor
     return mapping
 endfunction
@@ -3396,6 +3384,7 @@ function s:F.load.SafeConstructor.construct_yaml_omap(node)
                     \    ["nseqomap", a:node.__class__],
                     \    a:node.start_mark, a:node.start_mark)
     endif
+    let d={}
     for subnode in a:node.value
         if subnode.__class__!=#"MappingNode"
             call self._raise(selfname, "Constructor",
@@ -3408,11 +3397,10 @@ function s:F.load.SafeConstructor.construct_yaml_omap(node)
                         \    a:node.start_mark, subnode.start_mark)
         endif
         let [key_node, value_node]=subnode.value[0]
-        let l:Key=self.construct_object(key_node)
+        let d.Key=self.construct_object(key_node)
         let value=self.construct_object(value_node)
-        call add(omap, [l:Key, value])
-        unlet l:Key
-        unlet value
+        call add(omap, [d.Key, value])
+        unlet d.Key value
     endfor
     return omap
 endfunction
@@ -3426,6 +3414,7 @@ function s:F.load.SafeConstructor.construct_yaml_pairs(node)
                     \    ["nseqpr", a:node.__class__],
                     \    a:node.start_mark, a:node.start_mark)
     endif
+    let d={}
     for subnode in a:node.value
         if subnode.__class__!=#"MappingNode"
             call self._raise(selfname, "Constructor",
@@ -3438,11 +3427,10 @@ function s:F.load.SafeConstructor.construct_yaml_pairs(node)
                         \    a:node.start_mark, subnode.start_mark)
         endif
         let [key_node, value_node]=subnode.value[0]
-        let l:Key=self.construct_object(key_node)
-        let l:Value=self.construct_object(value_node)
-        call add(pairs, [l:Key, l:Value])
-        unlet l:Key
-        unlet l:Value
+        let d.Key=self.construct_object(key_node)
+        let d.Value=self.construct_object(value_node)
+        call add(pairs, [d.Key, d.Value])
+        unlet d.Key d.Value
     endfor
     return pairs
 endfunction
@@ -3501,15 +3489,16 @@ endfunction
 "{{{4 load.Constructor.construct_vim_locked
 function s:F.load.Constructor.construct_vim_locked(node, tag_suffix)
     let tag='tag:yaml.org,2002:vim/'.a:tag_suffix
+    let d={}
     if has_key(self.yaml_constructors, tag)
-        let l:Data=call(self.yaml_constructors[tag], [a:node], self)
+        let d.Data=call(self.yaml_constructors[tag], [a:node], self)
     else
         let a:node.tag=tag
         unlet self.recursive_objects[a:node.id]
-        let l:Data=self.construct_object(a:node)
+        let d.Data=self.construct_object(a:node)
     endif
-    lockvar 1 l:Data
-    return l:Data
+    lockvar 1 d.Data
+    return d.Data
 endfunction
 "{{{4 load.Constructor.construct_vim_dictionary
 function s:F.load.Constructor.construct_vim_dictionary(node)
@@ -3521,6 +3510,7 @@ function s:F.load.Constructor.construct_vim_dictionary(node)
     let mapping={}
     let maplocked=0
     let self.constructed_objects[a:node.id]=mapping
+    let d={}
     for [key_node, value_node] in a:node.value
         let locked=0
         let binary=0
@@ -3532,17 +3522,15 @@ function s:F.load.Constructor.construct_vim_dictionary(node)
             let binary=1
             let key_node.tag='tag:yaml.org,2002:vim/String'
         endif
-        let l:Key=self.construct_object(key_node)
-        let tkey=type(l:Key)
+        let d.Key=self.construct_object(key_node)
+        let tkey=type(d.Key)
         if tkey!=type("")
             if tkey==type(0)
-                let l:Key=string(l:Key)
+                let d.Key=string(d.Key)
                 call self._warn(selfname, "Constructor", "numstr",
                             \   a:node.start_mark, key_node.start_mark)
             elseif tkey==type(0.0)
-                let tmp=string(l:Key)
-                unlet l:Key
-                let l:Key=tmp
+                let d.Key=string(d.Key)
                 call self._warn(selfname, "Constructor", "fltstr",
                             \   a:node.start_mark, key_node.start_mark)
             elseif tkey==type([])
@@ -3555,27 +3543,26 @@ function s:F.load.Constructor.construct_vim_dictionary(node)
                 call self._raise(selfname, "Constructor", "dctfunc"
                             \    a:node.start_mark, key_node.start_mark)
             endif
-        elseif l:Key==#""
+        elseif d.Key==#""
             call self._raise(selfname, "Constructor", "nullhash",
                         \    a:node.start_mark, key_node.start_mark)
         endif
         if binary
-            let l:Key=s:F.plug.stuf.base64decode(l:Key)
+            let d.Key=s:F.plug.stuf.base64decode(d.Key)
         endif
-        let l:Value=self.construct_object(value_node)
+        let d.Value=self.construct_object(value_node)
         if islocked('mapping')
             let maplocked=1
             unlockvar 1 mapping
         endif
-        if has_key(mapping, l:Key) && islocked('mapping[l:Key]')
-            unlockvar 1 mapping[l:Key]
+        if has_key(mapping, d.Key) && islocked('mapping[d.Key]')
+            unlockvar 1 mapping[d.Key]
         endif
-        let mapping[l:Key]=l:Value
+        let mapping[d.Key]=d.Value
         if locked
-            lockvar 1 mapping[l:Key]
+            lockvar 1 mapping[d.Key]
         endif
-        unlet l:Key
-        unlet l:Value
+        unlet d.Key d.Value
     endfor
     if maplocked
         lockvar 1 mapping
@@ -3637,14 +3624,15 @@ function s:F.load.Constructor.construct_custom_binary(node, tag_suffix)
     let tag='tag:yaml.org,2002:'.a:tag_suffix
     let a:node.value=s:F.plug.stuf.base64decode(
                 \iconv(self.construct_scalar(a:node), "utf-8", 'latin1'))
+    let d={}
     if has_key(self.yaml_constructors, tag)
-        let l:Data=call(self.yaml_constructors[tag], [a:node], self)
+        let d.Data=call(self.yaml_constructors[tag], [a:node], self)
     else
         let a:node.tag=tag
         unlet self.recursive_objects[a:node.id]
-        let l:Data=self.construct_object(a:node)
+        let d.Data=self.construct_object(a:node)
     endif
-    return l:Data
+    return d.Data
 endfunction
 "{{{4 load.Constructor.construct_vim_buffer  XXX |
 "{{{4 load.Constructor.construct_vim_window  XXX |
@@ -3698,9 +3686,9 @@ function s:F.load.prepare_cls_list(name, ...)
     return r
 endfunction
 "{{{3 load.setclass
-let s:g.load.classdeletes=[]
+let s:g.classdeletes=[]
 function s:F.load.setclass(...)
-    call add(s:g.load.classdeletes,
+    call add(s:g.classdeletes,
                 \call(s:F.plug.oop.registerclass,
                 \     call(s:F.load.prepare_cls_list, a:000, {}),
                 \     {}))
@@ -4284,7 +4272,8 @@ function s:F.dump.dumplst(obj, r, dumped, opts)
     if get(a:opts, 'all_flow', 0)
         call add(a:r, indent.'  [')
     endif
-    for l:Item in a:obj
+    let d={}
+    for d.Item in a:obj
         if get(a:opts, 'all_flow', 0)
             call add(a:r, indent.'    ')
         else
@@ -4296,8 +4285,8 @@ function s:F.dump.dumplst(obj, r, dumped, opts)
             let a:r[-1].=' !!vim/LockedItem/'
             let islocked=1
         endif
-        call s:F.dump.dump(l:Item, a:r, a:dumped, a:opts, islocked)
-        unlet l:Item
+        call s:F.dump.dump(d.Item, a:r, a:dumped, a:opts, islocked)
+        unlet d.Item
         if get(a:opts, 'all_flow', 0)
             let a:r[-1].=','
         endif
@@ -4316,10 +4305,11 @@ function s:F.dump.dumpdct(obj, r, dumped, opts)
     endif
     let indent=matchstr(a:r[-1], '^ *')
     let keylist=keys(a:obj)
-    let l:Sortarg=get(a:opts, "key_sort", 0)
-    if !(type(l:Sortarg)==type(0) && l:Sortarg==0)
-        if type(l:Sortarg)==2
-            call sort(keylist, l:Sortarg)
+    let d={}
+    let d.Sortarg=get(a:opts, "key_sort", 0)
+    if !(type(d.Sortarg)==type(0) && d.Sortarg==0)
+        if type(d.Sortarg)==2
+            call sort(keylist, d.Sortarg)
         else
             call sort(keylist)
         endif
@@ -4328,7 +4318,7 @@ function s:F.dump.dumpdct(obj, r, dumped, opts)
         call add(a:r, indent.'  {')
     endif
     for key in keylist
-        let l:Value=get(a:obj, key)
+        let d.Value=get(a:obj, key)
         if get(a:opts, 'all_flow', 0)
             call add(a:r, indent.'    ')
         else
@@ -4339,8 +4329,8 @@ function s:F.dump.dumpdct(obj, r, dumped, opts)
         endif
         call s:F.dump.dump(key, a:r, a:dumped, a:opts, -1, 0)
         let a:r[-1].=":"
-        call s:F.dump.dump(l:Value, a:r, a:dumped, a:opts, 0)
-        unlet l:Value
+        call s:F.dump.dump(d.Value, a:r, a:dumped, a:opts, 0)
+        unlet d.Value
         if get(a:opts, 'all_flow', 0)
             let a:r[-1].=','
         endif
@@ -4369,28 +4359,29 @@ function s:F.dump.dump(obj, r, dumped, opts, islocked, ...)
         let a:r[-1].=" *".anchor
         return a:r
     endif
-    let l:Obj=a:obj
+    let d={}
+    let d.Obj=a:obj
     if a:islocked==1
-        if islocked('l:Obj')
+        if islocked('d.Obj')
             let a:r[-1].='Locked'
         endif
-        let a:r[-1].=s:g.dump.typenames[type(l:Obj)]
+        let a:r[-1].=s:g.dump.typenames[type(d.Obj)]
     elseif a:islocked==0
         let tag=""
-        for l:Function in a:opts.custom_tags
-            let result=call(l:Function, [l:Obj], {})
+        for d.Function in a:opts.custom_tags
+            let result=call(d.Function, [d.Obj], {})
             if type(result)==type([]) && len(result)==2 &&
                         \type(result[0])==type("")
-                let [tag, l:Obj]=result
+                let [tag, d.Obj]=result
                 break
             endif
-            unlet l:Function result
+            unlet d.Function result
         endfor
         if tag==#""
             if get(a:opts, 'preserve_locks', 0)
-                let tobj=type(l:Obj)
+                let tobj=type(d.Obj)
                 if tobj==type([]) || tobj==type({})
-                    let a:r[-1].=' !!vim/'.((islocked('l:Obj'))?
+                    let a:r[-1].=' !!vim/'.((islocked('d.Obj'))?
                                 \               ("Locked"):
                                 \               ("")).
                                 \s:g.dump.typenames[tobj]
@@ -4401,8 +4392,8 @@ function s:F.dump.dump(obj, r, dumped, opts, islocked, ...)
                         \((iskey)?(""):(" "))
         endif
     endif
-    call call(s:g.dump.types[type(l:Obj)],
-                \[l:Obj, a:r, a:dumped, a:opts]+a:000,
+    call call(s:g.dump.types[type(d.Obj)],
+                \[d.Obj, a:r, a:dumped, a:opts]+a:000,
                 \{})
     return a:r
 endfunction
@@ -4413,24 +4404,17 @@ let s:g.dump.types=[s:F.dump.dumpnum, s:F.dump.dumpstr, s:F.dump.dumpfun,
 "}}}4
 function s:F.dump.dumps(obj, join, opts)
     let r=['%YAML 1.2', '---']
-    if !has_key(a:opts, "custom_tags")
-        let a:opts.custom_tags=[]
+    let opts=deepcopy(a:opts)
+    if !has_key(opts, "custom_tags")
+        let opts.custom_tags=[]
     endif
-    call s:F.dump.dump(a:obj, r, {}, a:opts, 0)
+    call s:F.dump.dump(a:obj, r, {}, opts, 0)
     if get(a:opts, 'all_flow', 0)
         call filter(r, 'v:val[-1:]!=#" "')
     else
         call add(r, '...')
     endif
     return a:join ? join(r, "\n") : r
-endfunction
-"{{{2 mng: main
-"{{{3 mng.main
-function s:F.mng.main(action)
-    let action=tolower(a:action)
-    "{{{4 Действия
-    " %-ACTIONS-%
-    "}}}4
 endfunction
 "{{{1
 lockvar! s:F
