@@ -2,27 +2,31 @@ This is a mirror of http://www.vim.org/scripts/script.php?script_id=3113
 
 There are some things that included out-of-the-box 2html.vim plugin does not support, so I ended in writing my own format.vim script:
 
-     'list' and 'listchars' (tab, trail, eol, conceal, including the case when 'list' is on and 'lcs' does not contain tab)
-     Foreground colors for lines with differencies (if I am not mistaking, implemented in latest 2html)
-     Normal special character coloring
-     Background color for the whole line with differencies and folds, not just for text
-     Tags linked to their definition (slow, HTML only (unless you write specification by yourself), but partially on by default, also implemented by vimscript #2252 for 2html)
-     Side-by-side diff (also present in latest 2html version)
-     Full conceal support, including 'cole', 'lcs:conceal' and saving information about actual text present
-     Foldcolumn support (2html generates foldcolumn only if dynamic_folds is on, and this foldcolumn is different from what Vim actually displays)
-     My killer feature: exporting to any format you can write specification for. (for example, bbcode; bbcode specification for unixforum.org is included in the distribution)
+     'list' and 'listchars' (tab, trail, eol, conceal, including the case when 'list' is on and 'lcs' does not contain tab);
+     Foreground colors for lines with differencies (if I am not mistaking, implemented in latest 2html);
+     Normal special character coloring;
+     Background color for the whole line with differencies and folds, not just for text;
+     Tags linked to their definition (slow, HTML only (unless you write specification by yourself), but partially on by default, also implemented by vimscript #2252 for 2html);
+     Side-by-side diff (also present in latest 2html version);
+     Full conceal support, including 'cole', 'lcs:conceal' and saving information about actual text present;
+     Foldcolumn support (2html generates foldcolumn only if dynamic_folds is on, and this foldcolumn is different from what Vim actually displays);
+     Signs support, including icons
+     Non-copyable foldcolumns and numbers
+     'Fillchars' option support (diff, fold and vert keys);
+     My killer feature: exporting to any format you can write specification for. (for example, bbcode; bbcode specification for unixforum.org is included in the distribution).
 
 Examples:
-http://kp-pav.narod2.ru/formatvim-2.2.1-side-by-side-diff.html
-http://kp-pav.narod2.ru/formatvim-2.2.1-diff.html
-http://kp-pav.narod2.ru/formatvim-2.2.1-AllFolds.html (if you want to open/close fold permanently, not only at hover, either click anywhere inside the fold or click its header)
-http://kp-pav.narod2.ru/formatvim-2.3.2-formatconcealed-1.html
-http://kp-pav.narod2.ru/formatvim-2.3.2-formatconcealed-2.html (hover to see actual text present in the line)
+http://formatvim.sourceforge.net/folded.yaml_C0-D0-a0-n1-o3-r0.html
+Side-by-side diff: http://formatvim.sourceforge.net/concealed.tex_diffformat.html
+AllFolds: http://formatvim.sourceforge.net/folded.yaml_C1-D1-a1-n1-o3-r0.html
+Concealed characters: http://formatvim.sourceforge.net/concealed.tex_C1-D1-F2-L0-c2-l_q_q-n0-r0.html, http://formatvim.sourceforge.net/concealed.tex_C1-D1-F1-L0-c2-l_q_q-n0-r0.html
+Signs: http://formatvim.sourceforge.net/signs.yaml_signs__diffformat__diff__numbers.html
+Signs with icons: http://formatvim.sourceforge.net/signs.yaml_icons.html
+
+You can also see lots of examples in the mercurial repository: all test/*.ok. They are also duplicated at formatvim.sourceforge.net/*.html, exact names are generated out of *.ok files using the following command:
+    zmv -C '(*).ok' 'outs/${${${${${1//_/__}//\%/_}//$/_d}//!/_b}//>/_g}.html'
 
 Documentation: http://vimpluginloader.sourceforge.net/doc/format.txt.html
 Project page: http://sourceforge.net/projects/formatvim
 Dependencies (you do not need to install them by yourself, see installation details):
-vimscript #3184, http://sourceforge.net/projects/vimpluginloader
-vimscript #3186, http://sourceforge.net/projects/vimstuff
-vimscript #3187, http://sourceforge.net/projects/vimargumentchec
-vimscript #3188, http://sourceforge.net/projects/vimcompcrtr
+frawor: https://bitbucket.org/ZyX_I/frawor (vimscript #3631)

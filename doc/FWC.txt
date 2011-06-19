@@ -1,0 +1,638 @@
+*FWC.txt* Frawor DSL for creating checker/filter/completion functions
+==============================================================================
+CONTENTS                                                        *FWC-contents*
+    1. Top level structure                         |FWC|
+        1.1. Strings, floats and expressions       |FWC-constructs|
+        1.2. Options                               |FWC-options|
+        1.3. Arguments                             |FWC-arg|
+        1.4. Prefixes                              |FWC-prefixes|
+        1.5. Actions                               |FWC-actions|
+    2. Internal functions                          |FWC-functions|
+        2.1. Matchers                              |FWC-matchers|
+        2.2. Checkers and filters                  |FWC-cf|
+
+==============================================================================
+1. Top level structure                                       *FWC* *FWC-{FWC}*
+
+                                                                *FWC-{intFWC}*
+FWC string consists of optional options string (|FWC-options|) followed by 
+a list of required arguments, a number of lists of optional arguments 
+(|FWC-optional|), prefixes description (|FWC-prefixes|), additional arguments 
+description and actions description (|FWC-actions|). Each element is 
+optional.
+         {FWC} :: {options}? {intFWC}
+      {intFWC} :: {required}? {optional}* {prefixes}? {next}? {actions}?
+                                                    *FWC-{c}* *FWC-{wordchar}*
+When parsing all spaces, tabs, newlines and carriage returns that are not 
+inside |FWC-{expression}|, |FWC-{string}| or |FWC-{reg}| are ignored:
+           {c} :: ( SPACE | TAB | NL | CR )* ( {wordchar}+ | . )
+    {wordchar} :: [a-zA-Z0-9_]
+
+
+FWC compiler will generate a function which will
+
+                                                              *FWC-{required}*
+1. Process (check or replace) all required arguments.
+        {required} :: {arg}*
+                                                              *FWC-{optional}*
+2. Try to process optional arguments (if there is more then one {optional} 
+   section then FWC compiler considers them to be alternative variants). It 
+   won't fail if processing of optional arguments failed.
+        {optional} :: "[" {intFWC} "]"
+   Examples:
+     String that checks arguments for |search()| function: >
+        isreg [match/^[bcenpswW]\+$/ [range 1 $=line('.') [range 1 inf]]]
+<    Strings that check function which accepts 0, 1 or 2 as an optional 
+     argument with 2 requiring additional argument: >
+        [bool] [(is=2) isreg]
+        Example calls: F(0), F(1), F(2, "foo")
+
+3. Collaps arguments into a dictionary if they match {prefixes} specification, 
+   see |FWC-prefixes|.
+                                                                  *FWC-{next}*
+4. Process all following arguments using {next} specification.
+        {next} :: "+" {arg}
+   Example:
+     Accept one or more regular expressions: >
+        isreg +isreg
+        Example calls: F('foo'), F('foo', 'bar\+'), F('foo', 'bar', 'baz')
+
+5. If there were no {next} section or processing of it failed on some 
+   argument, then {actions} specification is used (|FWC-actions|).
+
+------------------------------------------------------------------------------
+1.1. Strings, floats and expressions                          *FWC-constructs*
+
+                                                                   *FWC-{str}*
+{str} is either double-quoted string or single-quoted string. Inside 
+a double-quoted string all "\{character}" sequences are translated to 
+"{character}" (note that "\x0A" will be translated to "x0A", not to byte 
+0x0A), inside a single-quoted string all "''" are translated to "'" just like 
+in vim strings.
+    {str} :: {dstr} | {str}
+   {dstr} :: '"' ( "\" . | [^\"] )* '"'
+   {sstr} :: "'" ( "''"  | [^']  )* "'"
+
+                                                                 *FWC-{regex}*
+Regular expression string is a regular expression which has a border 
+characters before and after it. Right border character depends on left one (in 
+most cases right and left characters are equal, but not when left is one of 
+"<", "{", "(", "[": here right is ">", "}", ")" or "]") and must be escaped if 
+you want to have it inside regular expression. Sometimes border characters are 
+forced to be "/". Both border characters must be non-word characters within 
+ASCII range.
+    {regex} :: {lborder} ( "\" . | [^\{rborder}] ) {rborder}
+  {*border} :: [\x01-\xFF] \ {wordchar}
+
+                                                                  *FWC-{expr}*
+An expression is an embedded vim code. For expression definition you should 
+see |eval.txt|, here is just a description how FWC parser determines where 
+expression ends:
+1. Expressions that do not contain `(', `[' or `{' end before first `}', `]' 
+   or `)' which are considered to be a part of FWC string. If there are no 
+   closing brackets, curly braces or parenthesis, then expression will consume 
+   the whole string.
+2. Expressions that do contain `(', `[' or `{' end on `}', `]' or `)' that 
+   close outermost opening bracket, curly brace or parenthesis: in FWC string >
+        |=empty(@.@) is =1
+<  expression is `empty(@.@)', and in string >
+        (|=@.@=~#"abc")
+<  expression is `@.@=~#"abc"'.
+3. Brackets, curly braces and parenthesis inside quoted strings do not count: 
+   in FWC string >
+        |=@.@=~#")" is =1
+<  expression is `@.@=~#")" is =1' which is probably not what you expected.
+Inside an expression some strings have special meaning:
+String   Meaning ~
+@.@      Variable which is being processed.
+@:@      Current argument.
+@@@      Argument list.
+@#@      Only inside a message arguments list: current argument name.
+@$@      Variable prefix (you must prefix all local variables with this 
+         string).
+@%@      Name of the dictionary with static variables. Keys present in this 
+         dictionary:
+         Key    Description ~
+         p      `s:' dictionary of your plugin (really the last argument to 
+                |FraworRegister()|)
+
+                                                                 *FWC-{float}*
+Integer and floating-point numbers format in FWC is more permissive then vim 
+own format: it allows to use underscore to separate digits to make them more 
+readable, omit numbers before and after the dot, put spaces after sign, ...
+    {float} :: [+-]? " "* ( "inf" | [0-9_]* "."? [0-9_]* ("e" [+-]? [0-9]+)? )
+All elements are optional (but there must be at least one element), case does 
+not matter:
+    FWC       Vim  | FWC      Vim~
+     .        0.0  | e0       0.0
+     .0       0.0  | E-0      0.0
+     0        0    | -        0
+     1_000    1000 | 1.000_1  1.0001
+     .000_1e2 0.01 | 1_000e-2 10.0
+Note that `.' or `e' forces the number to be floating-point.
+
+------------------------------------------------------------------------------
+1.2. Options                                     *FWC-options* *FWC-{options}*
+
+Options are used to alter behavior of FWC compiler. Currently there are only 
+two options: `only' and `onlystrings'. Prefixing option with "no" will disable 
+it.
+    {options} :: ( "-" ( "(" {option}* ")" | {option} ) )*
+     {option} :: "no"? ( "only" | "onlystrings" )
+
+Option       Effect ~
+                                                           *FWC-o-onlystrings*
+onlystrings  Tells the compiler that all arguments have string type, so no 
+             type checks are performed. Default: disabled.
+                                                                  *FWC-o-only*
+only         Tells the compiler that function will be passed one argument 
+             instead of a list of arguments. This option disables all but 
+             {required} sections. If {required} section describes more then 
+             one argument then checked argument is processed using all these 
+             specifications. Default: disabled.
+
+------------------------------------------------------------------------------
+1.3. Arguments                                           *FWC-arg* *FWC-{arg}*
+
+Argument specification is a list of pipes, checks and messages:
+    {arg} :: "(" {defval}?
+                 ( "|" {pipe}
+                 | "?" {check}
+                 | "#" {message}
+                 | {spec}(type) )
+             ")"
+           | ( "|" {pipe} | "?" {check} | "#" {message} )* {spec}(type)?
+
+                                                                *FWC-{defval}*
+{defval} makes you able to specify default value for an optional argument so 
+that your backend function will be able to have fixed number of arguments 
+while your frontend function still has some optional arguments. Default values 
+are only allowed inside required section of optional section if there is only 
+one optional section. More then one optional section makes compiler silently 
+ignore default values.
+    {defval} :: (inside required section in optional section) ( ":" {var} )
+                (otherwise not allowed)
+
+                                                               *FWC-{message}*
+{message} argument defines an additional message which will be shown if 
+processing of some argument failed. Messages are discarded when current {arg} 
+section ends. Special messages "#" and "^" mean `disable custom messages by 
+adding an empty message which won't be echoed' and `remove last message'.
+    {message} :: {wordchar}+ ( "(" ( [.%#,] | {var} ) ")" )?
+               | "#"
+               | "^"
+Message name ({wordchar}+) must be a key of plugin's s:_messages dictionary, 
+plugin also must not remove s:_f.warn function reference which is added by 
+core frawor module. If message name is followed by arguments, then these 
+arguments will be passed to s:_f.warn after message name (see 
+|frawor-f-warn|). In addition to {var} there are three special arguments:
+    Argument  Description ~
+        .     Current argument value.
+        %     Current argument name.
+        #     Current check index.
+
+                                                    *FWC-{pipe}* *FWC-{check}*
+Pipe describes how argumest should be transformed, check describes what 
+argument is valid. Each pipe or check is either a function, an expression or 
+an inline function defined internally (|FWC-functions|).
+   {pipe} :: {spec}(pipe)
+  {check} :: {spec}(check)
+   {spec} :: "*" {func}
+           | "=" {expr}
+           | {intfunc}
+Expression is described in |FWC-{expr}|, @.@ as well as dot function argument 
+will be set to the processed argument.
+                                                                  *FWC-{func}*
+    {func} :: {var} ( "(" ( "." | {var} | "," )* ")" )?
+Function call consists of a variable containing vim function reference and an 
+optional list of arguments (absent list of arguments is equal to "(.)" (which 
+is the same as "()" when dot argument is not defined)). You may use commas to 
+separate arguments in the list: all comas are ignored. Non-dot arguments are 
+variables, see below.
+                                                                   *FWC-{var}*
+Each variable is either
+1. A script variable name optionally followed by subscripts: `$foo.bar' will 
+   try to access key `bar' inside a `s:.foo' dictionary (or not `s:', 
+   depending on what was the last argument to |FraworRegister()|). It is not 
+   available if you use |frawor-de-checker|, |frawor-de-filter|, 
+   |frawor-f-conschecker| or |frawor-f-consfilter|.
+2. A context variable ("^" means `move one level up', `<' decrements and `>' 
+   increments current subscript, both forcing context variable to reference 
+   current argument) optionally followed by subscripts: `@' references the 
+   checked/filtered variable, `@^' references structure that contains it 
+   (normally an arguments list), `@<' references previous argument.
+3. An expression, see |FWC-{expr}|.
+4. A function call (with dot argument undefined), see |FWC-{func}|.
+5. A list, see |FWC-{list}|.
+6. A string, see |FWC-{str}|.
+You can also use parenthesis around variable and use "$" to evaluate {var} at 
+compile time and insert the results: for example, to convert current argument 
+to a string using built-in |string()| function you cannot do `|*string', but 
+you have to use `|*$"string"' instead. Don't forget that `${var}' is evaluated 
+at compile time, so no local variables and no arguments are available.
+          {var} :: "(" {var} ")"
+                 | {wordchar}+ {subscr}*
+                 | "@" ( "^"* | [<>]* ) {subscr}?
+                 | "=" {expr}
+                 | "$" {var}
+                 | "*" {func}
+                 | {list}
+                 | {str}
+                                                                *FWC-{subscr}*
+Each subscript must start with a dot and be followed by
+1. A word: `.string' will try to access key "string".
+2. A string (|FWC-{str}|): `."string"' is the same as `.string'.
+3. A number: for example, `.0' or `.-1'.
+4. A range: colon followed by two numbers or variables.
+5. A variable with "$" used to force next atom to be a part of variable, so 
+   `.$"string"' is the same as `.string',
+   `.=(2)' and `.$$"0x2"' are the same as `.2'
+           {subscr} :: ( "." ( ":" {n} {n} | {subscript} ) )*
+        {subscript} :: {str}
+                     | "-"? [0-9] {wordchar}*
+                     | {wordchar}+
+                     | "$"? {var}
+                {n} :: "-"? {wordchar}+
+                     | "$"? {var}
+                                                                  *FWC-{list}*
+List is a list of strings or variables, "$" is used to force next atom to be 
+a part of variable:
+                        FWC list     Vim list ~
+                        [a b c]      ["a", "b", "c"]
+                        [ foo ]      ["foo"]
+                        [$foo]       [s:foo]
+                        [$$foo]      [eval(s:foo)]   " Compile-time eval
+                        ["--" a]     ["--", "a"]
+                        [=(2)]       [2]
+         {list} :: "[" ( {str} | {wordchar}+ | "$"? {var} ) "]"
+
+------------------------------------------------------------------------------
+1.4. Prefixes                                  *FWC-prefixes* *FWC-{prefixes}*
+
+Prefixes section makes you able to construct the following commands: >
+    " Assuming that s:printers variable contains a list of printers and 
+    " s:default_printer variable contains name of default printer
+    path {using  :default_printer in printers
+          copies :=(1)            range 1 inf
+          !color :=(0)}
+    Example calls:
+        Print file
+        Print file u BazPrinter
+        Print file u FooBarPrinter cop 10 nocol
+        Print file using FooBarPrinter copies 10 nocolor
+Prefixes section is a list of prefix descriptions with attached prefix 
+arguments. Prefix description consists of a prefix options and the prefix 
+itself, optionally followed by a default value of the prefix. Specifying 
+default value forces prefix to be optional. If {matcher} is present, then it 
+will be used to get full version of the prefix. Default matcher is 
+|FWC-m-start| with ambigious prefixes forbidden.
+       {prefixes} :: "{" ("~" {matcher})? ( {prefdescr} {prefargs} )* "}"
+      {prefdescr} :: {prefopts}? ( {str} | {wordchar}+ ) {prefdefault}?
+       {prefopts} :: ( "?" | "!" | "*" | "+" {argnum} )*
+    {prefdefault} :: ":" {var}
+         {argnum} :: {wordchar}+
+       {prefargs} :: "-" | {arg} x {argnum}
+If {prefargs} is equal to "-" then argnum is set to zero and prefix is 
+considered to accept no arguments.
+
+Prefix options:
+Option  Description ~
+?       Makes prefix optional without specifying default value.
+!       Makes prefix alternating: in the above example "!color :=(0)" 
+        describes a prefix which can appear either like "color" or like 
+        "nocolor". This option sets argnum to 0, but this can be overruled by 
+        explicitely supplying "+{N}" option. Negative ("no{prefix}") version 
+        does not accept any arguments.
+*       Makes prefix accept a list of arguments: the following example will 
+        produce dictionary with a list of patterns as a value of "exclude" 
+        key: >
+            path path {*exclude isreg}
+            Example calls:
+                Archive file archive.tar exclude foo$ bar$ exclude baz$
+                -> ["file", "archive.tar", {"exclude":["foo$","bar$","baz$"]}]
+<       Note that list prefix will consume at least one set of arguments, but 
+        if the following argument can mean the next prefix, it will be taken 
+        as the next prefix, not as the next argument to the current list 
+        prefix: >
+            path path {*exclude isreg !?compress}
+            Example calls:
+                Archive file a.tar exclude exclude e compress
+                -> ["file", "a.tar", {"exclude": ["exclude", "compress"]}]
+                Archive file a.tgz exclude compress c
+                -> ["file", "a.tgz", {"exclude": ["compress"], "compress": 1}]
++{N}   Set the number of arguments accepted by current prefix: >
+            { +2 dimensions (range 0 inf) (range 0 inf)
+             !+1 saveto path}
+            Example calls:
+                Format dimensions  1 100 nosave
+                Format dimensions 10  50 saveto file
+<      This option is overriden by subsequent `!' option or by 
+       supplying `-' instead of argument list.
+
+------------------------------------------------------------------------------
+1.5. Actions                                     *FWC-actions* *FWC-{actions}*
+
+Actions section makes you able to create subcommands: >
+    < define (not in signs {?icon   path
+                            ?linehl (?=hlexists(@.@))
+                             text   match /\v^\p\p?$/
+                             texthl (?=hlexists(@.@))})
+      undefine in signs
+      list [in signs] >
+    Example calls:
+        Sign define sign1 text -- texthl Error
+        Sign list
+        Sign list sign1
+        Sign undefine sign1
+Actions section is a list of actions ("-" stands for absent action) with 
+attached arguments description (or "-" for no arguments):
+      {actions} :: "<" ( "~" {matcher} )? {action} {actargs} ">"
+       {action} :: {str} | {wordchar}+ | "-"
+      {actargs} :: "-" | "(" {intFWC} ")" | {intFWCarg}
+    {intFWCarg} :: {prefixes} | {actions} | {optional} | {next} | {arg}
+
+==============================================================================
+2. Internal functions                                          *FWC-functions*
+
+All standart internal functions are defined in plugin/frawor/fwc/intfuncs.vim 
+file and do not require specifying any additional dependencies.
+
+Internal function calls are right associative: >
+    tuple tuple isreg, isreg
+is the same as >
+    tuple (tuple (isreg, isreg))
+. Normally internal function arguments are not separated by anything (forget 
+about spaces, they do not count unless they separate two {wordchar}s), but if 
+some function accepts a list of values, then this list must either be put into 
+parenthesis or have arguments separated by commas: >
+    tuple isreg isreg
+is equivalent to >
+    (tuple isreg) isreg
+, while >
+    tuple isreg, isreg
+is equivalent to >
+    tuple (isreg isreg)
+or >
+    tuple (isreg, isreg)
+
+------------------------------------------------------------------------------
+2.1. Matchers                                   *FWC-matchers* *FWC-{matcher}*
+
+Unlike other functions, you cannot have a {matcher} that does not accept at 
+least one argument which determines what should be done if there is more then 
+one match. This argument is `optional' (that means, it may be not present in 
+FWC string), but it is always passed to the matcher function. When 
+constructing completer, 2 is passed instead of this argument.
+        {mather} :: {wordchar}+ {intarg}* {one}
+           {one} :: ( "0" | "1" )?                                 *FWC-{one}*
+If neither 0 nor 1 is specified, then 0 is taken as default.
+
+All matchers should follow the rule: if there is exact match (case is not 
+ignored) then no other processing should be done and this match should be 
+returned.
+
+Built-in matchers:
+func {func} {one}   (|FWC-{func}|, |FWC-{one}|)                   *FWC-m-func*
+        Processes list obtained by perfoming a function call according to 
+        {func} specification with two dot arguments: list or dictionary with 
+        variants and string being matched against. If first dot argument is 
+        a dictionary, then you should use its keys as variants.
+exact {one} {one}   (|FWC-{one}|)                                *FWC-m-exact*
+        Accepts only exact matches. First |FWC-{one}| argument determines 
+        whether case should be ignored.
+start {one} {one}   (|FWC-{one}|)                                *FWC-m-start*
+        Searches for values which start with processed string. First 
+        |FWC-{one}| argument determines whether case should be ignored.
+smart {one}   (|FWC-{one}|)                                      *FWC-m-smart*
+        Most permissive matcher, it applies filters from the list until it 
+        gets a match. For a list of filters, search @/fwc/intfuncs for 
+        definition of `s:smartfilters' variable.
+
+------------------------------------------------------------------------------
+2.2. Checkers and filters                                             *FWC-cf*
+
+func {func}   (|FWC-{func}|)                         *FWC-c-func* *FWC-f-func*
+    Checker: check whether result of calling given function is not 0.
+             Same as `?*{func}'.
+    Filter: replace current argument with the result of evaluating function.
+            Same as `|*{func}'.
+    In both cases dot argument is set to argument being processed.
+    Completer: completes to nothing, breaking completion.
+
+expr {expr}    (|FWC-{expr}|)                        *FWC-c-expr* *FWC-f-expr*
+    Checker: check whether result of evaluating given expression is not 0.
+             Same as `?={expr}'
+    Filter: replace current argument with the result of evaluating expression.
+            Same as `|={expr}'.
+    Completer: completes to nothing, breaking completion.
+
+if {arg} {arg} {arg}   (|FWC-{arg}|)                                *FWC-f-if*
+    Filter/completer: if argument matches first {arg}, then it is processed 
+                      using the second {arg}, otherwise it is processed using 
+                      the third {arg}.
+                      Note that first {arg} must have no side-effects and be 
+                      efficient enough if you want to use it inside completion 
+                      function.
+
+run {var}   (|FWC-{var}|)                                          *FWC-f-run*
+    Filter: calls current argument with {var} as an arguments list and 
+            replaces it with the result of the call. |self| will be set to 
+            a new empty dictionary for this call.
+
+earg                                                             *FWC-f-earg*
+    Filter: replaces argument with the result of evaluating itself.
+
+not {arg}    (|FWC-{arg}|)                                        *FWC-c-not*
+    Checker: fails if processing argument using {arg} succeeds.
+    Completer: completes to nothing, breaking completion.
+
+either {arg}*    (|FWC-{arg}|)                                 *FWC-c-either*
+    Checker: succeeds if any of given {arg}s succeeds.
+    Completer: adds all {arg}s to variants list.
+
+first {arg}*   (|FWC-{arg}|)                                     *FWC-c-first*
+    Checker: same as |FWC-c-either|.
+    Completer: processes {arg}s until list is non-empty or no more {arg}s 
+               left.
+
+tuple {arg}*    (|FWC-{arg}|)                      *FWC-c-tuple* *FWC-f-tuple*
+    Checks whether argument is a list with a fixed (equal to number of {arg}s) 
+    length, then processes all elements of the list using given 
+    specification.
+    Completer: undefined.
+
+list {arg}    (|FWC-{arg}|)                          *FWC-c-list* *FWC-f-list*
+    Checks whether argument is a list, then processes all its elements using 
+    given specification.
+    Completer: undefined.
+
+dict {ddescr}                                        *FWC-c-dict* *FWC-f-dict*
+    Checks whether argument is a dictionary matching {ddescr}.
+    Completer: undefined.
+
+    Dictionary description is a list of key descriptions and attached argument 
+    descriptions.
+        (|FWC-{str}|, |FWC-{arg}|, |FWC-{regex}|, |FWC-{func}|, |FWC-{expr}|)
+            {ddescr} :: "{" ({keydescr} {arg})* "}"
+          {keydescr} :: {str}
+                      | {wordchar}+
+                      | {regex}(border=/)
+                      | "?" {arg}
+                      | "*" {func}
+                      | "=" {expr}
+                      | "-"
+    When some key matches some description it is processed using attached 
+    {arg}. Possible key descriptions:
+    1. {str} and {wordchar}+: matches if key is equal to given string, see 
+       |FWC-{str}|.
+       Example: >
+            dict {foo bool  "bar-baz" bool}
+            : {"foo": 0}     -> success
+            : {"foo": 2}     -> fail
+            : {"bar-baz": 1} -> success
+<   2. {regex}(border=/): matches if key matches given regular expression, see 
+       |FWC-{regex}|.
+       Example: >
+            dict {/foo/ bool}
+            : { "foo": 0} -> success
+            : {"afoo": 0} -> success
+            : { "Foo": 0} -> fail
+<   3. "?" {arg}: matches if key matches given specification, see |FWC-{arg}|.
+       Example: >
+            dict {?isreg bool}
+            : {"ab": 0} -> success
+            : {'\(': 0} -> fail
+<   4. "*" {func}: matches if function returns not 0. Dot argument is set to 
+       key, see |FWC-{func}|.
+    5. "=" {expr}: matches if expression returns not 0. @.@ is set to key, see 
+       |FWC-{expr}|.
+    6. "-": matches any key.
+                                                         *FWC-c-in* *FWC-f-in*
+in {var} ( "~" {matcher} )?   (|FWC-{var}|, |FWC-{matcher}|)
+    Checker: checkes whether argument is inside list {var}. Matcher is 
+             ignored.
+    Filter: picks up first element from list {var} that matches argument. If 
+            {matcher} is absent, then it acts like checker and allows argument 
+            to be of any type. In other case argument is forced to be 
+            a string.
+    Completer: uses given {var} as a list of possible variants. Note that if 
+               {var} expands to a function call, it won't be cached.
+                                                       *FWC-c-key* *FWC-f-key*
+key {var} ( "~" {matcher} )?   (|FWC-{var}|, |FWC-{matcher}|)
+    Like |FWC-c-in| or |FWC-f-in|, but for dictionaries: dictionary keys are 
+    taken as variants.
+    Completer: uses keys from given {var} as a list of possible variants.
+               Note that if {var} expands to a function call, it won't be 
+               cached.
+
+take {var} {matcher}   (|FWC-{var}|, |FWC-{matcher}|)             *FWC-f-take*
+    Filter: pick up a value of the key from {var} that matched current 
+            argument.
+    Completer: uses keys from given {var} as a list of possible variants.
+               Note that if {var} expands to a function call, it won't be 
+               cached.
+
+substitute {reg} {string}? {string}?                        *FWC-f-substitute*
+    Filter: replace current argument with the result of calling substitute 
+            with it and following arguments.
+                (|FWC-{var}|, |FWC-{regex}|, |FWC-{str}|)
+                       {reg} :: "$" {var}                          *FWC-{reg}*
+                              | {regex}
+                    {string} :: "$" {var}                       *FWC-{string}*
+                              | {str}
+                              | {wordchar}+
+    Completer: completes to nothing, breaking completion.
+
+haskey {string}*   (|FWC-{string}|)                             *FWC-c-haskey*
+    Checker: check whether current argument is a dictionary that has all given 
+             keys.
+    Completer: undefined.
+
+range {number} {number} {one}   (|FWC-{one}|)                    *FWC-c-range*
+    Checker: check whether current argument is a number or float and is in 
+             given range. Floating-point values are not allowed unless one of 
+             {float} arguments is floating-point (infinity is not 
+             a floating-point value, it is a special case) or user explicitely 
+             allowed floating-point values by setting {one} argument to 1.
+                       (|FWC-{float}|, |FWC-{var}|)
+                         {number} :: {float}
+                                   | "$" {var}
+    Completer: ignored.
+
+match {reg}   (|FWC-{reg}|)                                      *FWC-c-match*
+    Checker: check whether current argument matches given regular expression. 
+             Matching is done case-sensitively by default.
+    Completer: ignored.
+
+path {pathspec}                                                   *FWC-c-path*
+    Checker: checks whether current argument is a path matching given 
+             specification.
+                    {pathspec} :: [df]? "r"? [wWp]? "x"?
+                                & ! ( "d" | ^ ) "r"
+                                & ! "d" [wWp]? "x"
+    Explanation:
+    1. "d" forces current argument to be a directory, "r" -- regular file, 
+       otherwise both may be accepted
+    2. "r" forces current argument to be a readable file (not directory)
+    3. "w" -- writeable file or directory (unless "f" is specified),
+       "W" -- writeable file or directory (unless "f" is specified) or 
+              non-existant file in writeable directory (unless "d" is 
+              specified),
+       "p" -- like "W", but also accepts any path that can be created (for 
+              example, if you have directory /a and you can write to it, then 
+              path /a/b/c/d will be accepted),
+    4. "x" forces current argument to be an executable file (not directory)
+
+type {typespec}*                                                  *FWC-c-type*
+    Checker: checks whether type of the current argument is one of given 
+             types.
+    Completer: ignored.
+
+    Possible type specifications:
+            Type        Short version  Long version (case is ignoreg) ~
+            String      '' or ""       string
+            Number      -0             number
+            Float       .0             float
+            Dictionary  {}             dictionary
+            List        []             list
+            Function    **             function
+    You can't check for floating-point values if vim is compiled without 
+    |+float| feature.
+
+isfunc {one}   (|FWC-{one}|)                                    *FWC-c-isfunc*
+    Checker: checks whether argument is a name of a callable function or 
+             a callable function reference. If optional argument is 1, then 
+             only function references are allowed.
+             Names of dictionary items are also allowed, but only if they 
+             start with scope prefix and do use only dotted subscripts 
+             (dict.key).
+
+isreg                                                            *FWC-c-isreg*
+    Checker: checks whether argument is a valid regular expression.
+
+bool                                                 *FWC-c-bool* *FWC-f-bool*
+    Checker: checks whether argument is 0 or 1 (if |FWC-o-onlystrings| is 
+             enabled then it checks for "0" or "1").
+    Filter: replaces argument with 0 or 1. If |FWC-o-onlystring| is not 
+            active, then it replaces current argument with the result of 
+            evaluating `!empty({argument})' (see |empty()|),
+            otherwise strings "1", "yes", "ok", "true" (case ignored) are 
+            replaced with 1 and others are replaced with 0.
+    Completer: completes to nothing, breaking completion.
+
+is {var}   (|FWC-{var}|)                                            *FWC-c-is*
+    Checker: checks whether argument is {var} (see |expr-is|).
+    Completer: completes to nothing, breaking completion.
+                                                   *FWC-c-value* *FWC-f-value*
+value {var} {arg}   (|FWC-{var}|, |FWC-{arg}|)
+    Process {var} using {arg} specification: override current argument with 
+    {var} for given {arg}.
+    Note that context variables inside {arg} will point to new current 
+    argument, as well as @@@ inside expressions.
+    Completer: ignored.
+
+any, _                                                   *FWC-c-any* *FWC-c-_*
+    Checker: matches any argument.
+    Completer: ignored.
+
+vim: ft=help:tw=78

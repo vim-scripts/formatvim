@@ -1,0 +1,1345 @@
+*frawor.txt* Vim framework
+==============================================================================
+CONTENTS                                                     *frawor-contents*
+    1. Intro                                      |frawor-intro|
+    2. Functionality provided                     |frawor-functionality|
+        2.1. Functions                            |frawor-functions|
+        2.2. Commands                             |frawor-commands|
+    3. Features                                   |frawor-features|
+        3.1. Features defined in plugin/frawor    |frawor-f-plugin/frawor|
+        3.2. plugin/frawor/functions features     |frawor-f-frawor/functions|
+        3.3. plugin/frawor/decorators features    |frawor-f-frawor/decorators|
+        3.4. @/decorators/altervars features      |frawor-f-decorators/altervars|
+        3.5. plugin/frawor/options features       |frawor-f-frawor/options|
+        3.6. plugin/frawor/checks features        |frawor-f-frawor/checks|
+        3.7. plugin/frawor/fwc features           |frawor-f-frawor/fwc|
+        3.8. plugin/frawor/mappings features      |frawor-f-frawor/mappings|
+        3.9. plugin/frawor/autocommands features  |frawor-f-frawor/autocommands|
+        3.10. plugin/frawor/commands features     |frawor-f-frawor/commands|
+        3.11. plugin/frawor/resources features    |frawor-f-frawor/resources|
+        3.12. plugin/frawor/python features       |frawor-f-frawor/python|
+        3.13. plugin/frawor/perl features         |frawor-f-frawor/perl|
+        3.14. plugin/frawor/lua features          |frawor-f-frawor/lua|
+        3.15. plugin/frawor/ruby features         |frawor-f-frawor/ruby|
+        3.16. plugin/frawor/tcl features          |frawor-f-frawor/tcl|
+        3.17. plugin/frawor/signs features        |frawor-f-frawor/signs|
+    4. Resources                                  |frawor-resources|
+        4.1. map resource                         |frawor-r-map|
+        4.2. os resource                          |frawor-r-os|
+        4.3. py resource                          |frawor-r-py|
+        4.4. printtable resource                  |frawor-r-printtable|
+        4.5. base64 resource                      |frawor-r-base64|
+        4.6. sign resource                        |frawor-r-sign|
+    5. Options                                    |frawor-options|
+        5.1. Mapping options                      |frawor-mapoptions|
+    6. Type definitions                           |frawor-types|
+    7. Variables index                            |frawor-variables|
+    8. Changelog                                  |frawor-changelog|
+
+==============================================================================
+1. Intro                                                        *frawor-intro*
+
+This plugin provides extensible vim framework.
+
+==============================================================================
+2. Functionality provided                               *frawor-functionality*
+
+------------------------------------------------------------------------------
+2.1. Functions                                              *frawor-functions*
+
+                                                            *FraworRegister()*
+FraworRegister({version}, {sid}, {file}, {dependencies}, {oneload}, {g})
+        Registers plugin sourced from {file} that has given {version} (see 
+        |frawor-t-version|; {version} must have at least two components). If 
+        {oneload} is true, then plugin is considered loaded when it is 
+        registered, otherwise it will be sourced for the second time when 
+        required. {dependencies} argument is a dictionary that contains pairs 
+        {{depplid}: {depversion}} where each {depversion} must have at least 
+        one component. {g} argument must contain dictionary with script-local 
+        variable (s:, see |internal-variables|, a paragraph just after a list 
+        of name spaces). This function sets s:_frawor to the dictionary with 
+        the following keys:
+        Key          Description ~
+        id           Plugin identifier string. Normally it contains a list of 
+                     path components of script file separated by `/' with 
+                     leading runtimepath and extension removed. If plugin with 
+                     such id already exists, trailing `/' is added.
+        runtimepath  Runtimepath of your plugin (empty if frawor failed to 
+                     detect it).
+        type         First component of plugin file path that is not part of 
+                     runtimepath (or `/unknown' if frawor failed to detect 
+                     it).
+        It also sets s:_pluginloaded to either 1 for oneload plugins or 0.
+                                                       *frawor-plid-expansion*
+        If some key in {dependencies} dictionary starts with `@', then it is 
+        transformed:
+                            Origin      Transformed ~
+                            @/          plugin/frawor/
+                            @:          ftplugin/
+                            @%          autoload/
+                            @@          @
+                            @           plugin/
+        There two special cases: `^' gets expanded to plugin id without one 
+        component (but with trailing slash) and `@.' gets expanded to plugin 
+        id (both only for {dependencies} dictionary).
+                                                     *frawor-anonymous-plugin*
+        You may specify 0 instead of {version}. In this case plugin type will 
+        be `/anonymous', plugin id will be equal to `file' argument (possibly 
+        with some trailing `/' added), runtimepath will be empty. In this case 
+        you may use s:_sfile variable to tell frawor what should be sourced to 
+        load plugin.
+
+frawor#Setup({version}, {dependencies}, {oneload})            *frawor#Setup()*
+        If |:execute|d, does some common setup:
+        1. If {version} or some value in {dependencies} is a dot-separated 
+           list of numbers, then it is transformed into |List| of |Number|s. 
+           Example: "1.0.4" → [1, 0, 4].
+        2. It creates s:Eval function which is just a wrapper to |eval()|. 
+           Useful inside mappings because they have no direct access to script 
+           variables and for obtaining |<SID>| value.
+        3. It creates s:F variable containing a dictionary, s:_functions list 
+           containng string "s:Eval".
+        4. Creates s:_sid variable containing your plugin script id.
+        5. If s:_sfile variable does not exist, sets it to plugin filename.
+        6. Calls |FraworRegister()|, passing it transformed {version}, s:_sid, 
+           s:_sfile, transformed {dependencies}, {oneload} and s:.
+        Example: >
+            execute frawor#Setup([0, 0], {"plugin/frawor": [0, 0]}, 0)
+<       You may replace [0, 0] here with "0.0", but remember that it is 
+        frawor#Setup extension, it won't work with FraworRegister.
+        Note: you must |:execute| frawor#Setup, not |:call| it.
+
+FraworLoad({plugin})                                            *FraworLoad()*
+        Load {plugin}. {plugin} argument may be either a plugin ID 
+        (transformed using |frawor-plid-expansion|) or plugin dictionary. 
+        Returns 0 if it failed to load plugin, 1 if plugin was successfully 
+        loaded and 2 if plugin is being loaded now.
+
+FraworUnload({plugin})                                        *FraworUnload()*
+        Unload {plugin}. {plugin} argument may be either a plugin ID 
+        (transformed using |frawor-plid-expansion|) or plugin dictionary. 
+        Return list of files in order they must be sourced to load unloaded 
+        plugins back. Unload is done in the following sequence:
+        0. Collect all plugins that depend on given plugin and order them so 
+           that plugins that are less depended on come first.
+        1. Launch `unloadpre' feature key for all collected plugins.
+        2. Iterate over collected plugins and do the following:
+        2.1. Launch `unload' feature key for given plugin. Note that some 
+             plugins that define this key may be unloaded at this point, thus 
+             undefining their feature.
+        2.2. If {g} dictionary contains _unload key with a function reference, 
+             then this function is launched. Note that you should use 
+             s:._unload to define such function, not s:_unload.
+        2.3. Set plugdict status to 0, then remove plugin dictionary from 
+             plugin dictionaries list.
+        2.4. Purge all {g} keys (normally this is equal to purging all s: 
+             variables).
+
+frawor#Reload({plugin})                                      *frawor#Reload()*
+        Wrapper around FraworUnload that will unload {plugin} and immediately 
+        load it back.
+
+------------------------------------------------------------------------------
+2.2. Commands                                                *frawor-commands*
+
+==============================================================================
+3. Features                                                  *frawor-features*
+
+------------------------------------------------------------------------------
+3.1. Features defined in plugin/frawor                *frawor-f-plugin/frawor*
+
+warn : function ({msgid}, ...) + s:_messages → {message}       *frawor-f-warn*
+        Echoes message `Frawor:{plid}:{msgid}:{message}' where {message} is 
+        obtained by getting {msgid} out of `s:_messages'. If more then one 
+        argument is present, then {message} and that arguments will be passed 
+        to |printf()|. Warn function returns the whole message echoed. {plid} 
+        is an id of a plugin that uses this function. Semicolon and backslash 
+        in {plid} and {msgid} will be escaped.
+throw : function ({msgid}, ...) → exception                   *frawor-f-throw*
+        Calls |frawor-f-warn| and throws an exception with text 
+        `Frawor:{plid}:{msgid}:{message}' where {message} is a value returned 
+        by |frawor-f-warn|. Semicolon and backslash in {plid} and {msgid} will 
+        be escaped.
+newfeature : function ({fid}, {fopts})                   *frawor-f-newfeature*
+           + unload
+        Registers plugin feature with id {fid} ({fid} must contain only 
+        digits, latin letters and underscores). {fopts} is a dictionary with 
+        the following keys (all are optional, but feature without any keys is 
+        useless):
+        Key        Description ~
+                                                              *frawor-fk-cons*
+        cons       Reference to a function that will take |frawor-t-plugdict| 
+                   as its first argument, feature dictionary as its second 
+                   argument and, possibly, some additional arguments. It is 
+                   just a normal function that can do anything related to the 
+                   plugin that uses frawor. Function that is a wrapper to this 
+                   function will be added to s:_f dictionary under the 
+                   same conditions for which `load' function is called (except 
+                   that `ignoredeps' option has no effect).
+                   Instead of function reference you can use a dictionary that 
+                   contains function references (that should accept the same 
+                   arguments) or dictionaries (with same restrictions on 
+                   contained keys and values). Dictionary keys should consist 
+                   only of latin letters, digits and underscores.
+                                                          *frawor-fk-register*
+        register   Reference to a function that will take |frawor-t-plugdict| 
+                   as its first argument and feature dictionary as its second 
+                   (it will be empty). This function will be called once after 
+                   plugin is registered for each plugin that depends on the 
+                   feature definer.
+                                                              *frawor-fk-init*
+        init       A dictionary. Feature dictionary (second argument to all 
+                   feature functions) will be obtained by deep copying 
+                   (|deepcopy()|) of this value. Copying is done just before 
+                   assignement, so if you record a pointer to a |List| or 
+                   |Dictionary| that is a value of `init' key somewhere, 
+                   modifications done to these structures will take effect on 
+                   init value recorded in the next plugin.
+                                                              *frawor-fk-load*
+        load       Reference to a function that will take |frawor-t-plugdict| 
+                   as its first argument and feature dictionary as its second. 
+                   This function will be called only once for each plugin that 
+                   depends on the feature definer.
+                   Function will be called under following circumstances:
+                   1. If feature definer (plugin that registered feature) was 
+                      loaded before plugin that requires it, then it will be 
+                      called just before plugin will be loaded.
+                   2. If feature definer was loaded after plugin that requires 
+                      it, then it will be called just after feature definer is 
+                      loaded.
+                                                            *frawor-fk-unload*
+        unload     Reference to a function that will take |frawor-t-plugdict| 
+                   as its first argument and feature dictionary as its second. 
+                   This function will be called only once for each plugin that 
+                   depends on the plugin that registers this feature. Function 
+                   will be called when dependent plugin is unloaded.
+                                                         *frawor-fk-unloadpre*
+        unloadpre  Just like unload, but function will be called when plugin 
+                   is queued for unloading, but nothing was yet unloaded.
+                                                        *frawor-fk-ignoredeps*
+        ignoredeps If this key is present, then register, load, unload and 
+                   unloadpre keys will be called for all plugins even if they 
+                   do not specify feature definer in dependencies. Key `cons' 
+                   will be ignored for plugins that do not specify feature 
+                   definer in dependencies.
+
+------------------------------------------------------------------------------
+3.2. plugin/frawor/functions features              *frawor-f-frawor/functions*
+
+delfunctions : unloadpre + s:_functions              *frawor-f-delfunctions*
+             + register + s:_functions
+        Deletes all non-anonymous functions in s:_functions list before plugin 
+        is unloaded. It is |frawor-fk-ignoredeps| feature, so you don't need 
+        specify plugin/frawor/functions in your dependencies.
+        Usage (assuming that you executed |frawor#Setup()|): >
+            function Foo()
+                " some code here
+            endfunction
+            let s:_functions+=['Foo']
+<                                                   *frawor-f-addextfunctions*
+addextfunctions : function ({ {funcname}: {funcdescr} })
+                + unload
+        Adds external functions. Each {funcname} must be a valid function name 
+        (names that start with s: are also supported, though it is probably 
+        better to just use `let s:_functions+=['s:Func']' after each 
+        plugin-local function definition). This feature will throw an error if 
+        function is already defined. {funcdescr} is described in 
+        |frawor-t-funcdescr|.
+        Note that if plugin is not loaded yet then instead of creating 
+        function it will define |FuncUndefined| event that will load the 
+        plugin and create requested function.
+                                                           *frawor-f-wrapfunc*
+wrapfunc : function ({funcdescr})
+         + unload
+        Creates a function out of given {funcdescr} (see 
+        |frawor-t-funcdescr|). Is useful to wrap some function with 
+        savers/setters without making it accessible outside of plugin.
+
+------------------------------------------------------------------------------
+3.3. plugin/frawor/decorators features            *frawor-f-frawor/decorators*
+
+                                                       *frawor-f-adddecorator*
+adddecorator : function ({decid}, {decfunc})
+             + unload
+        Adds a decorator named {decid} for constructed function. Decorator 
+        function ({decfunc}) must accept plugin dictionary, function name (it 
+        must only be used to make error messages more verbose) and an argument 
+        (value of `@{decid}' key) and return a tuple of five values:
+        1. priority (any number). Decorators with higher priority will be put 
+           less close to return statement, if priority is equal decorators' 
+           names are taken into account;
+        2. arguments variable name (return `@@@' to leave it unchanged);
+        3. private decorator variable (0 if not used);
+        4. a list of lines that are to be put before |:return| statement 
+           (leading spaces in all lines of the list are ignored);
+        5. a list of lines that are to be put after |:return| statement (it is 
+           rather useless unless you use |:try| in the first list and 
+           |:finally| in this one) (leading spaces in all lines of the list 
+           are ignored);
+        6. boolean that determines whether block after |:return| needs access 
+           to function return value. Note that in this case you don't need to 
+           use |:try| .. |:finally| to get block after |:return| executed.
+        String {decid} should consist only of digits, latin letters and 
+        underscores and must not be equal to a single underscore.
+        There are some special substrings that can be used inside returned 
+        lists of strings and arguments variable name:
+        @@@ is replaced by argument list variable name (note that it may be 
+            locked |a:000| variable).
+        @%@ is replaced with the private variable name (you may also use it as 
+            arguments variable name - second item in a returned tuple).
+        @$@ is replaced with the identifier unique to decorator. Use it when 
+            you need a local variable.
+        @=@ is replaced with name of variable where function return value is 
+            stored. Note that without sixth value in returned list set to true 
+            this sequence won't work.
+        @*@ is replaced with name of variable containing function which will 
+            be called. You may alter it if you want.
+        @.@ is replaced with dictionary which will be used as |self| in called 
+            function.
+        There are some predefined decorators:
+        Decorator   Description ~
+                                                         *frawor-de-altervars*
+        @altervars  Uses |:try| .. |:finally| to alter variables/options and 
+                    restore them afterwards. Accepts a list as an argument, 
+                    see |frawor-t-altervars|. Priority: 192.
+                    Defined in plugin/frawor/decorators/altervars.
+                                                           *frawor-de-checker*
+        @checker    Checks function arguments before running the function 
+                    itself. See |frawor-t-checker| for description of an 
+                    argument. Priority: 128. Defined in plugin/frawor/checks.
+                                                            *frawor-de-filter*
+        @filter     Filters function arguments before running the function 
+                    itself. See |frawor-t-filter| for description of an 
+                    argument. Priority: 64. Defined in plugin/frawor/checks.
+                                                               *frawor-de-FWC*
+        @FWC        Accepts tuple with two elements: |FWC| string and type. 
+                    Depending on type, acts like @checker (if type is "check") 
+                    or @filter (if type is "filter"). Unlike @checker and 
+                    @filter does not create additional function.
+                    Priority: 128. Defined in plugin/frawor/fwc.
+
+------------------------------------------------------------------------------
+3.4. @/decorators/altervars features           *frawor-f-decorators/altervars*
+
+                                                      *frawor-f-addaltspecial*
+addaltspecial : function ({id}, {saver}, {setter}[, {opts}])
+              + unload
+        Adds saver and setter functions for `+{intname}' (see 
+        |frawor-fd-altervars|). {id} must be a string that starts with 
+        a letter and contains only letters, digits and underscores. {opts} is 
+        a dictionary with the following keys:
+        Key          Description ~
+        requiresarg  If it is present, then {saver} and {setter} functions are 
+                     marked as functions that require additional argument, see 
+                     |frawor-fd-altervars|. This additional argument will be 
+                     the only argument to saver and the second argument to 
+                     setter functions. Overrides `acceptsarg'.
+        acceptsarg   Like `requiresarg', but does not force argument to be 
+                     present.
+        checker      Checker for additional argument, see |frawor-t-checker|. 
+                     Checker must accept list with a single item: additional 
+                     argument.
+
+------------------------------------------------------------------------------
+3.5. plugin/frawor/options features                  *frawor-f-frawor/options*
+
+                                                          *frawor-f-getoption*
+getoption : function ({optname}[, {scopes}]) + s:_options, s:_oprefix
+        Obtains option with the given name. For the value of an option it will 
+        first search dictionary {oprefix}Options, then variable 
+        {oprefix}_{optname}, then it will use `default' key of 
+        s:_options.{optname} option description (see |frawor-t-option|). 
+        {oprefix} is either a value of s:_oprefix (it must be a valid 
+        variable name!) or second component of plugin id (so if plugin id is 
+        plugin/foo/bar, then {oprefix} will be foo). {oprefix} is determined 
+        on first getoption call. If {scopes} is given it overrides 
+        |frawor-od-scopes|.
+
+------------------------------------------------------------------------------
+3.6. plugin/frawor/checks features                    *frawor-f-frawor/checks*
+
+conschecker : function ({checker}[, {gdict}])           *frawor-f-conschecker*
+        Creates a checker function. Constructed function takes exactly one 
+        argument: |List| containing checked arguments. For {checker} 
+        description see |frawor-t-checker|. {gdict} is only used for creating 
+        checker with |frawor-f-fwc.compile| >
+            let s:F.checker=s:_f.conschecker(s:F.checker)
+            <...>
+            " Check value contained in args variable
+            if !s:F.checker(args)
+                " check failed
+            endif
+<
+consfilter : function ({filter}[, {gdict}])              *frawor-f-consfilter*
+        Like |frawor-f-conschecker|, but for filters, see |frawor-t-filter|.
+
+------------------------------------------------------------------------------
+3.7. plugin/frawor/fwc features                          *frawor-f-frawor/fwc*
+
+                                                        *frawor-f-fwc.compile*
+fwc.compile : function ({FWCstring}, {type}[, {gdict}])
+            + unload
+        Create a function out of {FWCstring} code. This function takes a list 
+        of values (unless |fwc-o-only| is enabled) and returns either 
+        (possibly modified) its argument (or 0) when {type} is "filter", or 
+        a boolean value when {type} is "check". {gdict} overrides value of 
+        script-local dictionary.
+        Returns a tuple with created function and its internal resources 
+        identifier which can be then passed to |frawor-f-fwc.del|.
+        Note that created function will be anonymous dictionary function, so 
+        you will need to supply a dictionary when you call it even though it 
+        does not use this dictionary. See |Dictionary-function| and 
+        description of the third argument to |call()|.
+
+fwc.del : function ({FWCid})                                *frawor-f-fwc.del*
+        Delete resources used by function with given ID.
+
+------------------------------------------------------------------------------
+3.8. plugin/frawor/mappings features                *frawor-f-frawor/mappings*
+
+                                                        *frawor-f-addmapgroup*
+mapgroup.add : function ({mgid}, {mappings}[, {mgopts}])
+             + unload
+        Add mapping group with id {mgid}. {mappings} is a dictionary which 
+        contains mapping names (they should consist only of latin letters, 
+        digits and underscores) as keys and |frawor-t-mapping| as values.
+        {mgid} is one of the following:
+        1. Unique string that starts with an uppercase latin letter and 
+           contains only latin letters and digits.
+        2. Zero. In this case unique {mgid} will be generated and then 
+           returned by function, you will have to use it to map/unmap/delete 
+           mapping group. Note that {mgid}=0 enables `nouser' option (see 
+           below).
+        3. An existing {mgid} defined by caller plugin. In this case mappings 
+           will be appended to the given mapping group.
+        {mgopts} is a dictionary with the following keys:
+        Key     Description ~
+        leader  String, determines map leader. Default value: empty (note that 
+                empty |frawor-mk-lhs| with empty leader disables a mapping). 
+                It must be either a string or zero (latter disables mapping 
+                group unless overrided by user). Is overriden by 
+                |frawor-mo-mgid|.
+        buffer  If this key is present, then given mapping group will create 
+                only buffer-local mappings.
+                Note that if plugin type is `ftplugin', then `buffer' is on by 
+                default and you cannot switch it off.
+        dontmap If this key is present, then given mapping group won't be 
+                mapped unless requested by |frawor-f-mapgroup.map|. If both 
+                this and `buffer' keys are present then mapping group is 
+                mappend only for current buffer.
+        nouser  If this key is present, then neither |frawor-mk-lhs| of 
+                mappings defined in the mapping group nor group leader are 
+                overridable by user. If this option is enabled, then no 
+                restrictions are put on mapping names.
+                Passing zero as {mgid} enables this option.
+        func    If this key is present, then its value will be used as `func' 
+                key for mappings with List |frawor-mk-rhs|.
+        type    One of `map', `abbr' or `menu'. Overrides the default value 
+                for |frawor-mk-type|.
+        mode    If this key is present, then its value will be used as the 
+                default mode.
+        silent, noremap, expr, operator
+                If these keys are present, then their value will override the 
+                default values for group mappings. See |frawor-mk-silent|, 
+                |frawor-mk-noremap|, |frawor-mk-expr| and 
+                |frawor-mk-operator|.
+        Note that if mapgroup.add is called for existing group, then `nouser', 
+        `buffer' and `dontmap' options are ignored.
+
+mapgroup.map : function ({mgid}[, {bufnr}])            *frawor-f-mapgroup.map*
+        Executes mapping commands described by given group. Throws an error if 
+        called by plugin that does not have mgroup definer in its dependencies 
+        and is not a mgroup definer itself. Optional {bufnr} argument must be 
+        a buffer number, if it is present then group is mapped for the given 
+        buffer only.
+
+mapgroup.unmap : function ({mgid}[, {bufnr}])        *frawor-f-mapgroup.unmap*
+        Does the opposite to |frawor-f-mapgroup.map|.
+
+mapgroup.del : function ({mgid}}                       *frawor-f-mapgroup.del*
+        Unmaps and deletes group with given ID. Forbidden for every plugin but 
+        that one which defined this group.
+
+------------------------------------------------------------------------------
+3.9. plugin/frawor/autocommands features        *frawor-f-frawor/autocommands*
+
+augroup.add : function ({agid}, {events})               *frawor-f-augroup.add*
+            + unload
+        Creates an autocommand group with name FraworAugroup_{agid} containing 
+        events defined in {events} list. Each item in {events} list must be 
+        a list with three or four values: ({type}, {pattern}, {nested}, 
+        {command}). {type} is a list (either actual |List| or comma-separated 
+        string) of event types (see |autocmd-events|), {pattern} is a string 
+        described in |autocmd-patterns|, {nested} determines whether 
+        autocommand is nested (see |autocmd-nested|) and {command} is one of 
+        the following:
+        1. List with at least one item. First item must be either a dictionary 
+           that describes a function (see |frawor-t-funcdescr|) or a function 
+           reference. The following items are arguments that will be passed to 
+           the first item.
+           If first item is a dictionary then plugin will be loaded before 
+           running function described by it.
+        2. Function reference. Determines a function that will be called. In 
+           this case no arguments are supplied.
+        3. Dictionary described in |frawor-t-funcdescr|. In this case plugin 
+           will be loaded before running function described by it.
+           Note that you must depend on plugin/frawor/functions to use such 
+           {command}.
+        4. String. Determines actual command that should be called.
+           Note that <SID> in the command will be replaced by <SNR>{sid}_, but 
+           you still cannot use script-local variables because autocommand 
+           will be defined in plugin/frawor/autocommands scope. It is better 
+           to use s:_augroups variable as described in |frawor-f-delaugroups|.
+
+augroup.del : function ([{agid}])                      *frawor-f-augroup.del*
+        Deletes autocommand group with given {agid}. If no {agid} is given, 
+        then deletes all autocommands that belong to plugin that calls this 
+        feature.
+
+delaugroups : unloadpre + s:_augroups                   *frawor-f-delaugroups*
+              register + s:_augroups
+        Deletes autocmd groups listed in s:_augroups. It is 
+        |frawor-fk-ignoredeps| feature, so you don't need specify 
+        plugin/frawor/autocommands in your dependencies.
+        Usage: >
+            augroup FooBar
+                autocmd BufAdd * call s:F.fooinit()
+            augroup END
+            " s:_augroups is set to an empty list when plugin is registered.
+            let s:_augroups+=['FooBar']
+
+------------------------------------------------------------------------------
+3.10. plugin/frawor/commands features               *frawor-f-frawor/commands*
+
+delcommands : unloadpre + s:_commands                   *frawor-f-delcommands*
+              register + s:_commands
+        Deletes commands listed in s:_commands. It is |frawor-fk-ignoredeps| 
+        feature, so you don't need specify plugin/frawor/commands in your 
+        dependencies.
+        Usage: >
+            command -nargs=? Foo echo "Bar"
+            let s:_commands+=["Foo"]
+
+command.add : function( cid, cstr, copts )              *frawor-f-command.add*
+            + unload
+        Creates a command named {cid}. {cstr} describes replacement string and 
+        is one of the following:
+        1. String. It will be added to the |:command| call directly. Note that 
+           command will be defined in the context of plugin/frawor/commands 
+           module, so you can't use script-local variables here.
+        2. Function reference.
+        3. Dictionary. This variant provides a way to delay loading of the 
+           plugin until command is called: when defined command is called 
+           frawor will load the plugin, use |frawor-f-wrapfunc| to create 
+           a function out of the given dictionary (note: you must have 
+           plugin/frawor/functions module in dependencies) and only then call 
+           given function.
+        {copts} is a dictinary that describes some additional options:
+        Key      Description ~
+        nargs     String or 0. Defines number of arguments, see 
+                  |:command-nargs|. Use 0 to skip this argument. Default: "0".
+                  Ignored if `rsplitfunc' key is present and is not 0.
+        range     0, 1, "%" or Number written as string. Defines default 
+                  range, see |:command-range|. 1 means `add -range without 
+                  argument'. Default: 0. Adds <line1> and <line2> to argument 
+                  list.
+        count     0, 1 or Number written as string. Just the same as range, 
+                  but for |:command-count|. Default: 0. Adds <count> to 
+                  argument list.
+        bang      0 or 1, see |:command-bang|. Default: 0. Adds <bang>0  to 
+                  argument list.
+        bar       0 or 1, see |:command-bar|. Default: 1.
+        register  0 or 1, see |:command-register|. Default: 0. Adds <q-reg> to 
+                  argument list.
+        buffer    0 or 1, see |:command-buffer|. Default: 0, 1 for ftplugins.
+                  Note that if plugin type is `ftplugin', then `buffer' is on 
+                  by default and you cannot switch it off.
+        complete  Defines completion for the command. Possible values:
+                  1. String, see |:command-complete|.
+                  2. Function reference. Anonymous and script-local functions 
+                     are also allowed. See |:command-completion-customlist|.
+                  3. Dictionary. In this case plugin will be loaded when 
+                     completion is called and then this dictionary will be 
+                     passed to |frawor-f-wrapfunc|. You must have 
+                     plugin/frawor/functions module in dependencies. This 
+                     variant enables you to delay defining completion function 
+                     until required.
+                  4. List with one or two strings. In this case 
+                     |frawor-f-fwc.compile| will be used to compile completion 
+                     function. If list contains one string, then 
+                     |FWC-o-onlystrings| option will be enabled and "complete" 
+                     string will be added to list. If list contains two 
+                     strings, then it will be passed to fwc.compile 
+                     unmodified. Like with dictionary, compilation will be 
+                     done only after plugin is loaded.
+        splitfunc, rsplitfunc
+                  Defines function that will split command-line into a list of 
+                  arguments. `splitfunc' is for FWC completion, `rsplitfunc' 
+                  is for running. Latter is valid only if {cstr} is not 
+                  a string. Use 0 to keep default behavior.
+
+        Order of additional arguments if any (only applicable if {cstr} is 
+        a dictionary or a function reference):
+            <bang>0, <count>, <line1>, <line2>, <q-reg>
+
+command.del : function( [ cid ] )                       *frawor-f-command.del*
+        Delete command named {cid} if it was defined by this plugin. If no 
+        {cid} was specified, deletes all commands defined by caller.
+
+------------------------------------------------------------------------------
+3.11. plugin/frawor/resources features             *frawor-f-frawor/resources*
+
+                                                       *frawor-f-postresource*
+postresource : function ({rid}, {resource}[, {copyfunc}])
+             + register, unload
+        Create resource (copy of {resource}) with given {rid}. This feature is 
+        now used only to provide access to plugin functions that don't have to 
+        know anything about a caller. Additional argument determines what 
+        should be done when resource is requested:
+        1. If it is `0' (default), then resource is deepcopied (|deepcopy()|) 
+           for each plugin.
+        2. If it is a reference to a function, then {resource} is deepcopied 
+           when resource is created and on each request {copyfunc}({resource}) 
+           is used to obtain value which will actually be added to plugin 
+           dictionary.
+        3. If it is `1' then no copying is performed at all. Use this to save 
+           space if you are sharing large structures or need to give access to 
+           your plugin's state. Note that only |Lists| and |Dictionaries| are 
+           passed by references, so it won't have any affect when you share 
+           strings, numbers or function references.
+
+addresource : load + s:_r                               *frawor-f-addresource*
+        Automatically adds resources that are defined by plugins listed in 
+        dependencies to s:_r dictionary. It is |frawor-fk-ignoredeps| feature, 
+        so you don't need anything to get it working.
+
+------------------------------------------------------------------------------
+3.12. plugin/frawor/python features                   *frawor-f-frawor/python*
+
+All plugin/frawor/python features are available only if vim is compiled with 
+python support.
+
+addpythonpath : register, unloadpre                   *frawor-f-addpythonpath*
+        Automatically adds {rtp}/python directory to sys.path if it exists, 
+        then removes it when plugin is unloaded. It is |frawor-fk-ignoredeps| 
+        feature, so you don't need to do anything to make it work.
+
+------------------------------------------------------------------------------
+3.13. plugin/frawor/perl features                       *frawor-f-frawor/perl*
+
+All plugin/frawor/perl features are available only if vim is compiled with 
+perl support.
+
+addperlpath : register, unloadpre                       *frawor-f-addperlpath*
+        Automatically adds {rtp}/perl directory to @INC if it exists, then 
+        removes it when plugin is unloaded. It is |frawor-fk-ignoredeps| 
+        feature, so you don't need to do anything to make it work.
+
+------------------------------------------------------------------------------
+3.14. plugin/frawor/lua features                        *frawor-f-frawor/lua*
+
+All plugin/frawor/lua features are available only if vim is compiled with 
+lua support.
+
+addluapath : register, unloadpre                        *frawor-f-addluapath*
+        Automatically adds {rtp}/lua/?.lua and {rtp}/lua/?/init.lua to 
+        package.path if directory {rtp}/lua exists, then removes them when 
+        plugin is unloaded. It is |frawor-fk-ignoredeps| feature, so you don't 
+        need to do anything to make it work.
+
+------------------------------------------------------------------------------
+3.15. plugin/frawor/ruby features                       *frawor-f-frawor/ruby*
+
+All plugin/frawor/ruby features are available only if vim is compiled with 
+ruby support.
+
+addrubypath : register, unloadpre                       *frawor-f-addrubypath*
+        Automatically adds {rtp}/ruby directory to $LOAD_PATH if it exists, 
+        then removes it when plugin is unloaded. It is |frawor-fk-ignoredeps| 
+        feature, so you don't need to do anything to make it work.
+
+------------------------------------------------------------------------------
+3.16. plugin/frawor/tcl features                        *frawor-f-frawor/tcl*
+
+All plugin/frawor/tcl features are available only if vim is compiled with 
+tcl support.
+
+addtclpath : register, unloadpre                        *frawor-f-addtclpath*
+        Automatically adds {rtp}/tcl directory to auto_path if it exists, then 
+        removes it when plugin is unloaded. It is |frawor-fk-ignoredeps| 
+        feature, so you don't need to do anything to make it work.
+
+------------------------------------------------------------------------------
+3.17. plugin/frawor/signs features                     *frawor-f-frawor/signs*
+
+delsigns : unloadpre + s:_signs                            *frawor-f-delsigns*
+            register + s:_signs
+        Deletes signs listed in s:_signs. It is |frawor-fk-ignoredeps| 
+        feature, so you don't need specify plugin/frawor/signs in your 
+        dependencies.
+        Usage: >
+            sign define xxx text=EE texthl=Error
+            let s:_signs+=["xxx"]
+
+sign.new : function (sgid, sgopts)                         *frawor-f-sign.new*
+         + unload
+        Define a new sign with name {sgid} (0 if you don't care about 
+        human-readable names). Returns sign name ({sgid} if it is not 0). 
+        {sgopts} is a dictionary with the following keys (see |sign-define|):
+            Key     Description ~
+            text    One or two printable characters.
+            texthl  Highlight group for text.
+            linehl  Highlight group for line with sign.
+            icon    Sign icon. Ignored unless has("gui_running") return 1.
+        At least one of these keys must be present.
+
+sign.place : function (sgid, bufnr, line)                *frawor-f-sign.place*
+        Place sign defined using |frawor-f-sign.new|. Use 0 for {bufnr} if you 
+        want to place sign in current buffer.
+
+sign.delete : function ([ sgid ])                       *frawor-f-sign.delete*
+        Unplace and delete sign defined using |frawor-f-sign.new|. If no 
+        {sgid} given, delete all signs defined by this plugin.
+
+==============================================================================
+4. Resources                                                *frawor-resources*
+
+Resources are defined (posted) by |frawor-f-postresource|. Unlike functions 
+defined by features, all functions accessed from posted resources does not 
+check their arguments.
+
+------------------------------------------------------------------------------
+4.1. map resource                                               *frawor-r-map*
+
+Resource `map' is defined in plugin/frawor/mappings.
+
+                                                           *frawor-map-maparg*
+map.maparg :: {lhs}, {mode}::Char, {abbr}::Bool -> {mapdescr}
+        Given an {lhs} of the mapping ({abbr}=0) or abbreviation ({abbr}=1) 
+        and {mode} (see |maparg()| description) returns a dictionary with the 
+        following keys:
+        Key      Description ~
+        lhs      {lhs} of the mapping
+        rhs      {rhs} of the mapping
+        silent   1 if mapping is silent (|:map-<silent>|), 0 if it is not
+        noremap  1 if {rhs} is not remappable, 0 otherwise
+        expr     1 for expr mappings (|:map-<expr>|), 0 otherwise
+        buffer   0 if mapping is global, buffer number for |:map-<buffer>|
+        mode     Mode for which mapping is defined
+        sid      SID of the script which defined this mapping (|<SID>|)
+        type     "abbr" or "map" (depending on {abbr} argument)
+
+        Note that in <vim-7.3.32 `silent', `expr', and `sid' keys are 
+        unconditionally set to 0 as there was no way to obtain their values.
+map.map :: {mapdescr} -> _ + :map                             *frawor-map-map*
+        Given an {mapdescr} returned by |frawor-map-maparg|, constructs and 
+        executes a command that will create the new mapping.
+map.unmap :: {mapdescr} -> _ + :unmap                       *frawor-map-unmap*
+        Given an {mapdescr} returned by |frawor-map-maparg|, constructs and 
+        executes a command that will delete an existing mapping.
+
+------------------------------------------------------------------------------
+4.2. os resource                                                 *frawor-r-os*
+
+Resource `os' is defined in plugin/frawor/os.
+
+os.fullname :: String                                     *frawor-os-fullname*
+        One of unix, win*, mac, macunix, amiga, os2, qnx, beos, vms or 
+        unknown. Describes the version of vim: has(os.fullname) is true unless 
+        os.fullname is equal to "unknown", see |feature-list|.
+os.name :: String                                             *frawor-os-name*
+        Either "posix" (for *nix, mac*, qnx and vms versions of vim), "nt" 
+        (for win* versions of vim except win32unix), "os2" (for os2 version of 
+        vim) or "other".
+os.sep :: Char                                                 *frawor-os-sep*
+        Path separator. It is likely to be either "/", "\\" or ":".
+os.linesep :: String                                       *frawor-os-linesep*
+        Line separator: "\r\n" for nt systems, "\r" for mac*, "\n" for other.
+os.pathsep :: String                                       *frawor-os-pathsep*
+        Separator used in $PATH variable: ";" for nt and os2 systems and ":" 
+        for other systems.
+os.listdir :: path[, _] -> path                            *frawor-os-listdir*
+        Lists directory contents. If optional argument is given, then list of 
+        absolute file names is returned, otherwise only trailing components 
+        are returned.
+os.chdir :: path[, Bool] -> Bool + WD                        *frawor-os-chdir*
+        Changes current directory, returns 1 on success and 0 on failure. If 
+        optional argument is true, then only window current directory will be 
+        changed (see |:lcd|).
+os.mkdir :: path[, mode] -> Bool + FS                        *frawor-os-mkdir*
+        Creates directory with given protection bits (default 0755). Returns 
+        1 on success, 0 on failure. Not available on some systems (relies on 
+        |mkdir()| function being available).
+os.makedirs :: path[, mode] -> Bool + FS                  *frawor-os-makedirs*
+        Like |frawor-os-mkdir|, but also creates intermediate directories if 
+        they do not exist. Unlike built-in |mkdir()|, mode is applied to all 
+        intermediate directories created, not just to last directory.
+os.unlink :: path -> Bool + FS                              *frawor-os-unlink*
+os.remove :: path -> Bool + FS                              *frawor-os-remove*
+        Removes given file (not directory) returning 1 on success and 0 on 
+        failure.
+os.rmdir :: path -> Bool + FS                                *frawor-os-rmdir*
+        Remove given directory if it is empty. Only available on posix and nt 
+        systems with some tools installed (rmdir or rm for posix, rmdir or 
+        deltree for nt). Returns 1 on success and 0 on failure.
+        Note that if |frawor-os-run| is not working correctly then neither 
+        will os.rmdir.
+os.removedirs :: path -> UInt + FS                      *frawor-os-removedirs*
+        Remove given directory and all empty intermediate ones (excluding 
+        current directory). Returns number of components removed.
+        Note that if |frawor-os-run| is not working correctly then neither 
+        will os.removedirs.
+os.removetree :: path -> Bool + FS                      *frawor-os-removetree*
+        Remove the given file or directory including all contained files or 
+        directories (like `rm -r' on posix systems). Returns 1 on success and 
+        0 on failure. Don't forget that removetree will first remove all files 
+        and only then will try to remove directories using |frawor-os-rmdir|.
+        Note that if |frawor-os-run| is not working correctly then neither 
+        will os.removetree.
+                                                              *frawor-os-walk*
+os.walk :: path + FS -> [(path, [ component ], [ component ])]
+        For each directory in the directory tree rooted at path including path 
+        itself but excluding `.' and `..' generates a 3-tuple
+            ({dirpath}, {dirnames}, {filenames})
+        where {dirpath} is path to a directory, {dirnames} is a list of 
+        subdirectories' names and {filenames} is a list of regular file names.
+        Note that symbolic links to existing directories are considered to be 
+        directories themselves.
+os.run :: [command[, arg1[, arg2[, ...]]]][, path]             *frawor-os-run*
+        Runs command with given arguments and returns its exit code. Optional 
+        path argument designates working directory in which command should be 
+        run.
+        Note that os.run depends on 'shell', 'shellquote', 'shellxquote' and 
+        'shellcmdflag' options being set correctly.
+os.path.abspath :: path + FS -> path                  *frawor-os-path-abspath*
+        Returns an absolute path.
+os.path.realpath :: path + FS -> path                *frawor-os-path-realpath*
+        Returns an absolute path with all symbolic links resolved.
+os.path.normpath :: path -> path                     *frawor-os-path-normpath*
+        Normalize path by removing duplicate path separators.
+os.path.basename :: path -> component                *frawor-os-path-basename*
+        Returns the final component of a path.
+os.path.dirname :: path -> path                       *frawor-os-path-dirname*
+        Returns the directory component of a path.
+os.path.join :: [ path ] -> path                         *frawor-os-path-join*
+        Joins path components into one path, removing duplicate path 
+        separators. The following calls are equivalent: >
+            let path=s:_r.os.path.join("foo", "bar")
+            let path=s:_r.os.path.join(["foo", "bar"])
+os.path.split :: path -> [ component ]                  *frawor-os-path-split*
+        Returns a list of path components starting either from root (`/' on 
+        posix systems, `{DriveCharacter}:' on nt systems) or from current 
+        directory ('.').
+os.path.samefile :: path, path + FS -> Bool          *frawor-os-path-samefile*
+        Returns 1 if both pathnames refer to the same actual file.
+os.path.exists :: path + FS -> Bool                    *frawor-os-path-exists*
+        Returns 1 if file or directory with given name exists, 0 otherwise.
+os.path.isdir :: path + FS -> Bool                      *frawor-os-path-isdir*
+        Returns 1 if given path is existing directory, 0 otherwise.
+os.path.isfile :: path + FS -> Bool                    *frawor-os-path-isfile*
+        Returns 1 if given path is existing file, 0 otherwise.
+                                                         *frawor-os-path-walk*
+os.path.walk :: path, (arg, path, [ component ] -> _)[, arg] + FS -> _
+        Directory tree walk with callback function:
+        For each directory in the directory tree rooted at top (including top 
+        itself, but excluding '.' and '..'), call func({arg}, {dirname}, 
+        {fnames}) (func is the second argument). {dirname} is the name of the 
+        directory, and {fnames} is a list of the names of the files and 
+        subdirectories in dirname (excluding '.' and '..'). Function may 
+        modify the {fnames} list in-place (using |add()|, |remove()| and list 
+        assignment), and walk() will only recurse into the subdirectories 
+        whose names remain in {fnames}; this can be used to implement 
+        a filter, or to impose a specific order of visiting. No semantics are 
+        defined for, or required of, {arg}, beyond that {arg} is always passed 
+        to func. It can be used, e.g., to pass a filename pattern, or 
+        a mutable object designed to accumulate statistics. If additional 
+        argument is not present, then 0 will be passed in place of {arg}.
+
+------------------------------------------------------------------------------
+4.3. py resource                                                 *frawor-r-py*
+
+Resource `py' is defined in plugin/frawor/python. It is not available if vim 
+is compiled without python support or loading python libraries failed.
+
+py.cmd :: String                                               *frawor-py-cmd*
+        `python' or `python3'. Defines command which should be used to launch 
+        python.
+py.filecmd :: String                                       *frawor-py-filecmd*
+        `pyfile' or `py3file'. Define command which should be used to execute 
+        python script.
+py.run :: String | [ String ][, arg1[, ...]] -> ? + ?          *frawor-py-run*
+        Run python command or list of commands. Use additional arguments to 
+        make your internal variables available inside python command.
+
+------------------------------------------------------------------------------
+4.4. printtable resource                                 *frawor-r-printtable*
+
+Resource `printtable' is defined in plugin/frawor/table. It is a single 
+function which is used for outputting table data.
+Usage: s:_r.printtable({lines}[, {opts}]), where {lines} is a list of lists of 
+strings each list representing a line and each string in a list representing 
+column contents: >
+    :call s:_r.printtable([['foo', 'bar', 'baz'], ['f', 'b']])
+    foo  bar  baz
+    f    b
+{opts} is an optional dictionary with the following keys:
+Key          Description ~
+header       Defines a table header (it has just the same format as a single 
+             line). It is highlighted by PreProc group by default: >
+             :call s:_r.printtable([['a', 'b']], {'header': ['A', 'B']})
+             A  B
+             a  b
+vseparator   Defines a vertical separator between columns: >
+             :let lines=[['a', 'b', 'c'], ['d', 'e', 'f']]
+             :call s:_r.printtable(lines, {'vseparator': ' | '})
+             a | b | c
+             d | e | f
+vseparators  List of separators: >
+             :call s:_r.printtable(lines, {'vseparators': [' : ', ' | ']})
+             a : b | c
+             d : e | f
+<            Instead of specifing separator as a string you may specify 
+             a two-tuple (String, hlgroup). In this case separator will be 
+             highlighted. Separotor highlight group is discarded when printing 
+             table header.
+align        Defines align for all columns (but not for header line). Possible 
+             values: "left" (default), "center", "right": >
+             :let lines2=[['abc', 'def', 'ghi'], ['a', 'b', 'c']]
+             :call s:_r.printtable(lines2, {'align': 'center'})
+             abc  def  ghi
+              a    b    c
+aligns       List of aligns: >
+             :call s:_r.printtable(lines2,
+                                  \{'aligns': ['right', 'center', 'left']})
+             abc  def  ghi
+               a   b   c
+halign, haligns
+             Like align and aligns, but for header.
+hl, hls, hhl, hhls
+             Defines higlight groups for columns. `hl' defines one hl group 
+             for all data in table, `hhl' overrides PreProc highlighting for 
+             header. `hls' and `hhls' have the same relation to `hl' and `hhl' 
+             as `aligns' has to `align'.
+
+------------------------------------------------------------------------------
+4.5. base64 resource                                         *frawor-r-base64*
+
+Resource `base64' is defined in plugin/frawor/base64. It is used for 
+encoding/decoding base64 data.
+
+                                                      *frawor-r-base64.decode*
+base64.decode :: b64str[, bytearray] -> str | bytearray
+        Decode base64 encoded string. If optional argument is 1, then function 
+        will return a |List| of numbers, each number representing one byte. 
+        Otherwise it will return a decoded string.
+
+base64.encode :: str | bytearray -> b64str            *frawor-r-base64.encode*
+        Encode string or a list of numbers each representing a single byte 
+        (thus restricted to be between 0 and 255 inclusive).
+
+base64.encodelines :: [ str ] -> b64str                 *frawor-r-encodelines*
+base64.decodelines :: b64str -> [ str ]                 *frawor-r-decodelines*
+        Similar to above functions, but these work with a list of lines like 
+        returned by |readfile()| or |getline()| with two arguments (see 
+        |NL-used-for-Nul|).
+
+------------------------------------------------------------------------------
+4.6. sign resource                                             *frawor-r-sign*
+
+Resource `sign' is defined in plugin/frawor/signs. It is used for signs 
+manipulation, see |:sign|.
+
+sign.exists :: sgid -> Bool                             *frawor-r-sign.exists*
+        Check whether sign with given name exists.
+sign.delete :: sgid -> _                                *frawor-r-sign.delete*
+        Unplace and delete sign with given id.
+sign.getbuf :: bufnr -> [(line, id, name)]              *frawor-r-sign.getbuf*
+        Get all signs placed in buffer with given number. Returns a list of 
+        3-tuples ({line}, {id}, {name}) where {line} is line number, {id} is 
+        placed id (see |:sign-place|) and {name} is sign id (see 
+        |:sign-define|).
+sign.getdef :: sgid -> sgopts                           *frawor-r-sign.getdef*
+        Get definition of sign named {sgid}. Returns a dictionary which may 
+        contain keys `text', `texthl', `linehl' and `icon', see 
+        |:sign-define|.
+
+==============================================================================
+5. Options                                                    *frawor-options*
+                                                             *g:fraworOptions*
+
+All frawor options are defined into various modules.
+
+------------------------------------------------------------------------------
+5.1. Mapping options                                       *frawor-mapoptions*
+                                           *b:frawormap* *b:frawormapOptions*
+                                           *g:frawormap* *g:frawormapOptions*
+
+These options are defined in plugin/frawor/mappings. Unlike other frawor 
+options the following options should be prefixed with `frawormap' string, not 
+with `frawor'. Exact values of {mgid} and {mapname} are determined by plugin 
+that defined a mapping group (see |frawor-f-addmapgroup|), frawor itself does 
+not define any mappings.
+
+                                         *b:frawormap_mgid* *g:frawormap_mgid*
+{mgid}                                                        *frawor-mo-mgid*
+        Defines a leader for given mapping group. If you specify 0 instead of 
+        a leader, then the whole mapping group will be disabled.
+                         *b:frawormap_mgid_mapname* *g:frawormap_mgid_mapname*
+{mgid}_{mapname}                                      *frawor-mo-mgid_mapname*
+        Defines a suffix for given mapping ({lhs} of the mapping is 
+        constructed out of the leader and this option). If you specify 
+        0 instead of some string then you will disable target mapping. You can 
+        also specify a list of strings instead of one string, in this case all 
+        strings will be mapped. It will also merge option values if they are 
+        defined both in frawormap_{mgid}_{mapname} and in {mgid}_{mapname} key 
+        of frawormapOptions dictionary.
+
+==============================================================================
+6. Type definitions                                             *frawor-types*
+
+version :: [ Integer ]                                      *frawor-t-version*
+        List of integers, all integers must be nonnegative.
+
+plugdict :: {}                                             *frawor-t-plugdict*
+        Dictionary which describes plugin. It has the following keys:
+        Key           Description ~
+        type          Plugin type (first path component after runtimepath, 
+                      string "/unknown" if detection of runtimepath failed and 
+                      string "/anonymous" if |FraworRegister()| got zero 
+                      instead of version).
+        id            Plugin id.
+        runtimepath   Plugin runtimepath, empty if detection of rtp failed or 
+                      |FraworRegister()| got zero instead of version.
+        version       Plugin version, see |frawor-t-version|.
+        oneload       Bool, true if plugin should be loaded only once.
+        file          Path to plugin file ({file} argument to 
+                      |FraworRegister()| for non-anonymous plugins, |s:_sfile| 
+                      or 0 for anonymous plugins).
+        sid           Plugin script id, see |<SID>|. May be 0 if 
+                      |FraworRegister()| got zero instead of version.
+        dependencies  Dictionary which contains pairs {plid} - {version}. When 
+                      dependency is loaded it is checked whether actual plugin 
+                      version is greater then requested plugin version 
+                      (excluding first component, it must be matched exactly).
+        status        Number that describes status of the plugin:
+                      0 - plugin is not loaded
+                      1 - plugin is registered, but not loaded
+                      2 - plugin is loaded
+        g             Dictionary with global variables (last argument to 
+                      |FraworRegister()|).
+
+checker :: Function                                         *frawor-t-checker*
+        If checker is a function reference, then in order to check arguments 
+        this function will be called with an argument list as an only 
+        argument. Check is considered passed when this function returns 1 and 
+        failed when this function returns 0.
+        If checker is a string, then it is passed to |frawor-f-fwc.compile| 
+        with "check" as a second argument, then generated function is 
+        returned. Consider using FWC decorator (|frawor-de-FWC|) instead.
+
+filter :: Function                                           *frawor-t-filter*
+        If filter is a function reference, then in order to filter arguments 
+        this function will be called with an argument list as an only 
+        argument. If function returns a |List|, then it will be used as a new 
+        argument list. Function should return 0 if some error occured.
+        If filter is a string, then it is passed to |frawor-f-fwc.compile| 
+        with "filter" as a second argument, then generated function is 
+        returned. Consider using FWC decorator (|frawor-de-FWC|) instead.
+
+option :: {}                                                 *frawor-t-option*
+        Dictionary which describes option. It has the following keys:
+        Key         Description ~
+                                                           *frawor-od-default*
+        default     Determines default value of an option. Is neither checker 
+                    nor filtered.
+                                                            *frawor-od-scopes*
+        scopes      Scope of variables which can be searched for an option. 
+                    Must be a string which contains an ordered sequence of 
+                    characters: `wtbg', all of them are optional, order of 
+                    characters determines order of option search. Each letter 
+                    describes where option will be searched: `g' for global 
+                    variables, `b' for buffer, `t' for tabpage-local and `w' 
+                    for window-local. If this key is not present, it is 
+                    considered to be equal to `bg'.
+                                                           *frawor-od-checker*
+        checker     Checker for an option, see |frawor-t-checker|. Will be 
+                    used only for options from enviroment, not for default 
+                    values. It is processed before `filter' if both are 
+                    present. Checker must accept a list with a singe item: 
+                    option being checked.
+                    Note that this key is passed to |frawor-f-conschecker| 
+                    only once for each option, then returned value is saved 
+                    and reused.
+                                                            *frawor-od-filter*
+        filter      Filter for an option, see |frawor-t-filter|. Will be used 
+                    only for options from enviroment, not for default values. 
+                    Filter must accept a list with a singe item: option being 
+                    filtered, and on success return a list with a single item: 
+                    filter results.
+                    Note that this key is passed to |frawor-f-consfilter| only 
+                    once for each option, then returned value is saved and 
+                    reused.
+                    Note 2: if filter key is present, option will be deep 
+                    copied before filtering, see |deepcopy()|.
+                                                            *frawor-od-merger*
+        merger      If this key is present and is a function reference, then 
+                    it will be used to merge options from different scopes 
+                    (arguments: old value, new value, option name, plugin id, 
+                    name of the variable from which option new value was 
+                    obtained ("default" for default option)). If it is not 
+                    present, then |frawor-f-getoption| will return first value 
+                    it finds. If this key is equal to "extend", then it will 
+                    use |extend()| with `keep' as a third argument to merge 
+                    |Dictionaries|, |expr-+| for |List|, |Float| and |Number| 
+                    values, |expr-.| for Strings, throwing an error when types 
+                    do not match.
+                    Note that values are checked and filtered before they are 
+                    passed to the merger.
+                    Note 2: if merger key is present, first of merged options 
+                    is deep copied (see |deepcopy()|). Otherwise copying is 
+                    not performed.
+
+funcdescr : {}                                            *frawor-t-funcdescr*
+        Function description is a dictionary with the following keys (all 
+        except `function' are optional):
+        Key        Description ~
+                                                          *frawor-fd-function*
+        function   Function reference. Determines function that will be 
+                   called.
+                                                          *frawor-fd-redefine*
+        redefine   If this key is present, then it will try to redefine 
+                   function if it exists, if it is not and function with given 
+                   name exists or |:delfunction| threw |E131| (function is in 
+                   use) error, then `fdef' exception is thrown. Makes some 
+                   difference only when used in funcdescr passed to 
+                   |frawor-f-addextfunctions|.
+        @{decorator}                                             *frawor-fd-@*
+                   Apply decorator to the function, see 
+                   |frawor-f-adddecorator|. The last argument to a decorator 
+                   is the value of this key.
+                   Note that you must specify plugin that defined {decorator} 
+                   as your plugin dependency.
+
+altervars :: [({varname}[, {value}])]                     *frawor-t-altervars*
+        Tells altervars decorator which variables to save and, possibly, alter 
+        (if {value} is not present, then variables will only be saved and then 
+        restored, otherwise they will be set to {value}). {varname} may be the 
+        following:
+        1. `g:{varname}', `b:{varname}', `t:{varname}' and `w:{varname}' 
+           variables for global, buffer-, tabpage- or window-local variables.
+           Note that it will unlet existing variables thus purging toplevel 
+           locks (see |:lockvar|).
+        2. `&g:{optname}' and `&l:{optname}' for global and local option 
+           values.
+        3. `+{special}' or `+{special}({argument})' for special saver and 
+           setter functions that are defined by |frawor-f-addaltspecial|.
+           Note that you must specify plugin that defines {special} as your 
+           plugin dependency.
+        Each list in a list that is passed as `altervars' option is copied, 
+        but no |deepcopy()| is performed, so you may alter variable {value}s 
+        if they are |Lists| or |Dictionaries|.
+
+        List of special savers/setters defined by plugin/frawor/functions:
+                                                           *frawor-av-special*
+        Name       Description ~
+        variables  Saves and restores whole variables dictionary (by default, 
+                   saves global variables. You may override it by supplying 
+                   one of `b', `t' or `w' as an optional argument for buffer, 
+                   tabpage or window-local variables).
+        buffer     Saves and restores current buffer number.
+        window     Saves and restores current tab page and window.
+        winview    Saves and restores window view (using |winsaveview()| and 
+                   |winrestview()|).
+        matches    Saves and restores matches (using |getmatches()| and 
+                   |setmatches()|).
+        qflist     Saves and restores quickfix list (using |getqflist()| and 
+                   |setqflist()|).
+
+mapping :: {}                                               *frawor-t-mapping*
+        Dictionary which contains the following keys (at least rhs key is 
+        required):
+        Key        Description ~
+                                                               *frawor-mk-lhs*
+        lhs        String or 0. {lhs} of the mapping: sequence of keys which 
+                   is mapped to. If it is 0, then mapping is disabled by 
+                   default. Default value: empty (thus actual {lhs} will be 
+                   determined by leader). Is overriden by 
+                   |frawor-mo-mgid_mapname| unless `nouser' key was specified 
+                   when mapping group was defined.
+                                                               *frawor-mk-rhs*
+        rhs        String, List, Function reference or Dictionary. Depending 
+                   of the type may have the following meanings:
+                   1. String: {rhs} of the mapping. If |frawor-mk-strfunc| is 
+                      present then all occurences of "%str" will be replaced 
+                      with call to a function that will return requested 
+                      string.
+                   2. List: requires presence of `func' key. Function given in 
+                      the `func' key will be called with arguments given in 
+                      the `rhs' key and its result will be taken as an {rhs} 
+                      of the mapping (see |map-<expr>|). Each argument that is 
+                      a String equal to one of the following keys will be 
+                      replaced with corresponding values:
+                      String  Value ~
+                      %str    String obtained by using |frawor-mkf-getstr|. 
+                              Requires presence of |frawor-mk-strfunc| key.
+                      %lhs    Actual lhs of the mapping (with leader).
+                      %mode   Mode of the mapping (|mode()| will give more 
+                              precise results).
+                      %mgid   Mapping group id.
+                      %mname  Mapping name.
+                   3. Function reference: like 2. with `func' set to rhs and 
+                      `args' set to [].
+                   3. Dictionary: requires presence of plugin/frawor/functions 
+                      in dependency list. When mapping is invoked for the 
+                      first time plugin will be loaded and then function will 
+                      be wrapped using |frawor-f-wrapfunc| with given 
+                      dictionary as an argument. Wrapped function will be used 
+                      just as in the previous clause, though instead of taking 
+                      list of arguments from the `rhs' key, it will be taken 
+                      from the `args' key.
+                      Note that this is the only way to load non-oneload 
+                      plugin before invoking a mapping.
+                                                            *frawor-mk-silent*
+        silent     Bool, determines whether mapping will be silent (see 
+                   |map-<silent>|). Default value: 0.
+                                                           *frawor-mk-noremap*
+        noremap    Bool, determines whether mapping will be remappable (see 
+                   |:noremap| and others). Default value: 1.
+                                                              *frawor-mk-expr*
+        expr       Bool, determines whether mapping will be expression mapping 
+                   (see |map-<expr>|). Default value: 0. Ignored if 
+                   |frawor-mk-rhs| is not a String.
+                                                              *frawor-mk-type*
+        type       String, one of `map' (default), `abbr' or `menu'. 
+                   Determines command that will be used to create a mapping.
+                                                              *frawor-mk-mode*
+        mode       String, determines for which modes mapping will be defined 
+                   (you may specify more then one mode). Default value: 
+                   <Space>. Other possible modes (note that only ` ', `c' and 
+                   `i' are accessible for abbreviations):
+                   Key      Modes ~
+                   <Space>  |mapmode-n|, |mapmode-x|, |mapmode-s| and 
+                            |mapmode-o| for mappings and menus; |:iabbreviate| 
+                            and |:cabbreviate| for abbreviations
+                      !     |mapmode-i| and |mapmode-c|, not for menus
+                      v     |mapmode-x| and |mapmode-s|
+                      i     |mapmode-i| or |:iabbreviate|
+                      c     |mapmode-c| or |:cabbreviate|
+                      o     |mapmode-o|
+                      n     |mapmode-n|
+                      x     |mapmode-x|
+                      s     |mapmode-s|
+                      l     |mapmode-l|, not for menus
+                      a     Only for menus, |:amenu|
+                   Note that |:menu|, |:vmenu|, |:map|, |:vmap|, |:map!| and 
+                   |:abbreviate| commands will never be used, keys that 
+                   represent multiple modes are expanded by 
+                   plugin/frawor/mappings and then iterated over them, 
+                   creating one mapping for each mode.
+                                                           *frawor-mk-strfunc*
+        strfunc    Function reference, determines function that should be used 
+                   to obtain an additional string argument using |getchar()| 
+                   loop. This function must take one or more arguments where 
+                   first argument is character that was entered by user. It 
+                   must then return a tuple ({status}, {retvalue}, {addarg}).
+                   Here {status} is one of the following numbers:
+                   Number  Meaning ~
+                      0    character not accepted (reverts to previous key 
+                           that caused strfunc to return 2 and passes the 
+                           following keys back. If strfunc haven't returned 2, 
+                           then `strfail' exception is thrown);
+                     -1    like 0, but instead of throwing an exception it 
+                           will use an empty string instead of {gotstring}. 
+                           {retvalue} in this case will be ignored unless it 
+                           is the first character processed;
+                      1    character accepted, more characters needed;
+                      2    character accepted, can accept more characters;
+                      3    character accepted, no more characters needed.
+
+                   {retvalue} is discarded if it is equal to 0 and ignored if 
+                   {status} is 0 or 1. In other cases it causes tuple 
+                   ({gotstringa}, {retvalue}) to be passed to the mapping 
+                   instead of default {gotstring}.
+
+                   {addarg} is the additional argument to itself that will be 
+                   used on next iteration (ignored if it is equal to zero).
+
+                   Note: `passing some keys back' means using |feedkeys()| for 
+                   mappings where |frawor-mk-rhs| is a String and 
+                   |frawor-mk-expr| is 0 and appending result to {rhs} in 
+                   other cases. It means that in first case additional keys 
+                   will be remapped, but in second case they will be remapped 
+                   only if |frawor-mk-noremap| is set to 0.
+                                                          *frawor-mk-operator*
+        operator   Bool. If this key is present, is not 0 and |frawor-mk-rhs| 
+                   is not a String, then 'operatorfunc' will be set to 
+                   internal function which will call yours one with three 
+                   additional arguments: motion type, motion start position 
+                   (getpos("'[") or getpos("'<"), see |getpos()|), motion end 
+                   position (getpos("']") or getpos("'>")).
+                   Note that your function will be called outside of <expr> 
+                   mapping and its return value will be ignored, see |g@|.
+
+                   As |g@| works only in |Visual| and |Normal| modes, in other 
+                   modes it will be preceded with key sequence that switches 
+                   to one of these modes either temporary or pernamently:
+                   - <C-o> for |Insert| and langmap modes (switches temporary 
+                     to |Normal| mode),
+                   - <C-o> for |Select| mode (switches temporary to |Visual| 
+                     mode),
+                   - <Esc> for |Cmdline| and |Operator-pending| modes 
+                     (switches pernamently to |Normal| mode).
+                                                               *frawor-mk-tip*
+        tip        String, defines a tip for menu item. Ignored unless 
+                   |frawor-mk-type| is `menu'.
+
+==============================================================================
+7. Variables index                                          *frawor-variables*
+
+                  Defined in/  ~
+    Varname       required for                 Description~
+*s:_sid*           autoload/frawor  Integer. Is set to current script id by 
+                                  |frawor#Setup()|.
+*s:_sfile*         autoload/frawor  String. Is set to script filename by 
+                                  |frawor#Setup()|.
+*s:F*              autoload/frawor  Dictionary that is intended to hold all 
+                                  plugin functions. Is initially set by 
+                                  |frawor#Setup()|. It is not used by frawor 
+                                  itself, but it is intended to be used by 
+                                  plugins for internal purposes.
+*s:_pluginloaded*  plugin/frawor    Integer. Is set to 0 after plugin is 
+                                  registered and then to 1 after plugin is 
+                                  loaded.
+*s:_frawor*        plugin/frawor    Dictionary. Is set by |FraworRegister()|.
+*s:_messages*      plugin/frawor    Dictionary that contains strings as 
+                                  values. Required for |frawor-f-warn| and 
+                                  |frawor-f-throw|.
+*s:_f*             plugin/frawor    Dictionary containing feature functions. 
+                                  Is set and populated by |FraworRegister()| 
+                                  and |frawor-f-newfeature|.
+*s:_unload*        plugin/frawor    Reference to a function that will be 
+                                  called on plugin unloading 
+                                  (|FraworUnload()|).
+*s:_options*       frawor/options   Dictionary that contains option 
+                                  definitions. Required for 
+                                  |frawor-f-getoption|.
+*s:_oprefix*       frawor/options   String that contains option prefix. Is 
+                                  used by |frawor-f-getoption|.
+*s:_augroups*      frawor/autocommands
+                                  List of strings containing augroup names. Is 
+                                  used by |frawor-f-delaugroups|.
+*s:_commands*      frawor/commands  List of strings containing command names. 
+                                  Is used by |frawor-f-delcommands|.
+*s:_signs*         frawor/signs     List of strings containing sign names. Is 
+                                  used by |frawor-f-delsigns|.
+*s:_functions*     frawor/functions List containing references to global and 
+                                  script-local functions or their names. Is 
+                                  used by |frawor-f-delfunctions| and set by 
+                                  |frawor#Setup()|.
+*s:_r*             frawor/resources Dictionary containing resources posted by 
+                                  plugins listed in dependencies. Is set by 
+                                  |frawor-f-addresource|.
+==============================================================================
+8. Changelog                                                *frawor-changelog*
+
+vim: ft=help:tw=78
