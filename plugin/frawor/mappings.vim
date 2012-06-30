@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'plugin/frawor/options': '0.0',
+execute frawor#Setup('0.1', {'plugin/frawor/options': '0.0',
             \           'plugin/frawor/autocommands': '0.0',
             \              'plugin/frawor/resources': '0.0',}, 1)
 "▶1 Define variables
@@ -64,6 +64,8 @@ if v:lang=~?'ru'
                 \   'rhsndef': 'ключ «rhs» не определён',
                 \    'middef': 'привязка с данным именем уже определена',
                 \ 'strfncall': 'неизвестная функция в значении ключа «strfunc»',
+                \    'fncall': 'неизвестная функция в значении ключа «func»',
+                \     'ncall': 'неизвестная функция в значении ключа «func»',
                 \    'mapcol': 'левая часть («%s») данной привязки совпадает '.
                 \              'с левой частью привязки %s группы %s, '.
                 \              'определённой в дополнении %s',
@@ -141,6 +143,8 @@ else
                 \   'rhsndef': '`rhs'' key is not defined',
                 \    'middef': 'mapping with such name was already defined',
                 \ 'strfncall': '`strfunc'' key contains unknown function',
+                \    'fncall': '`func'' key contains unknown function',
+                \     'ncall': '`func'' key contains unknown function',
                 \    'mapcol': '{lhs} (`%s'') of the mapping is just the same '.
                 \              'as {lhs} of mapping %s from group %s '.
                 \              'defined by plugin %s',
@@ -188,13 +192,33 @@ else
     " 2. Cannot differentiate between <CR> and <LT>CR>
     " 3. Cannot restore <silent> flag
     function s:F.savemap(lhs, mode, abbr)
-        let rhs=maparg(a:lhs, a:mode, a:abbr)
+        if a:mode is 0
+            let mode=' '
+        else
+            let mode=a:mode
+        endif
+        let type=((a:abbr)?('abbr'):('map'))
+        let modes=s:F.modrewrite(mode, type)
+        let rhs=maparg(a:lhs, mode, a:abbr)
+        if len(modes)>1
+            let om=0
+            for m in modes
+                if maparg(a:lhs, m, a:abbr) is# rhs
+                    if om is 0
+                        let om=m
+                    endif
+                else
+                    let mode=om
+                    break
+                endif
+            endfor
+        endif
         if empty(rhs)
             let rhs='<Nop>'
         endif
-        let cmd=(a:abbr ? 'abbr' : 'map')
+        let cmd=type
         redir => mapoutput
-        silent! execute a:mode.cmd subtitute(a:lhs, ' ', '<Space>', 'g')
+        silent! execute mode.cmd substitute(a:lhs, ' ', '<Space>', 'g')
         redir END
         let maplines=split(mapoutput, "\n")
         let noremap=0
@@ -218,9 +242,9 @@ else
                     \'noremap': noremap,
                     \   'expr': 0,
                     \ 'buffer': buffer,
-                    \   'mode': a:mode,
+                    \   'mode': mode,
                     \    'sid': 0,
-                    \   'type': ((a:abbr)?('abbr'):('map')),}
+                    \   'type': type,}
     endfunction
 endif
 "▶1 hsescape      :: String, sid[, a:1::Bool] → String
@@ -238,13 +262,13 @@ endfunction
 "▶1 modrewrite    :: mode, type → [mode]
 function s:F.modrewrite(mode, type)
     if a:type is# 'abbr'
-        return split(substitute(a:mode, ' ', 'ci', ''), '.\@=')
+        return split(substitute(a:mode, ' ', 'ci', ''), '\v.@=')
     else
         return split(substitute(substitute(substitute(a:mode,
                     \' ', 'nxso', ''),
                     \'!', 'ic',   ''),
                     \'v', 'xs',   ''),
-                    \'.\@=')
+                    \'\v.@=')
     endif
 endfunction
 "▶1 map           :: mapdescr → + :map
@@ -275,12 +299,18 @@ endfunction
 function s:F.unmap(mapdescr)
     let modes=s:F.modrewrite(a:mapdescr.mode, a:mapdescr.type)
     let lhs=s:F.hsescape(a:mapdescr.lhs, a:mapdescr.sid, a:mapdescr.type)
+    let r=1
     for mode in modes
-        execute mode.'un'.(a:mapdescr.type)
-                    \ '<special>'
-                    \ ((a:mapdescr.buffer)?('<buffer>'):(''))
-                    \ lhs
+        try
+            execute mode.'un'.(a:mapdescr.type)
+                        \ '<special>'
+                        \ ((a:mapdescr.buffer)?('<buffer>'):(''))
+                        \ lhs
+        catch /\v^Vim\(\l?un\w+\)\:E(24|31|329):/
+            let r=0
+        endtry
     endfor
+    return r
 endfunction
 "▶1 lhsfilter     :: Either lhs [lhs] → [lhs]
 function s:F.lhsfilter(llhs)
@@ -472,27 +502,33 @@ function s:F.maprun(mgid, mapname, mode, lhs, ...)
         let s:mrargs=[a:mgid, a:mapname, a:mode, a:lhs]
         return s:modeopsuf[a:mode].'g@'
     endif
+    if !has_key(map, 'loaded')
+        if !has_key(mgroup, 'plloaded')
+            if !FraworLoad(mgroup.plid)
+                call s:_f.throw('loadfail', a:mapname, a:mgid, mgroup.plid)
+            endif
+            if has_key(mgroup, 'func') && type(mgroup.func)==type({})
+                let mgroup.func=call(mgroup.wrapfunc, [mgroup.func], {})
+            endif
+            let mgroup.plloaded=1
+        endif
+        for key in filter(['strfunc', 'func'], 'has_key(map, v:val) && '.
+                    \                          'type(map[v:val])=='.type({}))
+            let map[key]=call(mgroup.wrapfunc, [map[key]], {})
+        endfor
+        let map.loaded=1
+    endif
+    let d={'func': (has_key(map, 'func')?(map.func):(mgroup.func))}
     if (map.expr==2)
-        return call(map.func, a:000+(has_key(map, 'strfunc')?
+        return call(d.func, a:000+(has_key(map, 'strfunc')?
                     \                   [s:F.getstr(map.strfunc, s:F.feedfunc)]:
                     \                   []), {})
     elseif (map.expr==3)
-        return call(map.func, a:000+map(copy(map.args), s:replaceexpr), {})
-    elseif (map.expr==4)
-        if !FraworLoad(mgroup.plid)
-            call s:_f.throw('loadfail', a:mapname, a:mgid, mgroup.plid)
-        endif
-        if !has_key(map, 'func')
-            let map.func=call(map.wrapfunc, [map.dict], {})
-            unlet map.dict map.wrapfunc
-        endif
-        let map.expr=3
-        return call(map.func, a:000+map(copy(map.args), s:replaceexpr), {})
+        return call(d.func, a:000+map(copy(map.args), s:replaceexpr), {})
     endif
 endfunction
 "▶1 opfunc        :: mtype → <expr> + ?
 function s:opfunc(mtype)
-    setlocal operatorfunc=
     let mrargs=s:mrargs
     unlet s:mrargs
     call add(mrargs, a:mtype)
@@ -638,6 +674,24 @@ function s:F.mapgroup.unmap(plugdict, fdict, mgid, ...)
     endif
 endfunction
 "▶2 mapgroup.add   :: {f}, mgid, {mapid: mapdescr}[, mopts] → + s:mgroups, …
+"▶3 getfkey :: mgroup, Val, mapname, plugdict, emsgid → Val | + throw
+function s:F.getfkey(mgroup, Val, mapname, plugdict, emsgid)
+    if type(a:Val)==type({})
+        if !has_key(a:mgroup, 'wrapfunc')
+            if !exists('a:plugdict.g._f.wrapfunc')
+                call s:_f.throw('nowrapfunc', a:mapname, a:mgroup.id,
+                            \                 a:plugdict.id)
+            endif
+            let a:mgroup.wrapfunc=a:plugdict.g._f.wrapfunc
+        endif
+    else
+        if !exists('*a:Val')
+            call s:_f.throw(a:emsgid, a:mapname, a:mgroup.id, a:plugdict.id)
+        endif
+    endif
+    return a:Val
+endfunction
+"▲3
 let s:mgroups={}
 let s:mglastid=0
 let s:mapdescrdef={'silent': 0,
@@ -714,7 +768,8 @@ function s:F.mapgroup.add(plugdict, fdict, mgid, mappings, ...)
             let mgroup.leader=a:1.leader
         endif
         if has_key(a:1, 'func')
-            let mgroup.func=a:1.func
+            let mgroup.func=s:F.getfkey(mgroup, a:1.func, '', a:plugdict,
+                        \               'ncall')
         endif
         "▶4 string -> mapdescrdef (mode, type)
         for key in ['mode', 'type']
@@ -802,10 +857,13 @@ function s:F.mapgroup.add(plugdict, fdict, mgid, mappings, ...)
         endif
         "▶3 Add `strfunc' key
         if has_key(mapdescr, 'strfunc')
-            if !exists('*mapdescr.strfunc')
-                call s:_f.throw('strfncall', mapname, mgid, a:plugdict.id)
-            endif
-            let map.strfunc=mapdescr.strfunc
+            let map.strfunc=s:F.getfkey(mgroup, mapdescr.strfunc, mapname,
+                        \               a:plugdict, 'strfncall')
+        endif
+        "▶3 Add `func' key
+        if has_key(mapdescr, 'func')
+            let map.func=s:F.getfkey(mgroup, mapdescr.func, mapname, a:plugdict,
+                        \            'fncall')
         endif
         "▲3
         let evalstr='<SNR>'.s:_sid.'_Eval'
@@ -817,29 +875,24 @@ function s:F.mapgroup.add(plugdict, fdict, mgid, mappings, ...)
                         \                      '"'.(map.id).'", %s)'
         "▶3 map.rhs :: List
         elseif type(map.rhs)==type([])
-            "▶4 Check `func' key
-            if !exists('*mapdescr.func') && !exists('*mgroup.func')
+            "▶4 Check `func' key existence
+            if !has_key(map, 'func') && !has_key(mgroup, 'func')
                 call s:_f.throw('nofunc', mapname, mgid, a:plugdict.id)
             endif
             "▲4
             let map.expr=3
-            let map.func=get(mapdescr, 'func', get(mgroup, 'func'))
             let map.args=map.rhs
             let map.rhs=evalstr.'("s:F").maprun("'.mgroup.id.'", '.
                         \                      '"'.(map.id).'", %s)'
         "▶3 map.rhs :: Dictionary
         elseif type(map.rhs)==type({})
             "▶4 Do some checks
-            if !exists('*a:plugdict.g._f.wrapfunc')
-                call s:_f.throw('nowrapfunc', mapname, mgid, a:plugdict.id)
-            elseif has_key(mapdescr, 'args') &&
-                        \type(mapdescr.args)!=type([])
+            if has_key(mapdescr, 'args') && type(mapdescr.args)!=type([])
                 call s:_f.throw('invargs',mapname, mgid, a:plugdict.id)
             endif
             "▲4
-            let map.expr=4
-            let map.dict=map.rhs
-            let map.wrapfunc=a:plugdict.g._f.wrapfunc
+            let map.expr=3
+            let map.func=s:F.getfkey(mgroup, map.rhs, mapname, a:plugdict, '')
             let map.args=get(mapdescr, 'args', [])
             let map.rhs=evalstr.'("s:F").maprun("'.mgroup.id.'", '.
                         \                      '"'.(map.id).'", %s)'
@@ -848,6 +901,9 @@ function s:F.mapgroup.add(plugdict, fdict, mgid, mappings, ...)
             if empty(map.rhs)
                 let map.rhs='<Nop>'
             elseif has_key(map, 'strfunc')
+                if type(map.strfunc)==type({})
+                    let map.strfunc=call(mgroup.wrapfunc, [map.strfunc], {})
+                endif
                 let map.rhs=substitute((map.rhs), '%str',
                             \evalstr.'("s:F.getstr(s:mgroups.'.(mgroup.id).'.'.
                             \                       'maps.'.(map.id).'.strfunc'.

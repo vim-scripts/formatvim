@@ -548,12 +548,29 @@ haskey {string}*   (|FWC-{string}|)                             *FWC-c-haskey*
              keys.
     Completer: undefined.
 
-range {number} {number} {one}   (|FWC-{one}|)                    *FWC-c-range*
+idof {idspec}                                                     *FWC-c-idof*
+    Checker: check whether current argument is an identifier of the given 
+             essence.
+                {idspec} :: "variable"  | "var"                 *FWC-{idspec}*
+                          | "highlight" | "hl"
+                          | "command"   | "cmd"
+                          | "function"  | "func"
+                          | "option"    | "opt"
+                          | "event"
+                          | "augroup"
+                          | "sign"
+    Completer: completes list of possible variants.
+
+range {number} {number} {one}   (|FWC-{one}|)      *FWC-f-range* *FWC-c-range*
     Checker: check whether current argument is a number or float and is in 
              given range. Floating-point values are not allowed unless one of 
              {float} arguments is floating-point (infinity is not 
              a floating-point value, it is a special case) or user explicitely 
              allowed floating-point values by setting {one} argument to 1.
+    Filter: same unless |FWC-o-onlystrings| option is given. In this case it 
+            will transform its argument to either a floating-point value (only 
+            if it contains a dot) or to a number (see |str2float()| and 
+            |str2nr()|).
                        (|FWC-{float}|, |FWC-{var}|)
                          {number} :: {float}
                                    | "$" {var}
@@ -564,9 +581,13 @@ match {reg}   (|FWC-{reg}|)                                      *FWC-c-match*
              Matching is done case-sensitively by default.
     Completer: ignored.
 
-path {pathspec}                                                   *FWC-c-path*
+path {pathspec}                                      *FWC-c-path* *FWC-f-path*
     Checker: checks whether current argument is a path matching given 
              specification.
+    Filter: before checking expands path without globbing (uses |expand()| 
+            with \, [, ], ? and * escaped). This means that you can use 
+            ~ directory shortcut, |:_%|, |:_#|, enviroment variables, 
+            |`-expansion| and |`=|.
                     {pathspec} :: [df]? "r"? [wWp]? "x"?
                                 & ! ( "d" | ^ ) "r"
                                 & ! "d" [wWp]? "x"
@@ -599,13 +620,15 @@ type {typespec}*                                                  *FWC-c-type*
     You can't check for floating-point values if vim is compiled without 
     |+float| feature.
 
-isfunc {one}   (|FWC-{one}|)                                    *FWC-c-isfunc*
+isfunc {one}   (|FWC-{one}|)                     *FWC-f-isfunc* *FWC-c-isfunc*
     Checker: checks whether argument is a name of a callable function or 
              a callable function reference. If optional argument is 1, then 
              only function references are allowed.
              Names of dictionary items are also allowed, but only if they 
              start with scope prefix and do use only dotted subscripts 
              (dict.key).
+    Filter: checks argument with above rules and if check succeeds, transforms 
+            it into a function reference (unless it is a reference already).
 
 isreg                                                            *FWC-c-isreg*
     Checker: checks whether argument is a valid regular expression.

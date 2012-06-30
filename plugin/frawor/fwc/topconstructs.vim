@@ -32,7 +32,8 @@ function s:r.optional.scan()
         if c is# ']'
             break
         else
-            call self.ungetc(c).scan()
+            call self.ungetc(c)
+            call self.scan()
         endif
     endwhile
     return self.conclose()
@@ -55,36 +56,51 @@ function s:r.optional.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
         else
             " XXX This implementation does not cover all cases. I won't fix this 
             " because it is too complicated.
-            let failstr=self.getlvarid('fail')
-            call self.let(failstr, 1)
-            let i=0
             if hasnext
+                let failstr=self.getlvarid('fail')
+                call self.let(failstr, 0)
+                let oldcaidxstr=self.getlvarid('oldcaidxstr')
+                let newcaidxstr=self.getlvarid('newcaidxstr')
+                call self.let(oldcaidxstr, a:caidxstr)
+                call self.increment(a:largsstr, -1)
+                let self.failstr=failstr
+                let i=0
                 for opt in a:adescr.optional
-                    call self.if(failstr)
-                                \.try()
-                                    \.pushms('throwignore')
-                                    \.compadescr(opt, a:idx.'.'.i.'(optional)',
+                    if i>0
+                        call self.if(failstr)
+                    endif
+                    call        self.try()
+                    call         self.pushms('throwignore')
+                    call         self.compadescr(opt, a:idx.'.'.i.'(optional)',
                                     \            'check', 1)
-                                    \.popms()
-                                    \.let(failstr, 0)
-                                    \.let(a:caidxstr, self.getlastsub())
-                                \.catch(s:cfreg)
-                            \.endif()
+                    call        self.popms()
+                    call            self.let(a:caidxstr, self.getlastsub())
+                    call        self.catch(s:cfreg)
+                    call            self.let(failstr, 1)
+                    call        self._up()
+                    if i>0
+                        call    self.endif()
+                    endif
                     let self.subs[-1]=[a:caidxstr]
                     let i+=1
                 endfor
+                unlet self.failstr
+                call self.increment(a:largsstr, 1)
                 call self.if(failstr)
+                call    self.let(newcaidxstr, a:caidxstr)
+                call    self.let(a:caidxstr, oldcaidxstr)
             endif
             let i=0
             for opt in a:adescr.optional
                 let savedcaidxstr=self.getlvarid('savedcaidx')
                 call self.let(savedcaidxstr, a:caidxstr)
-                        \.compadescr(opt, a:idx.'.'.i.'(optional)', a:type, 0)
-                        \.let(a:caidxstr, savedcaidxstr)
+                call self.compadescr(opt, a:idx.'.'.i.'(optional)', a:type, 0)
+                call self.let(a:caidxstr, savedcaidxstr)
                 let self.subs[-1]=[a:caidxstr]
                 let i+=1
             endfor
             if hasnext
+                call    self.let(a:caidxstr, newcaidxstr)
                 call self.endif()
             endif
             return [[a:caidxstr], a:addedsavemsgs]
@@ -101,12 +117,12 @@ function s:r.optional.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
     endif
     let addedsavemsgs=1
     call self.addsavemsgs()
-                \.try()
-                    \.pushms('throw')
-                    \.compadescr(a:adescr.optional[0], a:idx.'.0(optional)',
+    call        self.try()
+    call            self.pushms('throw')
+    call            self.compadescr(a:adescr.optional[0], a:idx.'.0(optional)',
                     \            a:type, (a:purgemax || a:adescr.maximum==-1))
-                    \.popms()
-                    \.addrestmsgs(1)
+    call            self.popms()
+    call            self.addrestmsgs(1)
     if lopt>1
         call self.let(failstr, 0)
     endif
@@ -115,7 +131,10 @@ function s:r.optional.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
         call self.let(a:caidxstr, newsub)
     endif
     call self.catch(s:cfreg)
-    if lopt==1 && has_key(a:adescr.optional[0], 'arg')
+    if has_key(self, 'failstr')
+        call self.let(self.failstr, 1)
+    endif
+    if lopt==1 && has_key(a:adescr.optional[0], 'arg') && a:type is# 'pipe'
         let defaults=reverse(map(filter(copy(a:adescr.optional[0].arg),
                     \                   'exists("v:val[0][0]") && '.
                     \                   'v:val[0][0] is# "defval"'),
@@ -128,28 +147,28 @@ function s:r.optional.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
                             \            a:caidxstr.')')
             endfor
             let ldefaults=len(self.defvals)
-            call     self.increment(a:caidxstr, ldefaults)
-                        \.increment(a:largsstr, ldefaults)
+            call self.increment(a:caidxstr, ldefaults)
+            call self.increment(a:largsstr, ldefaults)
         endif
     endif
-    call self.up()
+    call self._up()
     let self.subs[-1]=[a:caidxstr]
     if lopt>1
         let i=1
         for opt in a:adescr.optional[1:]
             call self.if(failstr)
-                        \.try()
-                            \.pushms('throw')
-                            \.compadescr(opt,a:idx.'.'.i.'(optional)',a:type,0)
-                            \.popms()
-                            \.addrestmsgs(1)
-                            \.let(failstr, 0)
+            call        self.try()
+            call          self.pushms('throw')
+            call          self.compadescr(opt,a:idx.'.'.i.'(optional)',a:type,0)
+            call          self.popms()
+            call          self.addrestmsgs(1)
+            call          self.let(failstr, 0)
             let newsub=self.getlastsub()
             if newsub isnot# a:caidxstr
                 call self.let(a:caidxstr, newsub)
             endif
             call self.catch(s:cfreg)
-                \.endif()
+            call self.endif()
             let self.subs[-1]=[a:caidxstr]
             let i+=1
         endfor
@@ -172,7 +191,8 @@ let s:r.prefixes={'char': '{'}
 "                         "argnum": UInt }
 let s:defprefopts={'alt': 0, 'list': 0, 'opt': 0, 'argnum': 1}
 function s:r.prefixes.scan()
-    call self.addcon('prefixes').getomtchr()
+    call self.addcon('prefixes')
+    call self.getomtchr()
     let prevlen=-1
     while self.len && prevlen!=self.len
         let prevlen=self.len
@@ -260,14 +280,15 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
                 call self.addsavemsgs()
                 let addedsavemsgs=1
             endif
-            call self.try().pushms('throw')
+            call self.try()
+            call self.pushms('throw')
         endif
         "▶3 Initialize variables inside constructed function
             call self.let(prefdictstr, '{}')
-                        \.call('insert('.base.', '.prefdictstr.', '.
-                        \                self.getsub(nextsub).')')
-                        \.increment(a:caidxstr)
-                        \.increment(a:largsstr)
+            call self.call('insert('.base.', '.prefdictstr.', '.
+                        \            self.getsub(nextsub).')')
+            call self.increment(a:caidxstr)
+            call self.increment(a:largsstr)
         "▶3 Add default values
         for [prefix, prefopts, defval; dummylist] in defaults
             call self.let(prefdictstr.self.getsubs([prefix]),
@@ -289,9 +310,9 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
         endif
     else
         call self.addif(a:caidxstr.'=='.a:largsstr.'-1')
-                    \.addmatches(plstr, type([]))
-                    \.break()
-                \.up()
+        call        self.setmatches(plstr, type([]), 1)
+        call        self.break()
+        call self._up()
     endif
     call self.let(astr, self.getmatcher(get(a:adescr, 'prefixesmatcher',
                 \                           s:prefdefmatcher), plstr,
@@ -303,13 +324,19 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
         endif
         if !self.o.onlystrings
             if haslist
-                call self.up().else().let(astr, 0).up().endif()
-                            \.if(astr.' isnot 0')
+                call self._up()
+                call self.else()
+                call    self.let(astr, 0)
+                call self._up()
+                call self.endif()
+                call self.if(astr.' isnot 0')
             else
                 call self.nextthrow(astr.' is 0', 'pnf', idx, self.argstr())
             endif
         elseif haslist
             call self.if(astr.' isnot 0')
+        else
+            call self.nextthrow(astr.' is 0', 'pnf', idx, self.argstr())
         endif
         call self.increment(a:largsstr, -1)
         if hasnext
@@ -318,12 +345,13 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
             call self.call(removestr)
         endif
         if haslist
-            call self.up().endif()
+            call self._up()
+            call self.endif()
         endif
     else
         call self.addif(astr.' isnot 0')
-                    \.increment(a:caidxstr, 1)
-                \.endif()
+        call        self.increment(a:caidxstr, 1)
+        call self.endif()
     endif
     "▲3
     for [prefix, prefopts; args] in a:adescr.prefixes
@@ -356,9 +384,15 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
         call self.addif(cond)
         "▶3 Process prefix arguments
         if a:type is# 'check' || a:type is# 'pipe'
+            if prefopts.argnum>0
+                call self.nextthrow(a:largsstr.'<'.
+                            \               a:caidxstr.'+'.prefopts.argnum,
+                            \     'noprefarg', idx,
+                            \     a:caidxstr.'+'.prefopts.argnum.'-'.a:largsstr)
+            endif
             for i in range(1, prefopts.argnum)
                 call self.compilearg(args[i-1], idx.self.string(prefix), a:type)
-                            \.incsub()
+                call self.incsub()
             endfor
             if prefopts.argnum>0
                 call self.increment(a:largsstr, -prefopts.argnum)
@@ -369,21 +403,23 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
             endif
             let idxdiffstr=self.getlvarid('idxdiff')
             call self.if(a:caidxstr.'+'.prefopts.argnum.'<'.a:largsstr)
-                        \.increment(a:caidxstr, prefopts.argnum)
-                    \.else()
-                        \.let(idxdiffstr, a:largsstr.'-'.a:caidxstr)
+            call        self.increment(a:caidxstr, prefopts.argnum)
+            call self.else()
+            call        self.let(idxdiffstr, a:largsstr.'-'.a:caidxstr)
             for i in range(1, prefopts.argnum)
                 call self.addif(idxdiffstr.'=='.i)
-                            \.compilearg(args[i-1], idx.self.string(prefix),
+                call        self.compilearg(args[i-1], idx.self.string(prefix),
                             \            a:type)
-                            \.break()
-                        \.up()
+                call        self.increment(a:caidxstr, idxdiffstr)
+                call        self.break()
+                call self._up()
             endfor
-            call self.up().up()
+            call self._up()
+            call self._up()
         endif
         "▶3 Move prefix arguments to prefix dictionary
         if a:type is# 'complete'
-            call self.up()
+            call self._up()
         elseif prefopts.list
             let removestr='remove('.base.', '.a:caidxstr.', '.
                         \           a:caidxstr.'+'.(prefopts.argnum-1).')'
@@ -392,10 +428,10 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
                 let cond.=' && type('.prefstr.')=='.type([])
             endif
             call self.if(cond)
-                        \.increment(prefstr, removestr)
-                    \.else()
-                        \.let(prefstr, removestr)
-                    \.up()
+            call        self.increment(prefstr, removestr)
+            call self.else()
+            call        self.let(prefstr, removestr)
+            call self._up()
             call self.let(lastliststr, prefixstr)
         else
             if haslist
@@ -413,34 +449,55 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
         endif
         "▲3
         let self.subs[-1]=[a:caidxstr]
-        call self.up()
+        call self._up()
         "▶3 Process `no{prefix}'
         if a:type is# 'check' || a:type is# 'pipe'
             if prefopts.alt
                 call self.addif(astr.' is# '.self.string('no'.prefix))
-                            \.let(prefstr, 0)
-                            \.up()
+                if haslist
+                    call self.let(lastliststr, 0)
+                endif
+                call        self.let(prefstr, 0)
+                call        self._up()
             endif
         endif
         "▲3
     endfor
     if a:type is# 'complete'
         call self.addif(astr.' is 0')
-                    \.break()
-                \.up()
+        call        self.break()
+        call self._up()
     endif
-    call self.up()
     if a:type is# 'check' || a:type is# 'pipe'
         if hasnext
-            call self.unlet(argorigstr).up().up().addrestmsgs(1).popms()
-                \.catch(s:cfreg)
-                    \.if('exists('.string(argorigstr).')')
-                        \.call('insert('.base.','.argorigstr.','.a:caidxstr.')')
-                        \.increment(a:largsstr)
-                    \.up()
-                \.up()
+            if haslist
+                call self.nextthrow(astr.' is 0', 'pnf', idx, self.argstr())
+            endif
+            call self._up()
+            if haslist
+                call self.if('exists('.string(argorigstr).')')
+                call    self.unlet(argorigstr)
+                call self._up()
+                call self._up()
+            else
+                call self.unlet(argorigstr)
+            endif
+            call self._up()
+            call self._up()
+            call self.addrestmsgs(1)
+            call self.popms()
+            call self.catch(s:cfreg)
+            call    self.if('exists('.string(argorigstr).')')
+            call     self.call('insert('.base.','.argorigstr.','.a:caidxstr.')')
+            call     self.increment(a:largsstr)
+            call    self._up()
+            call self._up()
         else
-            call self.up()
+            if haslist
+                call self.nextthrow(astr.' is 0', 'pnf', idx, self.argstr())
+            endif
+            call self._up()
+            call self._up()
         endif
         if !empty(reqpreflist)
             call self.nextthrow('!empty(filter(copy('.rplstr.'), '.
@@ -448,7 +505,8 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
                         \       'noreqpref', a:idx)
         endif
     else
-        call self.up()
+        call self._up()
+        call self._up()
     endif
     return [[a:caidxstr], addedsavemsgs]
 endfunction
@@ -464,24 +522,24 @@ function s:r.next.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
     let addedsavemsgs=a:addedsavemsgs
     let hasnext=s:F.hasnext(a:adescr, 'next')
     if a:type is# 'complete'
-        let condition=a:largsstr.'>='.self.getlastsub()
+        let condition=a:largsstr.'>'.self.getlastsub()
         if self.onlyfirst
             let condition=a:largsstr.'-1 == '.self.getlastsub()
         endif
         call self.addif(condition)
-                    \.compilearg(a:adescr.next[0], a:idx.'.(next)', a:type)
-                \.up()
+        call        self.compilearg(a:adescr.next[0], a:idx.'.(next)', a:type)
+        call self._up()
         if hasnext
             call self.pushms('throwignore')
-                        \.try()
-                            \.while(a:caidxstr.'<'.a:largsstr.'-1')
-                                \.compilearg(a:adescr.next[0], a:idx.'.(next)',
-                                \            'check')
-                                \.increment(a:caidxstr)
-                            \.up()
-                        \.catch(s:cfreg)
-                            \.call('remove(@$@variants, 0, -1)')
-                        \.up()
+            call        self.try()
+            call            self.while(a:caidxstr.'<'.a:largsstr.'-1')
+            call              self.compilearg(a:adescr.next[0], a:idx.'.(next)',
+                              \            'check')
+            call              self.increment(a:caidxstr)
+            call            self._up()
+            call        self.catch(s:cfreg)
+            call            self.call('remove('.self.vstrs[-1].', 0, -1)')
+            call        self._up()
         endif
     else
         if hasnext
@@ -489,14 +547,18 @@ function s:r.next.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
                 call self.addsavemsgs()
                 let addedsavemsgs=1
             endif
-            call self.try().pushms('throw')
+            call self.try()
+            call self.pushms('throw')
         endif
         call self.while(a:caidxstr.'<'.a:largsstr)
-                    \.compilearg(a:adescr.next[0], a:idx.'.(next)', a:type)
-                    \.increment(a:caidxstr)
-                    \.up()
+        call        self.compilearg(a:adescr.next[0], a:idx.'.(next)', a:type)
+        call        self.increment(a:caidxstr)
+        call        self._up()
         if hasnext
-            call self.addrestmsgs(1).catch(s:cfreg).popms().up()
+            call self.addrestmsgs(1)
+            call self.catch(s:cfreg)
+            call self.popms()
+            call self._up()
         endif
     endif
     return [[a:caidxstr], addedsavemsgs]
@@ -510,7 +572,8 @@ let s:r.actions={'char': '<'}
 " Output: context(actions[, {matcher}],
 "                 (context(action, 0|String|{arg}, {arg}*))*)
 function s:r.actions.scan()
-    call self.addcon('actions').getomtchr()
+    call self.addcon('actions')
+    call self.getomtchr()
     let hasaction=0
     let prevlen=-1
     while self.len && prevlen!=self.len
@@ -542,10 +605,12 @@ function s:r.actions.scan()
                     if c is# ')'
                         break
                     endif
-                    call self.ungetc(c).scan()
+                    call self.ungetc(c)
+                    call self.scan()
                 endwhile
             elseif c isnot# '>' && c isnot# '-'
-                call self.ungetc(c).scan()
+                call self.ungetc(c)
+                call self.scan()
             endif
             call self.conclose()
         endif
@@ -588,7 +653,8 @@ function s:r.actions.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
     let noact=get(filter(copy(a:adescr.actions), 'v:val[0] is 0'), 0, 0)
     let fsastr=self.getfunstatvar('actions', map(copy(actions), 'v:val[0]'))
     if noact isnot 0 && a:type isnot# 'complete'
-        call self.try().pushms('throw')
+        call self.try()
+        call self.pushms('throw')
     endif
     let idx=a:idx.'(actions)'
     if !self.o.onlystrings && a:type isnot# 'complete'
@@ -597,16 +663,17 @@ function s:r.actions.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
     let curargstr=self.argstr()
     if a:type is# 'complete'
         call self.addif(a:largsstr.'-1 == '.self.getlastsub())
-                        \.addmatches(fsastr, type([]))
+        call            self.setmatches(fsastr, type([]), 1)
         let savedsub=copy(self.subs[-1])
         if noact isnot 0 && len(noact)>1
             let self.onlyfirst+=1
-            call self.compadescr(noact[1], idx.'.nullact', a:type, 0).out()
+            call self.compadescr(noact[1], idx.'.nullact', a:type, 0)
+            call self._out()
             call call(s:r.actions.optimizenullact, [a:caidxstr], self)
             let self.onlyfirst-=1
         endif
         let self.subs[-1]=savedsub
-        call self.up()
+        call self._up()
         if self.onlyfirst
             return [[a:caidxstr], a:addedsavemsgs]
         else
@@ -631,26 +698,30 @@ function s:r.actions.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
             call self.compadescr(actargs[0], idx.'.'.self.string(actstr),
                         \        a:type, 0)
         endif
-        call self.let(a:caidxstr, self.getlastsub()).up()
+        call self.let(a:caidxstr, self.getlastsub())
+        call self._up()
         let self.subs[-1]=copy(astartsub)
     endfor
     if noact isnot 0
         if a:type is# 'complete'
             call self.else()
         else
-            call self.popms().catch(s:cfreg)
+            call self.popms()
+            call self.catch(s:cfreg)
         endif
         call self.incsub(-1)
         if len(noact)>1
             call self.compadescr(noact[1], idx.'.nullact', a:type, 0)
-                        \.let(a:caidxstr, self.getlastsub())
+            call        self.let(a:caidxstr, self.getlastsub())
         endif
         let self.subs[-1]=copy(astartsub)
-        call self.up().up()
+        call self._up()
+        call self._up()
     endif
     let self.subs[-1]=[a:caidxstr]
     if a:type is# 'complete'
-        call self.up().up()
+        call self._up()
+        call self._up()
     endif
     return [[a:caidxstr], a:addedsavemsgs]
 endfunction

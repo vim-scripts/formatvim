@@ -138,7 +138,7 @@ function s:F.delsigns(plugdict, fdict)
     if !has_key(a:plugdict.g, '_signs') || type(a:plugdict.g._signs)!=type([])
         return
     endif
-    call map(filter(a:plugdict.g._signs,
+    call map(filter(copy(a:plugdict.g._signs),
                 \   'type(v:val)=='.type('').' && v:val=~#''\v%(\d+|\h\w*)$'' '.
                 \   '&& s:F.signexists(v:val)'),
                 \'s:F.delsign(v:val)')

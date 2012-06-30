@@ -8,14 +8,14 @@ endif
 let s:F={}
 let s:_functions=[]
 "▶2 s:
-let s:selfdeps={}
+let s:deplen={}
 let s:pls={} " Plugin dictionaries
 let s:loading={}
 let s:features={}
+let s:plfeatures={}
 let s:shadow={}
-let s:featfunckeys=['cons', 'load', 'unload', 'unloadpre', 'register']
-let s:f={}
-call map(copy(s:featfunckeys), 'extend(s:f, {v:val : {}})')
+let s:featfunckeys=['cons', 'load', 'unload', 'unloadpre', 'register', 'depadd']
+let s:featordered={'all': []}
 let s:dependents={}
 "▶2 Messages
 if v:lang=~?'ru'
@@ -111,6 +111,16 @@ if v:lang=~?'ru'
                 \'invunloadarg': 'Неверный тип аргумента FraworUnload',
                 \       'npref': 'Использование приставки «%s» здесь '.
                 \                'не разрешено',
+                \    'plidnstr': 'Ошибка добавления зависимости '.
+                \                'дополнения %s: имя дополнения '.
+                \                'должно являться непустой строкой',
+                \'invplversion': 'Ошибка добавления зависимости %s '.
+                \                'дополнения %s: версия дополнения должна '.
+                \                'быть непустым списком '.
+                \                'целых неотрицательных чисел',
+                \  'thrownbool': 'Ошибка добавления зависимости %s '.
+                \                'дополнения %s: последний аргумент '.
+                \                'должен быть нулём или единицей',
             \}
 else
     let s:_messages={
@@ -196,6 +206,14 @@ else
                 \   'notloaded': 'Plugin %s is not loaded',
                 \'invunloadarg': 'Wrong type of FraworUnload argument',
                 \       'npref': 'Prefix `%s'' is not allowed here',
+                \    'plidnstr': 'Error while adding dependency to plugin %s: '.
+                \                'plugin name should be a non-empty string',
+                \'invplversion': 'Error while adding dependency %s '.
+                \                'to plugin %s: plugin version should be '.
+                \                'a non-empty list of non-negative integers',
+                \  'thrownbool': 'Error while adding dependency %s '.
+                \                'to plugin %s: last argument should be '.
+                \                'either 0 or 1',
             \}
 endif
 "▶1 s:Eval
@@ -246,7 +264,7 @@ let s:sep=fnamemodify(expand('<sfile>:h'), ':p')[-1:]
 function s:F.normpath(path)
     return expand(fnameescape(substitute(resolve(a:path),
                 \                        '\V'.escape(s:sep, '\').'\+',
-                \                        escape(s:sep, '\&~'), 'g')))
+                \                        escape(s:sep, '\&~'), 'g')), 1)
 endfunction
 "▶1 parseplugpath   :: filename + FS → (plugtype, plid, runtimepath)
 let s:rtpcache={}
@@ -329,7 +347,7 @@ function s:F.recdictmap(dict, expr, ...)
     return map(a:dict, 'type(v:val)=='.type({}).' ? '.
                 \           's:F.recdictmap(v:val, a:expr, path+[v:key], '.
                 \                          'processed) : '.
-                \           'eval(a:expr)')
+                \           '('.a:expr.')')
 endfunction
 "▶1 createconsfunc  :: efid, fname, consargs, suf → function
 function s:F.createconsfunc(efid, fname, consargs, suf)
@@ -353,51 +371,34 @@ function s:F.createcons(plugdict, shadowdict, feature)
                     \             a:shadowdict.consargs, '')
     endif
 endfunction
-"▶1 addcons         :: plugdict + s:f.cons → + p:_f
+"▶1 addcons         :: plugdict + s:featordered.all → + p:_f
 function s:F.addcons(plugdict)
     let shadowdict=s:shadow[a:plugdict.id]
-    for feature in sort(values(s:f.cons), function('s:FeatComp'))
-        if has_key(a:plugdict.dependencies, feature.plid)
-            let a:plugdict.g._f[feature.name]=s:F.createcons(a:plugdict,
-                        \                                    shadowdict,
-                        \                                    feature)
-        endif
+    for feature in filter(copy(s:featordered.all),
+                \         'has_key(v:val, "cons") && '.
+                \         'has_key(a:plugdict.dependencies, v:val.plid)')
+        let a:plugdict.g._f[feature.name]=s:F.createcons(a:plugdict, shadowdict,
+                    \                                    feature)
     endfor
 endfunction
-"▶1 featcomp        :: feature, feature + s:selfdeps → -1|0|1
-function s:FeatComp(feature1, feature2)
-    let plid1=a:feature1.plid
-    let plid2=a:feature2.plid
-    let idx1=s:selfdeps[plid1]
-    let idx2=s:selfdeps[plid2]
-    if idx1==idx2
-        if plid1 is# plid2
-            return ((a:feature1.id>a:feature2.id)?(1):(-1))
-        endif
-        return ((plid1>plid2)?(1):(-1))
+"▶1 getfeatures     :: plugdict, key → [feature]
+function s:F.getfeatures(plugdict, key)
+    if !has_key(s:featordered, a:key)
+        let s:featordered[a:key]=filter(copy(s:featordered.all),
+                    \                   'has_key(v:val, "'.a:key.'")')
     endif
-    return ((idx1>idx2)?(1):(-1))
+    return filter(copy(s:featordered[a:key]),
+                \ 'has_key(a:plugdict.dependencies, v:val.plid) ||'.
+                \ 'has_key(v:val, "ignoredeps")')
 endfunction
-" " Can't add s:FeatComp to _functions because it is required for unloadplugin 
-" " to  work and thus should not be removed by unloadpre event
-" let function('s:FeatComp')=function('s:FeatComp')
-"▶1 getfeatures     :: plugdict, {: feature} → [feature]
-function s:F.getfeatures(plugdict, featuresdict)
-    return sort(filter(values(a:featuresdict),
-                \      'has_key(a:plugdict.dependencies, v:val.plid) ||'.
-                \      'has_key(v:val, "ignoredeps")'),
-                \function('s:FeatComp'))
-endfunction
-"▶1 runfeatures     :: plugdict, fkey + shadowdict, +s:f → plugdict + shadowdict
-function s:F.runfeatures(plugdict, key)
+"▶1 runfeatures     :: plugdict, fkey[, …] + shadowdict → plugdict + shadowdict
+function s:F.runfeatures(plugdict, key, ...)
     let fdicts=s:shadow[a:plugdict.id].features
     let fnames={}
-    for feature in s:F.getfeatures(a:plugdict, s:f[a:key])
-        if has_key(fnames, feature.name)
-            continue
-        endif
+    for feature in filter(s:F.getfeatures(a:plugdict, a:key),
+                \         '!has_key(fnames, v:val.name)')
         let fnames[feature.name]=feature
-        call call(feature[a:key], [a:plugdict, fdicts[feature.name]], {})
+        call call(feature[a:key], [a:plugdict, fdicts[feature.name]]+a:000, {})
     endfor
     " XXX required in order not to copy list
     return a:plugdict
@@ -405,10 +406,8 @@ endfunction
 "▶1 initfeatures    :: plugdict + shadowdict → + shadowdict
 function s:F.initfeatures(plugdict)
     let fdicts=s:shadow[a:plugdict.id].features
-    for feature in s:F.getfeatures(a:plugdict, s:features)
-        if has_key(fdicts, feature.name)
-            continue
-        endif
+    for feature in filter(s:F.getfeatures(a:plugdict, 'all'),
+                \         '!has_key(fdicts, v:val.name)')
         let fdict={}
         let fdicts[feature.name]=fdict
         if has_key(feature, 'init')
@@ -418,6 +417,19 @@ function s:F.initfeatures(plugdict)
             call feature.register(a:plugdict, fdict)
         endif
     endfor
+endfunction
+"▶1 updatedeplen    :: plid, newval, dict + s:deplen → + s:deplen
+function s:F.updatedeplen(plid, newval, updated)
+    let s:deplen[a:plid]=a:newval
+    let a:updated[a:plid]=1
+    if has_key(s:dependents, a:plid)
+        let nv=a:newval+1
+        call map(keys(s:dependents[a:plid]),
+                    \'((!has_key(a:updated, v:val) && '.
+                    \  's:deplen[v:val]<'.nv.')?'.
+                    \   's:F.updatedeplen(v:val, '.nv.', a:updated):'.
+                    \   '0)')
+    endif
 endfunction
 "▶1 newplugin       :: version, sid, file, dependencies, oneload, g → +s:pls,
 function s:F.newplugin(version, sid, file, dependencies, oneload, g)
@@ -513,7 +525,7 @@ function s:F.newplugin(version, sid, file, dependencies, oneload, g)
         if !has_key(s:dependents, dplid)
             let s:dependents[dplid]={}
         endif
-        let s:dependents[dplid][plid]=1
+        let s:dependents[dplid][plid]=plugdict
     endfor
     "▶3 Locking plugdict
     lockvar 1 plugdict
@@ -529,7 +541,7 @@ function s:F.newplugin(version, sid, file, dependencies, oneload, g)
     let shadowdict.features={}
     let shadowdict.loadedfs={}
     let s:shadow[plugdict.id]=shadowdict
-    "▶3 Locking shadow dictionary
+    "▶3 Locking shadowdict
     lockvar 1 shadowdict
     "▶2 Constructing _frawor dictionary
     let plugdict.g._frawor={
@@ -540,13 +552,15 @@ function s:F.newplugin(version, sid, file, dependencies, oneload, g)
     "▲2
     let s:pls[plid]=plugdict
     let s:shadow[plid]=shadowdict
-    let s:selfdeps={}
-    call map(s:F.getordereddeps(s:pls[s:_frawor.id]),
-                \'extend(s:selfdeps, {v:val.id : v:key})')
+    let s:deplen[plid]=max(map(keys(plugdict.dependencies),
+                \              '((v:val is# '.string(plid).')?'.
+                \                  '(0):'.
+                \                  '(get(s:deplen, v:val, 0)))'))+1
+    call s:F.updatedeplen(plid, s:deplen[plid], {})
     call s:F.initfeatures(plugdict)
     let plugdict.g._pluginloaded=0
     if a:oneload
-        call s:F.loadplugin(plid)
+        call s:F.loadplugin(plugdict)
     else
         call s:F.addcons(plugdict)
     endif
@@ -582,38 +596,36 @@ function s:F.addfeature(plugdict, feature, ...)
     "▲2
     return a:feature
 endfunction
+"▶1 getdeps         :: plugdict, hasdep::{plid: _} + s:dependents,… → [plugdict]
+function s:F.getdeps(plugdict, hasdep)
+    let r=[a:plugdict]
+    let a:hasdep[a:plugdict.id]=1
+    for dplid in keys(get(s:dependents, a:plugdict.id, {}))
+        " XXX cannot use filter() as a:hasdep gets modified by s:F.getdeps
+        if !has_key(a:hasdep, dplid)
+            let a:hasdep[dplid]=1
+            let r+=s:F.getdeps(s:pls[dplid], a:hasdep)
+        endif
+    endfor
+    return r
+endfunction
+"▶1 depcomp         :: plugdict, plugdict + s:dependents → -1|0|1
+" Makes plugins which are being less depended on first in a list when passed as 
+" a second argument to sort()
+function s:DepComp(plugdict1, plugdict2)
+    let plid1=a:plugdict1.id
+    let plid2=a:plugdict2.id
+    let dl1=s:deplen[plid1]
+    let dl2=s:deplen[plid2]
+    if dl1==dl2
+        return ((plid1>plid2)?(1):(-1))
+    endif
+    return ((dl1<dl2)?(1):(-1))
+endfunction
+let s:_functions+=['s:DepComp']
 "▶1 getordereddeps  :: plugdict + s:dependents → [plugdict]
 function s:F.getordereddeps(plugdict)
-    let deps=sort(s:F.getdeps(a:plugdict, {}), function('s:DepComp'))
-    let ordered=[]
-    let withdeps=[]
-    call map(deps, 'add(((empty(get(s:dependents, v:val.id, {})))?'.
-                \           '(ordered):'.
-                \           '(withdeps)), '.
-                \      'v:val)')
-    let orderedids=map(copy(ordered), 'v:val.id')
-    unlet deps
-    while !empty(withdeps)
-        let removedsmth=0
-        let i=0
-        while i<len(withdeps)
-            if empty(filter(keys(get(s:dependents, withdeps[i].id, {})),
-                        \   'index(orderedids, v:val)==-1'))
-                call add(ordered,    withdeps[i])
-                call add(orderedids, withdeps[i].id)
-                call remove(withdeps, i)
-                let removedsmth=1
-            else
-                let i+=1
-            endif
-        endwhile
-        if !removedsmth && !empty(withdeps)
-            call add(ordered,    withdeps[0])
-            call add(orderedids, withdeps[0].id)
-            call remove(withdeps, 0)
-        endif
-    endwhile
-    return ordered
+    return sort(s:F.getdeps(a:plugdict, {}), function('s:DepComp'))
 endfunction
 "▶1 loadplugin      :: Either plugdict plid → 0|1|2 + plugdict, …
 function s:F.loadplugin(plid)
@@ -633,11 +645,11 @@ function s:F.loadplugin(plid)
             execute 'runtime! '.fnameescape(plid.'.vim')
         endif
         "▶3 Checking whether plugin was successfully loaded
-        if !has_key(s:pls, a:plid)
+        if !has_key(s:pls, plid)
             return 0
         endif
         "▲3
-        let plugdict=s:pls[a:plid]
+        let plugdict=s:pls[plid]
     "▶3 Processing dictionary supplied instead of plugin ID
     elseif type(a:plid)==type({})
         if has_key(a:plid, 'id') && type(a:plid.id)==type('') &&
@@ -655,8 +667,10 @@ function s:F.loadplugin(plid)
     if plugdict.status!=2
         let shadowdict=s:shadow[plugdict.id]
         let s:loading[plid]=1
+        let plugdict.g._loading=1
         let d={}
         try
+            let olddeplen=s:deplen[plid]
             "▶2 Loading dependencies
             for [dplid, d.Version] in items(plugdict.dependencies)
                 if has_key(s:loading, dplid)
@@ -665,31 +679,38 @@ function s:F.loadplugin(plid)
                     endif
                     continue
                 endif
-                if s:F.loadplugin(dplid)
-                    let dversion=s:pls[dplid].version
-                    "▶3 Checking dependency version
-                    if d.Version[0]!=dversion[0]
-                        call s:_f.throw('majmismatch', dplid, plid,
-                                    \                  d.Version[0],
-                                    \                  dversion[0])
-                    elseif s:F.compareversions(d.Version, dversion)>0
-                        call s:_f.throw('oldversion', dplid, plid,
-                                    \                 join(d.Version, '.'),
-                                    \                 join(dversion,  '.'))
+                if !has_key(s:pls, dplid) || s:pls[dplid].status!=2
+                    if s:F.loadplugin(dplid)
+                        " It must have run updatedeplen on its own and thus has 
+                        " updated all plid dependants
+                        let olddeplen=s:deplen[plid]
+                    else
+                        call s:_f.throw('reqfailed', dplid, plid)
                     endif
-                    "▲3
-                else
-                    call s:_f.throw('reqfailed', dplid, plid)
                 endif
+                let dversion=s:pls[dplid].version
+                "▶3 Checking dependency version
+                if d.Version[0]!=dversion[0]
+                    call s:_f.throw('majmismatch', dplid, plid,
+                                \                  d.Version[0],
+                                \                  dversion[0])
+                elseif s:F.compareversions(d.Version, dversion)>0
+                    call s:_f.throw('oldversion', dplid, plid,
+                                \                 join(d.Version, '.'),
+                                \                 join(dversion,  '.'))
+                endif
+                "▲3
             endfor
-            "▲2
             "▶2 Running features
-            for feature in s:F.getfeatures(plugdict, s:features)
+            for feature in s:F.getfeatures(plugdict, 'all')
                 call s:F.addfeature(plugdict, feature, 1)
             endfor
             "▲2
             if !plugdict.oneload
                 execute 'source '.fnameescape(plugdict.file)
+            endif
+            if s:deplen[plid]>olddeplen
+                call s:F.updatedeplen(plid, s:deplen[plid], {})
             endif
             "▶2 Modifying plugdict status
             let plugdict.g._pluginloaded=1
@@ -700,47 +721,19 @@ function s:F.loadplugin(plid)
                 for feature in values(shadowdict.features.newfeature)
                     call map(((has_key(feature, 'ignoredeps'))?
                                 \       (values(s:pls)):
-                                \       (map(keys(get(s:dependents,
-                                \                     plugdict.id, {})),
-                                \            's:pls[v:val]'))),
+                                \       (values(get(s:dependents, plugdict.id,
+                                \                   {})))),
                                 \'s:F.addfeature(v:val, feature)')
                 endfor
             endif
             "▲2
         finally
+            unlet plugdict.g._loading
             unlet s:loading[plid]
         endtry
     endif
     return 1
 endfunction
-"▶1 getdeps         :: plugdict, hasdep::{plid: _} + s:dependents,… → [plugdict]
-function s:F.getdeps(plugdict, hasdep)
-    let r=[a:plugdict]
-    let a:hasdep[a:plugdict.id]=1
-    for dplugdict in map(keys(get(s:dependents, a:plugdict.id, {})),
-                \        's:pls[v:val]')
-        if !has_key(a:hasdep, dplugdict.id)
-            let a:hasdep[dplugdict.id]=1
-            let r+=s:F.getdeps(dplugdict, a:hasdep)
-        endif
-    endfor
-    return r
-endfunction
-"▶1 depcomp         :: plugdict, plugdict + s:dependents → -1|0|1
-" Makes plugins which are being less depended on first in a list when passed as 
-" a second argument to sort()
-function s:DepComp(plugdict1, plugdict2)
-    let depnum1=len(keys(get(s:dependents, a:plugdict1.id, {})))
-    let depnum2=len(keys(get(s:dependents, a:plugdict2.id, {})))
-    return ((depnum1>depnum2)?
-                \(1):
-                \((depnum1<depnum2)?
-                \   (-1):
-                \   ((a:plugdict1.id>a:plugdict2.id)?
-                \       (1):
-                \       (-1))))
-endfunction
-let s:_functions+=['s:DepComp']
 "▶1 unloadplugin    :: Either plugdict plid + … → [filename]
 " Returns a list of files that should be sourced to load plugin back
 function s:F.unloadplugin(plid)
@@ -779,7 +772,6 @@ function s:F.unloadplugin(plid)
             lockvar! plugdict.status
             "▶2 Clear references to this plugin
             unlet s:pls[plugdict.id]
-            unlet s:selfdeps[plugdict.id]
             if has_key(s:dependents, plugdict.id)
                 unlet s:dependents[plugdict.id]
             endif
@@ -792,10 +784,6 @@ function s:F.unloadplugin(plid)
     else
         return []
     endif
-endfunction
-"▶1 _unload
-function s:._unload()
-    delfunction s:FeatComp
 endfunction
 "▶1 FraworRegister
 function FraworRegister(...)
@@ -820,6 +808,52 @@ function s:F.isfunc(Func, key, fname, plid)
         call s:_f.throw('ncall', a:fname, a:plid, a:key)
     elseif stridx(a:key, '.')!=-1 && a:key!~#'^cons\%(\.\w\+\)\+$'
         call s:_f.throw('invkey', a:fname, a:plid, a:key)
+    endif
+endfunction
+"▶1 featcomp        :: feature, feature + s:deplen → -1|0|1
+function s:F.featcomp(feature1, feature2)
+    let plid1=a:feature1.plid
+    let plid2=a:feature2.plid
+    let dl1=s:deplen[plid1]
+    let dl2=s:deplen[plid2]
+    if dl1==dl2
+        if plid1 is# plid2
+            return ((a:feature1.id>a:feature2.id)?(1):(-1))
+        endif
+        return ((plid1>plid2)?(1):(-1))
+    endif
+    return ((dl1<dl2)?(1):(-1))
+endfunction
+"▶1 biadd                      :: [a], a, cmp → + [a]
+function s:F.biadd(list, item, Cmp)
+    let llist=len(a:list)
+    let d={'cmp': a:Cmp}
+    if !llist
+        call add(a:list, a:item)
+    elseif llist==1
+        call call((d.cmp(a:list[0], a:item)>0)?('insert'):('add'),
+                    \[a:list, a:item])
+    else
+        if d.cmp(a:list[0], a:item)>0
+            call insert(a:list, a:item)
+            return
+        elseif d.cmp(a:list[-1], a:item)<0
+            call add(a:list, a:item)
+            return
+        endif
+        let lborder=0
+        let rborder=llist-1
+        let cur=(((rborder+1)/2)-1)
+        while lborder!=rborder
+            let cr=d.cmp(a:list[cur], a:item)
+            let shift=((rborder-lborder)/2)
+            if !shift
+                break
+            endif
+            let {(cr>0)?('r'):('l')}border=cur
+            let cur=lborder+shift
+        endwhile
+        call insert(a:list, a:item, rborder)
     endif
 endfunction
 "▶1 features.newfeature.cons   :: {f}, fid, fopts → + s:features, shadowdict, …
@@ -850,26 +884,18 @@ function s:newfeature.cons(plugdict, fdict, fid, fopts)
     let feature.escapedid=substitute(string(feature.id), '\n', '''."\n".''','g')
     "▶2 Adding keys that hold functions
     let addedsomething=0
-    for key in s:featfunckeys
-        if has_key(a:fopts, key)
-            if key is# 'cons'
-                if type(a:fopts[key])==type({})
-                    call s:F.recdictmap(deepcopy(a:fopts[key]),
-                                \'s:F.isfunc(v:val, '.
-                                \           '"cons.".join(path+[v:key], "."), '.
-                                \            string(feature.name).', '.
-                                \            string(feature.plid).')')
-                else
-                    call s:F.isfunc(a:fopts[key], key, feature.name,
-                                \   feature.plid)
-                endif
-            else
-                call s:F.isfunc(a:fopts[key], key, feature.name, feature.plid)
-            endif
-            let feature[key]=a:fopts[key]
-            let s:f[key][feature.id]=feature
-            let addedsomething=1
+    for key in filter(copy(s:featfunckeys), 'has_key(a:fopts, v:val)')
+        if key is# 'cons' && type(a:fopts[key])==type({})
+            call s:F.recdictmap(deepcopy(a:fopts[key]),
+                        \'s:F.isfunc(v:val, '.
+                        \           '"cons.".join(path+[v:key], "."), '.
+                        \            string(feature.name).', '.
+                        \            string(feature.plid).')')
+        else
+            call s:F.isfunc(a:fopts[key], key, feature.name, feature.plid)
         endif
+        let feature[key]=a:fopts[key]
+        let addedsomething=1
     endfor
     "▶3 Must have added something
     if !addedsomething
@@ -885,22 +911,27 @@ function s:newfeature.cons(plugdict, fdict, fid, fopts)
             call s:_f.throw('initndct', feature.name, a:plugdict.id)
         endif
         let feature.init=a:fopts.init
-        let s:f.register[feature.id]=feature
     endif
     "▲2
     let a:fdict[feature.name]=feature
     let s:features[feature.id]=feature
+    let s:plfeatures[a:plugdict.id]=a:fdict
+    let s:featordered={'all': s:featordered.all}
+    call s:F.biadd(s:featordered.all, feature, s:F.featcomp)
     "▶2 Running addfeature()
     call map(((has_key(feature, 'ignoredeps'))?
                 \(values(s:pls)):
                 \((has_key(s:dependents, a:plugdict.id))?
-                \   (map(keys(get(s:dependents, a:plugdict.id, {})),
-                \        's:pls[v:val]')):
+                \   (values(get(s:dependents, a:plugdict.id, {}))):
                 \   ([]))),
                 \'s:F.addfeature(v:val, feature)')
 endfunction
-"▶1 features.newfeature.unload :: {f} → + s:features, shadowdict, s:f
+"▶1 features.newfeature.unload :: {f} → + s:features, shadowdict
 function s:newfeature.unload(plugdict, fdict)
+    if !empty(a:fdict)
+        let s:featordered={'all': s:featordered.all}
+        unlet s:plfeatures[a:plugdict.id]
+    endif
     for feature in values(a:fdict)
         if has_key(feature, 'ignoredeps')
             for shadowdict in values(s:shadow)
@@ -913,19 +944,13 @@ function s:newfeature.unload(plugdict, fdict)
             endfor
         endif
         unlet s:features[feature.id]
-        for featdict in values(s:f)
-            if has_key(featdict, feature.id)
-                unlet featdict[feature.id]
-            endif
-        endfor
+        call filter(s:featordered.all, 'v:val isnot feature')
     endfor
 endfunction
 let s:features[s:newfeature.id]=s:newfeature
-let s:f.cons[s:newfeature.id]=s:newfeature
-let s:f.load[s:newfeature.id]=s:newfeature
-let s:f.unload[s:newfeature.id]=s:newfeature
+let s:featordered.all+=[s:newfeature]
 "▶1 Plugin registration
-call s:F.newplugin([0, 0], s:Eval('+matchstr(expand("<sfile>"), ''\d\+'')'),
+call s:F.newplugin([0, 2], s:Eval('+matchstr(expand("<sfile>"), ''\d\+'')'),
             \      expand('<sfile>:p'), {}, 1, s:)
 let s:shadow[s:_frawor.id].features.newfeature.newfeature=s:newfeature
 unlet s:newfeature
@@ -965,8 +990,92 @@ function s:F.throw(plugdict, fdict, msgid, ...)
     throw call(s:F.warn, [a:plugdict, a:fdict, a:msgid]+a:000, {})
 endfunction
 call s:_f.newfeature('throw', {'cons': s:F.throw})
+"▶1 require feature :: {f}, plid, version, throw → + plugdict
+function s:F.require(plugdict, fdict, dplid, dversion, throw)
+    "▶2 Check arguments
+    if type(a:dplid)!=type('') || empty(a:dplid)
+        call s:_f.throw('plidnstr', a:plugdict.id)
+    elseif type(a:dversion)!=type([]) || empty(a:dversion) ||
+                \!empty(filter(copy(a:dversion), 'type(v:val)!='.type(0)))
+        call s:_f.throw('invplversion', a:dplid, a:plugdict.id)
+    elseif type(a:throw)!=type(0)
+        call s:_f.throw('thrownbool', a:dplid, a:plugdict.id)
+    endif
+    "▲2
+    let dplid=s:F.expandplid(a:dplid)
+    if has_key(a:plugdict.dependencies, dplid)
+        return 2
+    endif
+    "▶2 Add dependency
+    unlockvar 1 a:plugdict.dependencies
+    let a:plugdict.dependencies[dplid]=copy(a:dversion)
+    lockvar 1 a:plugdict.dependencies
+    lockvar! a:plugdict.dependencies[dplid]
+    if !has_key(s:dependents, dplid)
+        let s:dependents[dplid]={}
+    endif
+    let s:dependents[dplid][a:plugdict.id]=a:plugdict
+    "▲2
+    let shadowdict=s:shadow[a:plugdict.id]
+    let fdicts=shadowdict.features
+    "▶2 Load dependency if required
+    let olddstatus=0
+    let doload=1
+    if has_key(s:pls, dplid)
+        let olddstatus=s:pls[dplid].status
+        let doload=(olddstatus!=2)
+    endif
+    if doload
+        if s:F.loadplugin(dplid)
+            if olddstatus==0
+                if has_key(s:loading, a:plugdict.id) && has_key(s:plfeatures,
+                            \                                   dplid)
+                    let dfeatures=s:plfeatures[dplid]
+                    call map(filter(values(dfeatures), 'has_key(v:val,"load")'),
+                                \'v:val.load(a:plugdict, fdicts[v:val.name])')
+                endif
+                call s:F.runfeatures(a:plugdict, 'depadd', dplid)
+                return 1
+            endif
+        else
+            if a:throw
+                call s:_f.throw('reqfailed', dplid, a:plugdict.id)
+            else
+                unlockvar 1 a:plugdict.dependencies
+                call remove(a:plugdict.dependencies, dplid)
+                lockvar 1 a:plugdict.dependencies
+                return 0
+            endif
+        endif
+    elseif s:deplen[dplid]+1>s:deplen[a:plugdict.id]
+        call s:F.updatedeplen(a:plugdict.id, s:deplen[dplid]+1, {})
+    endif
+    "▲2
+    let dfeatures=get(s:plfeatures, dplid, {})
+    for feature in filter(values(dfeatures), '!has_key(fdicts, v:val.name)')
+        let fdict={}
+        let fdicts[feature.name]=fdict
+        if has_key(feature, 'init')
+            call extend(fdict, deepcopy(feature.init))
+        endif
+        if has_key(feature, 'register')
+            call feature.register(a:plugdict, fdict)
+        endif
+        if has_key(feature, 'cons')
+            let a:plugdict.g._f[feature.name]=
+                        \s:F.createcons(a:plugdict, shadowdict, feature)
+        endif
+        if has_key(feature, 'load') && (a:plugdict.status==2 ||
+                    \                   has_key(s:loading, a:plugdict.id))
+            call feature.load(a:plugdict, fdict)
+        endif
+    endfor
+    call s:F.runfeatures(a:plugdict, 'depadd', dplid)
+    return 1
+endfunction
+call s:_f.newfeature('require', {'cons': s:F.require})
 "▶1
-call frawor#Lockvar(s:, 'dependents,features,f,selfdeps,loading,shadow,pls,'.
-            \           'rtpcache,dircache')
+call frawor#Lockvar(s:, 'dependents,features,featordered,loading,shadow,pls,'.
+            \           'rtpcache,dircache,deplen,plfeatures')
 lockvar 1 f
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80

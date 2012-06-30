@@ -89,13 +89,10 @@ function s:F.delaugroups(plugdict, fdict)
         return
     endif
     let d={}
-    while !empty(a:plugdict.g._augroups)
-        let d.agname=remove(a:plugdict.g._augroups, 0)
-        if type(d.agname)==type('') && stridx(d.agname, '#')==-1 &&
-                    \exists('#'.d.agname)
-            call s:F.wipeau(d.agname)
-        endif
-    endwhile
+    call map(filter(copy(a:plugdict.g._augroups),
+                \   'type(v:val)=='.type('').' && stridx(v:val, "#")==-1 && '.
+                \   'exists("#".v:val)'),
+                \'s:F.wipeau(v:val)')
 endfunction
 call s:_f.newfeature('delaugroups', {'unloadpre': s:F.delaugroups,
             \                         'register': s:F.add_augroups,

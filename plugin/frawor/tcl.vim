@@ -32,7 +32,7 @@ function s:F.addtcldir(plugdict, fdict)
     let dir=s:_r.os.path.join(a:plugdict.runtimepath, 'tcl')
     if s:_r.os.path.isdir(dir)
         if has_key(s:addedpaths, dir)
-            let s:addedpaths+=1
+            let s:addedpaths[dir]+=1
         else
             let s:addedpaths[dir]=1
             tcl lappend auto_path [::vim::expr 'dir'] ; list

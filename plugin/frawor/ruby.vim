@@ -32,7 +32,7 @@ function s:F.addrubydir(plugdict, fdict)
     let dir=s:_r.os.path.join(a:plugdict.runtimepath, 'ruby')
     if s:_r.os.path.isdir(dir)
         if has_key(s:addedpaths, dir)
-            let s:addedpaths+=1
+            let s:addedpaths[dir]+=1
         else
             let s:addedpaths[dir]=1
             ruby $LOAD_PATH << VIM::evaluate('dir')

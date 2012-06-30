@@ -1,28 +1,31 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/resources': '0.0',
-            \                '@/os':        '0.0'}, 1)
+execute frawor#Setup('0.4', {'@/resources': '0.0',
+            \                '@/os':        '0.0',
+            \                '@/signs':     '0.0',}, 1)
 let s:r={}
 let s:cf='CHECKFAILED'
 let s:cfstr=string(s:cf)
 let s:cfreg='\v^'.s:cf.'$'
+let s:strfuncregstr='''\v^%([sla]@!\w:%(\w|\.)+|%(\V<SNR>\v|s@!\w:)?\w+)$'''
 "▲1
 "Completion  -------------------------------------------------------------------
 "▶1 Path
 "▶2 getfiles
 function s:F.getfiles(arglead, filter, forcefilter)
-    let fragments=s:_r.os.path.split(a:arglead)
+    let path=expand(escape(a:arglead, '\[]*?'), 1)
+    let fragments=s:_r.os.path.split(path)
     let globstart=''
-    if a:arglead[0] is# s:_r.os.sep
+    if path[0] is# s:_r.os.sep
         let globstart=s:_r.os.sep
     endif
-    if a:arglead[-1:] is# s:_r.os.sep && get(fragments, -1, 0) isnot# ''
+    if path[-1:] is# s:_r.os.sep && get(fragments, -1, 0) isnot# ''
         call add(fragments, '')
     endif
     while len(fragments)>1 && (fragments[0] is# '.' || fragments[0] is# '..')
         let globstart.=remove(fragments, 0).s:_r.os.sep
     endwhile
-    let startswithdot = a:arglead[0] is# '.'
+    let startswithdot = path[0] is# '.'
     if empty(fragments)
         call add(fragments, '')
     endif
@@ -126,6 +129,36 @@ function s:F.recupglob(files, fragments, i)
     return s:F.recupglob(filter(glist, 's:_r.os.path.isdir(v:val)'),
                 \        a:fragments, a:i+1)
 endfunction
+"▶1 getfromhelp :: intvar, helpfroot, sectstr, init, Procline → ? + s:{intvar}
+function s:F.getfromhelp(intvar, helpfile, sectstr, init, Procline)
+    if has_key(s:, a:intvar)
+        return copy(s:{a:intvar})
+    endif
+    let s:{a:intvar}=a:init
+    let helpfile=s:_r.os.path.join($VIMRUNTIME, 'doc', a:helpfile.'.txt')
+    if !filereadable(helpfile)
+        return a:init
+    endif
+    let help=readfile(helpfile)
+    let ruler=repeat('=', 78)
+    let slen=len(a:sectstr)-1
+    while !empty(help)
+        if remove(help, 0) is# ruler
+            if remove(help, 0)[:(slen)] is# a:sectstr
+                while !empty(help)
+                    let line=remove(help, 0)
+                    let r=call(a:Procline, [line, s:{a:intvar}], {})
+                    if r is 0
+                        break
+                    endif
+                endwhile
+                break
+            endif
+        endif
+    endwhile
+    lockvar! s:{a:intvar}
+    return copy(s:{a:intvar})
+endfunction
 "▶1 getuserfunctions :: () → [[fname, fargs*]]
 " TODO cache results
 function s:F.getuserfunctions()
@@ -137,57 +170,169 @@ function s:F.getuserfunctions()
                 \'[v:val[0]]+split(v:val[1], ", ")')
 endfunction
 "▶1 getinternalfunctions :: () + s:vimintfuncs → {fname: [length]}
+function s:F.getintfunc(line, intfuncs)
+    if empty(a:line) && !empty(a:intfuncs)
+        return 0
+    endif
+    let match=matchlist(a:line, '\v(\w+)\((.{-})\)')
+    if empty(match)
+        return -1
+    endif
+    let fname=match[1]
+    if !exists('*'.fname)
+        return -1
+    endif
+    let fargs=substitute(match[2], '\s', '', 'g')
+    let lengths=[]
+    if stridx(fargs, '...')!=-1
+        call add(lengths, -1)
+    endif
+    let bidx=stridx(fargs, '[')
+    if bidx!=-1
+        while bidx!=-1
+            call add(lengths, len(split(fargs[:(bidx)], ','))+get(lengths,-1,0))
+            let fargs=fargs[(bidx+1):]
+            let bidx=stridx(fargs, '[')
+        endwhile
+    else
+        call add(lengths, len(split(fargs, ',')))
+    endif
+    let a:intfuncs[fname]=lengths
+    return 1
+endfunction
 function s:F.getinternalfunctions()
-    if exists('s:vimintfuncs')
-        return copy(s:vimintfuncs)
+    return s:F.getfromhelp('vimintfuncs', 'eval', '4. Builtin Functions', {},
+                \          s:F.getintfunc)
+endfunction
+"▶1 getusercommands :: () + :command → [String]
+function s:F.getusercommands()
+    redir => commands
+    silent command
+    redir END
+    return map(split(commands, "\n")[1:], 'matchstr(v:val, "\\v\\w+")')
+endfunction
+"▶1 getinternalcommands :: () + s:vimintfuncs → [String]
+function s:F.getintcmd(line, intcmds)
+    if empty(a:line) && !empty(a:intcmds)
+        return 0
+    elseif a:line[:1] isnot# '|:'
+        return -1
     endif
-    let s:vimintfuncs={}
-    let helpfile=s:_r.os.path.join($VIMRUNTIME, 'doc', 'eval.txt')
-    if !filereadable(helpfile)
-        return copy(s:vimintfuncs)
+    let cmd=matchstr(a:line, '\v\s\:\S+')[2:]
+    if !empty(cmd)
+        let cmd=substitute(cmd, '\W', '', 'g')
+        if exists(':'.cmd)
+            call add(a:intcmds, cmd)
+        endif
     endif
-    let help=readfile(helpfile)
-    let ruler=repeat('=', 78)
-    let section=''
-    while !empty(help)
-        if remove(help, 0) is# ruler
-            if remove(help, 0)[:19] is# '4. Builtin Functions'
-                while !empty(help)
-                    let line=remove(help, 0)
-                    if empty(line) && !empty(s:vimintfuncs)
-                        break
+    return 1
+endfunction
+function s:F.getinternalcommands()
+    return s:F.getfromhelp('vimintcommands', 'index', '5. EX commands', [],
+                \          s:F.getintcmd)
+endfunction
+"▶1 getevents :: () + s:vimintfuncs → [String]
+function s:F.getevent(line, events)
+    if a:line[0] isnot# '|'
+        return -1
+    elseif a:line[-20:] is# '*autocmd-events-abc*'
+        return 0
+    endif
+    let event=matchstr(a:line, '\v^\|\u\w+\|')[1:-2]
+    if !empty(event) && exists('##'.event)
+        call add(a:events, event)
+    endif
+    return 1
+endfunction
+function s:F.getevents()
+    return s:F.getfromhelp('vimevents', 'autocmd', '5. Events', [],
+                \          s:F.getevent)
+endfunction
+"▶1 getsigns :: () → [String]
+function s:F.getsigns()
+    if !has('signs')
+        return []
+    endif
+    redir => signs
+    silent sign list
+    redir END
+    return map(split(signs, "\n"), 'v:val[5:(stridx(v:val, " ", 5)-1)]')
+endfunction
+"▶1 getaugroups :: () → [String]
+function s:F.getaugroups()
+    if !has('autocmd')
+        return []
+    endif
+    redir => augroups
+    silent augroup
+    redir END
+    return split(split(augroups, "\n")[0])
+endfunction
+"▶1 gethighlights :: () → [String]
+function s:F.gethighlights()
+    if !has('syntax')
+        return []
+    endif
+    redir => hls
+    silent hi
+    redir END
+    return map(filter(split(hls, "\n"), 'v:val[0] isnot# " "'),
+                \'v:val[:(stridx(v:val, " ")-1)]')
+endfunction
+"▶1 getoptions :: () + :set → [(String, 0|1|2)]
+" 0: Boolean option
+" 1: Number option
+" 2: String option
+function s:F.getoptions()
+    if exists('s:vimoptions')
+        return copy(s:vimoptions)
+    endif
+    redir => options
+    silent set all
+    redir END
+    let s:vimoptions=[]
+    let ismanyoptline=1
+    for line in split(options, "\n")[1:]
+        if ismanyoptline
+            let addedoptions=0
+            while !empty(line)
+                let line=substitute(line, '\v^\s+', '', '')
+                let option=''
+                if line=~#'\v\l+\='
+                    let option=line[:(stridx(line, '=')-1)]
+                    let bool=0
+                else
+                    let option=matchstr(line, '\v^\l+')
+                    if option[:1] is# 'no' && !exists('&'.option)
+                        let option=option[2:]
                     endif
-                    let match=matchlist(line, '\v(\w+)\((.{-})\)')
-                    if empty(match)
-                        continue
-                    endif
-                    let fname=match[1]
-                    let fargs=substitute(match[2], '\s', '', 'g')
-                    let lengths=[]
-                    if stridx(fargs, '...')!=-1
-                        call add(lengths, -1)
-                    endif
-                    let bidx=stridx(fargs, '[')
-                    if bidx!=-1
-                        while bidx!=-1
-                            call add(lengths, len(split(fargs[:(bidx)], ','))
-                                        \                  +get(lengths, -1, 0))
-                            let fargs=fargs[(bidx+1):]
-                            let bidx=stridx(fargs, '[')
-                        endwhile
-                    else
-                        call add(lengths, len(split(fargs, ',')))
-                    endif
-                    let s:vimintfuncs[fname]=lengths
-                endwhile
-                call filter(s:vimintfuncs, 'exists("*".v:key)')
-                break
+                    let bool=1
+                endif
+                if exists('+'.option)
+                    let type=((bool)?(0):
+                                \    ((type(eval('&'.option))==type(0))?(1):
+                                \                                       (2)))
+                    call add(s:vimoptions, [option, type])
+                endif
+                let line=substitute(line, '\v^\S+', '', '')
+                let addedoptions+=1
+            endwhile
+            if addedoptions==1
+                let ismanyoptline=0
+            endif
+        else
+            let option=matchstr(line, '\v\l+')
+            if exists('+'.option)
+                let type=((type(eval('&'.option))==type(0))?(1):(2))
+                call add(s:vimoptions, [option, type])
             endif
         endif
-    endwhile
-    lockvar s:vimintfuncs
-    return copy(s:vimintfuncs)
+    endfor
+    lockvar! s:vimoptions
+    return copy(s:vimoptions)
 endfunction
+"▶1 compexpr :: () + ? → [String]
+" TODO
 "▲1
 "Filters/checkers --------------------------------------------------------------
 "▶1 `func', `eval'
@@ -209,27 +354,29 @@ let s:r.if={'args': ['arg', 'arg', 'arg']}
 function s:r.if.pipe(desc, idx, type)
     let condstr=self.getlvarid('cond')
     call self.try()
-                \.pushms('throwignore')
-                \.compilearg(a:desc[1], a:idx.'(cond)', 'check')
-                \.popms()
-                \.let(condstr, 1)
-            \.up().catch(s:cfreg)
-                \.let(condstr, 0)
-            \.up()
+    call        self.pushms('throwignore')
+    call        self.compilearg(a:desc[1], a:idx.'(cond)', 'check')
+    call        self.popms()
+    call        self.let(condstr, 1)
+    call    self._up()
+    call    self.catch(s:cfreg)
+    call        self.let(condstr, 0)
+    call    self._up()
     if len(a:desc[2])>1
-        call self.addif(condstr).compilearg(a:desc[2], a:idx.'(if)', a:type)
-                    \.up()
+        call self.addif(condstr)
+        call    self.compilearg(a:desc[2], a:idx.'(if)', a:type)
+        call self._up()
         if len(a:desc[3])>1
             call self.addif()
-                        \.compilearg(a:desc[3], a:idx.'(else)', a:type)
-                        \.up()
+            call        self.compilearg(a:desc[3], a:idx.'(else)', a:type)
+            call        self._up()
         endif
     else
         call self.addif('!'.condstr)
-                    \.compilearg(a:desc[3], a:idx.'(else)', a:type)
-                    \.up()
+        call        self.compilearg(a:desc[3], a:idx.'(else)', a:type)
+        call        self._up()
     endif
-    return self.up()
+    return self._up()
 endfunction
 let s:r.if.complete=s:r.if.pipe
 "▶1 `run'
@@ -239,11 +386,12 @@ let s:r.run={'args': ['var']}
 function s:r.run.pipe(desc, idx, type)
     let curargstr=self.argstr()
     call call(s:r.isfunc.check, [['isfunc', 0], a:idx, 'check'], self)
-            \.try()
-                \.let(curargstr, 'call('.curargstr.', '.
+    call    self.try()
+    call        self.let(curargstr, 'call('.curargstr.', '.
                 \                                self.getvar(a:desc[1]).', {})')
-            \.up().catch()
-                \.addthrow('runfail', 1, a:idx, 'v:exception')
+    call    self._up()
+    call    self.catch()
+    call        self.addthrow('runfail', 1, a:idx, 'v:exception')
     let self.typechanged=1
     return self
 endfunction
@@ -257,7 +405,7 @@ function s:r.run.complete(desc, idx, type)
         " XXX a:desc[1] contains one more items then required, as well as output 
         " of getuserfunctions
         let ldescr=len(a:desc[1])
-        return self.addmatches('map(filter('.getuserfunctionsstr.
+        return self.setmatches('map(filter('.getuserfunctionsstr.
                     \          ', "len(v:val)=='.ldescr.' || '.
                     \             '(len(v:val)<='.(ldescr+1).' && '.
                     \              'v:val[-1] is# ''...'')"), "v:val[0]")+'.
@@ -265,9 +413,10 @@ function s:r.run.complete(desc, idx, type)
                     \                      '"index(v:val, '.(ldescr-1).')!=-1 '.
                     \                      '|| (v:val[0]==-1 && '.
                     \                          'v:val[-1]<='.(ldescr).')")))',
-                    \          type([]))
+                    \          type([]), 1)
     endif
-    return self.addmatches('map('.getuserfunctionsstr.', "v:val[0]")', type([]))
+    return self.setmatches('map('.getuserfunctionsstr.', "v:val[0]")', type([]),
+                \          1)
 endfunction
 "▶1 `earg'
 " Replaces {argument} with the result of evaluating itself
@@ -276,10 +425,11 @@ let s:r.earg={'args': []}
 function s:r.earg.pipe(desc, idx, type)
     let curargstr=self.argstr()
     call self.addtypecond([type('')], a:idx)
-            \.try()
-                \.let(curargstr, 'eval('.curargstr.')')
-            \.up().catch()
-                \.addthrow('evalfail', 1, a:idx, 'v:exception')
+    call self.try()
+    call     self.let(curargstr, 'eval('.curargstr.')')
+    call self._up()
+    call self.catch()
+    call     self.addthrow('evalfail', 1, a:idx, 'v:exception')
     let self.typechanged=1
     return self
 endfunction
@@ -288,12 +438,12 @@ let s:r.not={'args': ['arg'], 'breakscomp': 1}
 "▶2 optimize
 " XXX low-level hacks here
 function s:r.not.optimize(idx, type)
-    call self.down(self.l[1])
+    call self._down(self.l[1])
     let conditions=self.optgetconds()
-    call self.up()
+    call self._up()
     if type(conditions)==type([])
         call remove(self.l, 0, -1)
-        call self.add('if', 0, [])
+        call self._add('if', 0, [])
         call self.nextthrow('!('.join(conditions, ' || ').')', 'notfail', a:idx)
         call remove(self.l, 1, 3)
     endif
@@ -306,7 +456,7 @@ function s:r.not.check(desc, idx, type)
                 \.compilearg(a:desc[1], a:idx.'(not)', 'check')
                 \.popms()
                 \.throw("'NOTFAIL'")
-            \.catch(s:cfreg).up()
+            \.catch(s:cfreg)._up()
             \.catch('\v^NOTFAIL$')
                 \.addthrow('notfail', 1, a:idx)
 endfunction
@@ -315,27 +465,39 @@ endfunction
 let s:r.either={'args': ['*arg']}
 function s:r.either.check(desc, idx, type)
     let sucstr=self.getlvarid('succeeded')
-    call self.let(sucstr, 1).addsavemsgs().pushms('throw')
+    call self.let(sucstr, 1)
+    call self.addsavemsgs()
+    call self.pushms('throw')
     if !empty(a:desc[1])
         call self.try()
-                    \.compilearg(a:desc[1][0], a:idx.'(either).0', 'check')
-                \.up().catch(s:cfreg)
-                    \.let(sucstr, 0).up()
+        call        self.compilearg(a:desc[1][0], a:idx.'(either).0', 'check')
+        call self._up()
+        call self.catch(s:cfreg)
+        call        self.let(sucstr, 0)
+        call self._up()
     endif
     let i=1
     for arg in a:desc[1][1:]
         call self.addif('!'.sucstr)
-                    \.let(sucstr, 1)
-                    \.try()
-                        \.compilearg(arg, a:idx.'(either).'.i, 'check')
-                    \.up().catch(s:cfreg)
-                        \.let(sucstr, 0)
-                    \.up()
-                \.up()
+        call        self.let(sucstr, 1)
+        call        self.try()
+        call            self.compilearg(arg, a:idx.'(either).'.i, 'check')
+        call        self._up()
+        call        self.catch(s:cfreg)
+        call            self.let(sucstr, 0)
+        call        self._up()
+        call    self._up()
         let i+=1
     endfor
-    call self.addif(sucstr).addrestmsgs().up().popms()
-                \.addif().addthrow('eitherfail', 1, a:idx).up().up()
+    call self.addif(sucstr)
+    call self.addrestmsgs()
+    call self._up()
+    call self.popms()
+    call self.addif()
+    call self.addthrow('eitherfail', 1, a:idx)
+    call self._up()
+    call self._up()
+    return self
 endfunction
 function s:r.either.complete(desc, idx, type)
     let self.joinlists+=1
@@ -358,9 +520,10 @@ function s:r.first.complete(desc, idx, type)
     endif
     let i=1
     for arg in a:desc[1][1:]
-        call self.if('empty(@-@)')
-                    \.compilearg(arg, a:idx.'(either).'.i, 'complete')
-                \.up().endif()
+        call self.if('empty('.self.vstrs[-1].')')
+        call        self.compilearg(arg, a:idx.'(either).'.i, 'complete')
+        call self._up()
+        call self.endif()
         let i+=1
     endfor
     return self
@@ -383,9 +546,9 @@ endfunction
 function s:r.tuple.check(desc, idx, type)
     let curargstr=self.argstr()
     call self.addtypecond([type([])], a:idx)
-                \.nextthrow('len('.curargstr.')!='.len(a:desc[1]),
-                \           'invlstlen', a:idx, len(a:desc[1]),
-                \                        'len('.curargstr.')')
+    call self.nextthrow('len('.curargstr.')!='.len(a:desc[1]),
+                \       'invlstlen', a:idx, len(a:desc[1]),
+                \                    'len('.curargstr.')')
     return call(s:F.addtuple, [a:desc, a:idx, a:type], self)
 endfunction
 " Checks whether {argument} is a list with a fixed length and then process given 
@@ -399,12 +562,13 @@ function s:F.addlist(list, idx, type)
     let lststr=self.argstr()
     let istr=self.getlvarid('i')
     call add(self.subs, [istr])
-    call     self.let(largstr, 'len('.lststr.')')
-                \.let(istr, 0)
-                \.while(istr.'<'.largstr)
-                    \.compilearg(a:list[1], a:idx.'(list)', a:type)
-                    \.increment(istr)
-                \.up().up()
+    call self.let(largstr, 'len('.lststr.')')
+    call self.let(istr, 0)
+    call self.while(istr.'<'.largstr)
+    call            self.compilearg(a:list[1], a:idx.'(list)', a:type)
+    call            self.increment(istr)
+    call self._up()
+    call self._up()
     call remove(self.subs, -1)
     return self
 endfunction
@@ -447,7 +611,7 @@ function s:F.adddict(dic, idx, type)
             call self.addif(self.getexpr(check[1], keystr).' isnot 0')
         elseif check[0] is# 'any'
             call self.compilearg(check[1], a:idx.'.'.i.'(val)', a:type)
-                        \.continue()
+            call self.continue()
             break
         elseif check[0] is# 'check'
             if !hascheck
@@ -455,24 +619,28 @@ function s:F.adddict(dic, idx, type)
             endif
             let hascheck=1
             call self.try()
-                        \.pushms('throw')
-                        \.let(foundstr, 0)
-                        \.witharg([keystr])
-                        \.compilearg(check[1], a:idx.'.'.i.'(key)', 'check')
-                        \.without()
-                        \.let(foundstr, 1)
-                        \.compilearg(check[2], a:idx.'.'.i.'(val)', a:type)
-                        \.popms()
-                    \.up().catch(s:cfreg)
-                        \.addif(foundstr)
-                            \.fail()
-                        \.addrestmsgs(1)
-                    \.up().addif(foundstr)
-                        \.continue().up()
+            call        self.pushms('throw')
+            call        self.let(foundstr, 0)
+            call        self.witharg([keystr])
+            call        self.compilearg(check[1], a:idx.'.'.i.'(key)', 'check')
+            call        self.without()
+            call        self.let(foundstr, 1)
+            call        self.compilearg(check[2], a:idx.'.'.i.'(val)', a:type)
+            call        self.popms()
+            call self._up()
+            call self.catch(s:cfreg)
+            call        self.addif(foundstr)
+            call            self.fail()
+            call        self.addrestmsgs(1)
+            call self._up()
+            call self.addif(foundstr)
+            call        self.continue()
+            call self._up()
             continue
         endif
-        call self.compilearg(check[2], a:idx.'.'.i.'(val)', a:type).continue()
-                    \.up()
+        call self.compilearg(check[2], a:idx.'.'.i.'(val)', a:type)
+        call self.continue()
+        call self._up()
     endfor
     if hascheck
         call remove(self.msgs.savevars, -1)
@@ -512,21 +680,40 @@ function s:r.dict.get()
             if c is# '}'
                 break
             elseif c is# '/'
-                call self.addcon('regex', self.readreg('/')).scan().conclose()
+                call self.addcon('regex', self.readreg('/'))
+                call self.scan()
+                call self.conclose()
             elseif c is# '*'
-                call self.addcon('func').getfunc().scan().conclose()
+                call self.addcon('func')
+                call self.getfunc()
+                call self.scan()
+                call self.conclose()
             elseif c is# '='
-                call self.addcon('expr').getexpr().scan().conclose()
+                call self.addcon('expr')
+                call self.getexpr()
+                call self.scan()
+                call self.conclose()
             elseif c is# '?'
-                call self.addcon('check').scan().scan().conclose()
+                call self.addcon('check')
+                call self.scan()
+                call self.scan()
+                call self.conclose()
             elseif c is# '-'
-                call self.addcon('any').scan().conclose()
+                call self.addcon('any')
+                call self.scan()
+                call self.conclose()
             elseif c is# '"'
-                call self.addcon('eq', self.readstr()).scan().conclose()
+                call self.addcon('eq', self.readstr())
+                call self.scan()
+                call self.conclose()
             elseif c is# "'"
-                call self.addcon('eq', self.readsstr()).scan().conclose()
+                call self.addcon('eq', self.readsstr())
+                call self.scan()
+                call self.conclose()
             elseif c=~#'^\w'
-                call self.addcon('eq', c).scan().conclose()
+                call self.addcon('eq', c)
+                call self.scan()
+                call self.conclose()
             endif
         endwhile
     endif
@@ -571,7 +758,7 @@ function s:r.in.pipe(desc, idx, type, ...)
     endif
 endfunction
 function s:r.in.complete(desc, idx, type)
-    return self.addmatches(self.getvar(a:desc[1]), type([]))
+    return self.setmatches(self.getvar(a:desc[1]), type([]), 1)
 endfunction
 "▶1 `key'
 let s:r.key={'args': ['var', '?omtchr']}
@@ -588,7 +775,7 @@ function s:r.key.pipe(...)
     return call(s:r.in.pipe, a:000+['key'], self)
 endfunction
 function s:r.key.complete(desc, idx, type)
-    return self.addmatches(self.getvar(a:desc[1]), type({}))
+    return self.setmatches(self.getvar(a:desc[1]), type({}), 1)
 endfunction
 "▶1 `take'
 " Replaces {argument} with value of the first key from {var}::Dictionary that 
@@ -599,10 +786,9 @@ function s:r.take.pipe(desc, idx, type)
     let varstr=self.getvar(a:desc[1])
     let matchstr=self.getlvarid('match')
     call self.addtypecond([type('')], a:idx)
-                \.let(matchstr, self.getmatcher(a:desc[2], varstr,
-                \                               curargstr, 0))
-                \.nextthrow(matchstr.' is 0', 'nmatch', a:idx, curargstr)
-                \.let(curargstr, varstr.'['.matchstr.']')
+    call self.let(matchstr, self.getmatcher(a:desc[2], varstr, curargstr, 0))
+    call self.nextthrow(matchstr.' is 0', 'nmatch', a:idx, curargstr)
+    call self.let(curargstr, varstr.'['.matchstr.']')
     let self.typechanged=1
     return self
 endfunction
@@ -642,6 +828,109 @@ function s:r.haskey.check(desc, idx, type)
                     \         'keymis', a:idx, keystr)
     endif
 endfunction
+"▶1 `idof'
+" Check whether argument is an identifier
+let s:r.idof={'args': ['get']}
+let s:idab={
+            \ 'var': 'variable',
+            \  'hl': 'highlight',
+            \ 'cmd': 'command',
+            \'func': 'function',
+            \ 'opt': 'option',
+        \}
+let s:ids=values(s:idab)+['event', 'augroup', 'sign']
+"▶2 idof.get :: &self!
+" Input: "variable"  | "var"
+"      | "highlight" | "hl"
+"      | "command"   | "cmd"
+"      | "function"  | "func"
+"      | "option"    | "opt"
+"      | "event"
+"      | "augroup"
+"      | "sign"
+" Output: add({idspec})
+function s:r.idof.get()
+    let c=self.readc()
+    if has_key(s:idab, c)
+        call self.add(s:idab[c])
+    elseif index(s:ids, c)!=-1
+        call self.add(c)
+    else
+        call self.throw('invid', c)
+    endif
+    return self
+endfunction
+"▶2 check
+function s:r.idof.check(desc, idx, type)
+    let curargstr=self.argstr()
+    call self.addtypecond([type('')], a:idx)
+    let spec=a:desc[1]
+    if spec is# 'highlight'
+        call self.nextthrow('!hlexists('.curargstr.')',
+                    \       'nohl', a:idx, curargstr)
+    elseif spec is# 'command'
+        call self.nextthrow('!exists(":".'.curargstr.')',
+                    \       'nocmd', a:idx, curargstr)
+    elseif spec is# 'function'
+        call self.nextthrow('!('.curargstr.'=~#'.s:strfuncregstr.
+                    \        ' && exists("*".'.curargstr.'))',
+                    \       'nofunc', a:idx, curargstr)
+    elseif spec is# 'option'
+        call self.nextthrow('!exists("+".'.curargstr.')',
+                    \       'noopt', a:idx, curargstr)
+    elseif spec is# 'event'
+        call self.nextthrow('!exists("##".'.curargstr.')',
+                    \       'noevent', a:idx, curargstr)
+    elseif spec is# 'augroup'
+        call self.nextthrow('stridx('.curargstr.', "#")!=-1 || '.
+                    \       '!exists("#".'.curargstr.')',
+                    \       'noaug', a:idx, curargstr)
+    elseif spec is# 'sign'
+        let signexistsstr=self.getfunstatvar('sign', s:_r.sign.exists, 'exists')
+        call self.nextthrow('!'.signexistsstr.'('.curargstr.')',
+                    \       'nosign', a:idx, curargstr)
+    elseif spec is# 'variable'
+        call self.nextthrow(curargstr.'!~#''\v^[als]@!\l\:\w*$'' || '.
+                    \       '!exists('.curargstr.')',
+                    \       'novar', a:idx, curargstr)
+    endif
+    return self
+endfunction
+"▶2 complete
+let s:varsstr=join(map(split('vgbwt', '\v.@='),
+            \          '"map(keys(".v:val.":), \"''".v:val.":''.v:val\")"'),
+            \      '+')
+let s:idofcompletes={'highlight': 1, 'event': 1, 'augroup': 1, 'sign': 1}
+function s:r.idof.complete(desc, idx, type)
+    let spec=a:desc[1]
+    if has_key(s:idofcompletes, spec)
+        let getvariantsstr=self.getfunstatvar('completers', s:F['get'.spec.'s'],
+                    \                         spec.'s').'()'
+        return self.setmatches(getvariantsstr, type([]), 1)
+    elseif spec is# 'command'
+        let intcmdsstr=self.getfunstatvar('completers', s:F.getinternalcommands,
+                    \                     'commands').'()'
+        let usercmdsstr=self.getfunstatvar('completers', s:F.getusercommands,
+                    \                      'ucommands').'()'
+        return self.setmatches(intcmdsstr.'+'.usercmdsstr, type([]), 1)
+    elseif spec is# 'function'
+        let userfunctionsstr='map('.self.getfunstatvar('completers',
+                    \                                  s:F.getuserfunctions,
+                    \                                  'userfunctions').'(), '.
+                    \            '"v:val[0]")'
+        let intfuncsstr='keys('.self.getfunstatvar('completers',
+                    \                              s:F.getinternalfunctions,
+                    \                              'vimfunctions').'())'
+        return self.setmatches(userfunctionsstr.'+'.intfuncsstr, type([]), 1)
+    elseif spec is# 'option'
+        let intoptsstr='map('.self.getfunstatvar('completers', s:F.getoptions,
+                    \                            'options').'(), "v:val[0]")'
+        return self.setmatches(intoptsstr, type([]), 1)
+    elseif spec is# 'variable'
+        return self.setmatches(s:varsstr, type([]), 1)
+    endif
+endfunction
+"▲2
 "▶1 `range'
 " Checks whether {argument} is in given range
 let s:r.range={'args': ['number', 'number', '?one']}
@@ -651,10 +940,25 @@ function s:r.range.check(desc, idx, type)
     let acceptfloat=has('float') &&
                 \(a:desc[3] || a:desc[1][0] is# 'float'
                 \           || a:desc[2][0] is# 'float')
-    if acceptfloat
-        call self.addtypecond([type(0), type(0.0)], a:idx)
+    if self.o.onlystrings
+        if acceptfloat
+            let astr='((stridx('.curargstr.', ".")==-1)?'.
+                        \'(str2float('.curargstr.'):'.
+                        \'(str2nr('.   curargstr.'))))'
+        else
+            let astr='str2nr('.curargstr.')'
+        endif
+        if a:type is# 'pipe'
+            call self.let(curargstr, astr)
+        else
+            let curargstr=astr
+        endif
     else
-        call self.addtypecond([type(0)], a:idx)
+        if acceptfloat
+            call self.addtypecond([type(0), type(0.0)], a:idx)
+        else
+            call self.addtypecond([type(0)], a:idx)
+        endif
     endif
     "▶2 Obtain range borders
     let range=map(a:desc[1:2],
@@ -682,14 +986,17 @@ function s:r.range.check(desc, idx, type)
     endif
     "▶2 Add condition to result
     if !empty(cond)
+        let r0=((range[0] is# '')?('"inf"'):(string(range[0])))
+        let r1=((range[1] is# '')?('"inf"'):(string(range[1])))
         call self.nextthrow(cond, 'nrange', a:idx,
                     \                       'string('.curargstr.')',
-                    \                       'string('.range[0].')',
-                    \                       'string('.range[1].')')
+                    \                       'string('.r0.')',
+                    \                       'string('.r1.')')
     endif
     "▲2
     return self
 endfunction
+let s:r.range.pipe=s:r.range.check
 "▶1 `match'
 " Checks whether {argument} is a string that matches {reg}
 let s:r.match={'args': ['reg']}
@@ -735,20 +1042,23 @@ function s:r.path.addpathp(idx)
     let existsstr=self.getfunstatvar('os', s:_r.os.path.exists, 'exists')
     let osdirnamestr=self.getfunstatvar('os', s:_r.os.path.dirname, 'dirname')
     call self.addif('!'.existsstr.'('.curargstr.')')
-                \.let(dirnamestr, normpathstr.'('.curargstr.')')
-                \.let(prevdirstr, '""')
-                \.let(foundstr, 0)
-                \.while(dirnamestr.' isnot# '.prevdirstr)
-                    \.addif('filewritable('.dirnamestr.')==2')
-                        \.let(foundstr, 1)
-                        \.break().up()
-                    \.addif(existsstr.'('.dirnamestr.')')
-                        \.break().up()
-                    \.let(prevdirstr, dirnamestr)
-                    \.let(dirnamestr, osdirnamestr.'('.dirnamestr.')')
-                \.up()
-                \.nextthrow('!'.foundstr, 'nowrite', a:idx, curargstr)
-            \.up().up()
+    call        self.let(dirnamestr, normpathstr.'('.curargstr.')')
+    call        self.let(prevdirstr, '""')
+    call        self.let(foundstr, 0)
+    call        self.while(dirnamestr.' isnot# '.prevdirstr)
+    call            self.addif('filewritable('.dirnamestr.')==2')
+    call                self.let(foundstr, 1)
+    call                self.break()
+    call                self._up()
+    call            self.addif(existsstr.'('.dirnamestr.')')
+    call                self.break()
+    call                self._up()
+    call            self.let(prevdirstr, dirnamestr)
+    call            self.let(dirnamestr, osdirnamestr.'('.dirnamestr.')')
+    call        self._up()
+    call        self.nextthrow('!'.foundstr, 'nowrite', a:idx, curargstr)
+    call self._up()
+    call self._up()
     return self
 endfunction
 "▶2 getpath    :: &self!
@@ -771,7 +1081,8 @@ function s:r.path.get()
     if c=~#'\v^[df]?r?[wWp]?x?$' && c!~#'\v^%(d%(.{,2}x|r)|r)'
         call self.add(c)
     else
-        call self.add('r').ungetc(c)
+        call self.add('r')
+        call self.ungetc(c)
     endif
     return self
 endfunction
@@ -798,8 +1109,8 @@ function s:r.path.check(desc, idx, type)
             let spec=spec[1:]
         elseif spec[0] is# 'p'
             call call(s:r.path.addpathp, [a:idx], self)
-                        \.nextthrow('!'.isdirstr.'('.curargstr.')',
-                        \           'isdir', a:idx, curargstr)
+            call self.nextthrow('!'.isdirstr.'('.curargstr.')',
+                        \       'isdir', a:idx, curargstr)
             let spec=spec[1:]
         else
             call self.nextthrow('!'.isdirstr.'('.curargstr.')',
@@ -842,6 +1153,12 @@ function s:r.path.check(desc, idx, type)
         endif
     endif
     return self
+endfunction
+"▶2 pipe
+function s:r.path.pipe(...)
+    let curargstr=self.argstr()
+    call self.let(curargstr, 'expand(escape('.curargstr.', "\\[]?*"), 1)')
+    return call(s:r.path.check, a:000, self)
 endfunction
 "▶2 complete
 function s:r.path.complete(desc, idx, type)
@@ -904,8 +1221,9 @@ function s:r.path.complete(desc, idx, type)
         endif
     endif
     let getfilesstr=self.getfunstatvar('completers', s:F.getfiles, 'path')
-    return self.addmatches(getfilesstr.'('.self.comparg.', '.
-                \                          self.string(filter).', 1)', type([]))
+    return self.setmatches(getfilesstr.'('.self.comparg.', '.
+                \                          self.string(filter).', 1)', type([]),
+                \          0)
 endfunction
 "▶1 `type'
 " Checks whether {argument} has one of given types
@@ -984,11 +1302,23 @@ function s:r.isfunc.check(desc, idx, type)
                     \          frefpref .' isnot# "s:" && '.
                     \          frefpref2.'    !=? "<SID>") '.
                     \        '|| (type('.curargstr.')=='.type('').
-                    \            '&& '.curargstr.'=~#'.
-                    \             '''\v^%([sla]@!\w:%(\w|\.)+|'.
-                    \                    '%(<SNR>|s@!\w:)?\w+)$'''.
+                    \            '&& '.curargstr.'=~#'.s:strfuncregstr.
                     \            '&& exists("*".'.curargstr.')))',
                     \       'nsfunc', a:idx, 'string('.curargstr.')')
+    endif
+    return self
+endfunction
+function s:r.isfunc.pipe(desc, idx, type)
+    call call(s:r.isfunc.check, [a:desc, a:idx, a:type], self)
+    if !a:desc[1]
+        let curargstr=self.argstr()
+        call self.let(curargstr,
+                    \ '((type('.curargstr.')==2)?'.
+                    \   '('.curargstr.'):'.
+                    \ '((exists('.curargstr.'))?'.
+                    \    '(eval('.curargstr.'))'.
+                    \  ':'.
+                    \    '(function('.curargstr.'))))')
     endif
     return self
 endfunction
@@ -998,7 +1328,7 @@ let s:r.isreg={'args': []}
 function s:r.isreg.check(desc, idx, type)
     let curargstr=self.argstr()
     return self.addtypecond([type('')], a:idx)
-                \.try().call('matchstr("", '.curargstr.')').up()
+                \.try().call('matchstr("", '.curargstr.')')._up()
                 \.catch().addthrow('nreg', 1, a:idx, curargstr, 'v:exception')
 endfunction
 "▶1 `bool'
@@ -1035,7 +1365,7 @@ endfunction
 " Overrides current value
 let s:r.value={'args': ['var', 'arg']}
 function s:r.value.check(desc, idx, type)
-    call self.witharg(self.getvar(a:desc[1], 1))
+    return self.witharg(self.getvar(a:desc[1], 1))
                 \.compilearg(a:desc[2], a:idx.'(value)', a:type)
                 \.without()
 endfunction
@@ -1158,7 +1488,9 @@ let s:smartfilters=[
             \'v:val=~?reg2',
             \]
 function s:r.smart.matcher(ld, str, acceptfirst)
-    if type(a:ld)==type({})
+    if empty(a:ld)
+        return []
+    elseif type(a:ld)==type({})
         if has_key(a:ld, a:str)
             return ((a:acceptfirst is 2)?([a:str]):(a:str))
         endif

@@ -223,77 +223,85 @@ function s:F.wrapfunc(plugdict, funopts, fundictsname, fname)
     let fundef.function=s:F.refunction(a:plugdict.sid, a:funopts.function,
                 \                      'uref', a:plugdict.id, 'function',
                 \                              a:fname)
-    "▶2 Define variables
-    " Contains name of variable that holds arguments
-    let args='a:000'
     "▲2
-    let fpref='s:'.a:fundictsname.'.'.fundef.id
-    let func=['function '.fname.'(...)',
-                \'let _={"d": {}, "F": '.fpref.'.function}',
-                \]
     let decs=map(filter(keys(a:funopts), 'v:val[0] is# "@"'),
                 \'s:_r.getdecorator(v:val[1:])')
-    let fblocks=[]
-    let addedrval=0
-    for decorator in decs
-        "▶2 Check existance of decorator definer in dependencies
-        if !has_key(a:plugdict.dependencies, decorator.plid)
-            call s:_f.throw('decndep', a:fname, a:plugdict.id,
-                        \              decorator.id)
-        endif
-        "▲2
-        call add(fblocks, decorator.func(a:plugdict, fname,
-                    \                    a:funopts['@'.decorator.id]))
-        "▶2 Check decorator return value
-        if type(fblocks[-1])!=type([])
-                    \|| len(fblocks[-1])!=6
-                    \|| type(fblocks[-1][0])!=type(0)
-                    \|| type(fblocks[-1][1])!=type('')
-                    \|| type(fblocks[-1][3])!=type([])
-                    \|| type(fblocks[-1][4])!=type([])
-                    \|| type(fblocks[-1][5])!=type(0)
-            call s:_f.throw('invdecret', a:fname, a:plugdict.id,
-                        \                decorator.id)
-        endif
-        "▲2
-        if fblocks[-1][5] && !addedrval
-            let addedrval=1
-        endif
-        call extend(fblocks[-1], [decorator.id, decorator.pref], 0)
-    endfor
-    call sort(fblocks, function('s:Decsort'))
-    let end=[]
-    let d={}
-    let fvar='_.F'
-    let pvarstart=fpref.'.decvars.'
-    for [deid, pref, prior, newargs, d.privvar, preret, postret, rrv] in fblocks
-        let pvar=pvarstart.deid
-        let  preret=map(copy( preret), s:mapexpr)
-        let postret=map(copy(postret), s:mapexpr)
-        "▶2 Add private variable to fundef.decvars
-        if d.privvar isnot 0
-            if !has_key(fundef, 'decvars')
-                let fundef.decvars={}
-            endif
-            let fundef.decvars[deid]=d.privvar
-        endif
-        unlet d.privvar
-        "▲2
-        let func+=preret
-        call extend(end, postret, 0)
-        let args=eval(s:nargsexpr)
-    endfor
-    if addedrval
-        let func +=  ['let _.r=call('.fvar.', '.args.', _.d)']+end+
-                    \['return _.r',
-                    \ 'endfunction']
+    if empty(decs) && fname is# 'fundef.cons'
+        let fundef.cons=fundef.function
     else
-        let func +=  ['return call('.fvar.', '.args.', _.d)']+end+
-                    \['endfunction']
-    endif
-    execute join(s:F.beatycode(func), "\n")
-    if fname isnot# 'fundef.cons'
-        let fundef.cons=function(fname)
+        "▶2 Define variables
+        " Contains name of variable that holds arguments
+        let args='a:000'
+        let fpref='s:'.a:fundictsname.'.'.fundef.id
+        let func=['function '.fname.'(...)',
+                    \'let _={"d": {}, "F": '.fpref.'.function}',
+                    \]
+        let fblocks=[]
+        let addedrval=0
+        "▲2
+        for decorator in decs
+            "▶2 Check existance of decorator definer in dependencies
+            if !has_key(a:plugdict.dependencies, decorator.plid)
+                call s:_f.throw('decndep', a:fname, a:plugdict.id,
+                            \              decorator.id)
+            endif
+            "▲2
+            call add(fblocks, decorator.func(a:plugdict, fname,
+                        \                    a:funopts['@'.decorator.id]))
+            "▶2 Check decorator return value
+            if type(fblocks[-1])!=type([])
+                        \|| len(fblocks[-1])!=6
+                        \|| type(fblocks[-1][0])!=type(0)
+                        \|| type(fblocks[-1][1])!=type('')
+                        \|| type(fblocks[-1][3])!=type([])
+                        \|| type(fblocks[-1][4])!=type([])
+                        \|| type(fblocks[-1][5])!=type(0)
+                call s:_f.throw('invdecret', a:fname, a:plugdict.id,
+                            \                decorator.id)
+            endif
+            "▲2
+            if fblocks[-1][5] && !addedrval
+                let addedrval=1
+            endif
+            call extend(fblocks[-1], [decorator.id, decorator.pref], 0)
+        endfor
+        call sort(fblocks, function('s:Decsort'))
+        let end=[]
+        let d={}
+        let fvar='_.F'
+        let pvarstart=fpref.'.decvars.'
+        for [deid, pref, prior, newargs, d.privvar, preret, postret, rrv]
+                    \ in fblocks
+            let pvar=pvarstart.deid
+            let  preret=map(copy( preret), s:mapexpr)
+            let postret=map(copy(postret), s:mapexpr)
+            "▶2 Add private variable to fundef.decvars
+            if d.privvar isnot 0
+                if !has_key(fundef, 'decvars')
+                    let fundef.decvars={}
+                endif
+                let fundef.decvars[deid]=d.privvar
+            endif
+            unlet d.privvar
+            "▲2
+            let func+=preret
+            call extend(end, postret, 0)
+            let args=eval(s:nargsexpr)
+        endfor
+        "▶2 Add return and end
+        if addedrval
+            let func +=  ['let _.r=call('.fvar.', '.args.', _.d)']+end+
+                        \['return _.r',
+                        \ 'endfunction']
+        else
+            let func +=  ['return call('.fvar.', '.args.', _.d)']+end+
+                        \['endfunction']
+        endif
+        "▲2
+        execute join(s:F.beatycode(func), "\n")
+        if fname isnot# 'fundef.cons'
+            let fundef.cons=function(fname)
+        endif
     endif
     return fundef
 endfunction

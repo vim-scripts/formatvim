@@ -78,7 +78,8 @@ endfunction
 call s:_f.newfeature('postresource', {'cons': s:F.postresource,
             \                       'unload': s:F.delresources,})
 "▶1 addresource feature
-function s:F.addresource(plugdict, fdict)
+let s:addresource={'ignoredeps': 1}
+function s:addresource.load(plugdict, fdict)
     let r={}
     call map(map(filter(keys(a:plugdict.dependencies),
                 \'has_key(s:plugresources, v:val)'),
@@ -88,7 +89,17 @@ function s:F.addresource(plugdict, fdict)
                 \            '{v:val.name : v:val.copyfunc(v:val.resource)})")')
     let a:plugdict.g._r=r
 endfunction
-call s:_f.newfeature('addresource', {'load': s:F.addresource, 'ignoredeps': 1,})
+function s:addresource.depadd(plugdict, fdict, dplid)
+    if !has_key(a:plugdict.g, '_r') || type(a:plugdict.g._r)!=type({})
+        return
+    endif
+    let r=a:plugdict.g._r
+    if has_key(s:plugresources, a:dplid)
+        call map(values(s:plugresources[a:dplid]),
+                    \'extend(r, {v:val.name : v:val.copyfunc(v:val.resource)})')
+    endif
+endfunction
+call s:_f.newfeature('addresource', s:addresource)
 "▶1
 call frawor#Lockvar(s:, 'plugresources')
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80

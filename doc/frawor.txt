@@ -30,6 +30,7 @@ CONTENTS                                                     *frawor-contents*
         4.4. printtable resource                  |frawor-r-printtable|
         4.5. base64 resource                      |frawor-r-base64|
         4.6. sign resource                        |frawor-r-sign|
+        4.7. history resource                     |frawor-r-history|
     5. Options                                    |frawor-options|
         5.1. Mapping options                      |frawor-mapoptions|
     6. Type definitions                           |frawor-types|
@@ -69,7 +70,8 @@ FraworRegister({version}, {sid}, {file}, {dependencies}, {oneload}, {g})
         type         First component of plugin file path that is not part of 
                      runtimepath (or `/unknown' if frawor failed to detect 
                      it).
-        It also sets s:_pluginloaded to either 1 for oneload plugins or 0.
+        It sets s:_pluginloaded to 1 for oneload plugins and 0 for other. Also 
+        see |s:_loading|.
                                                        *frawor-plid-expansion*
         If some key in {dependencies} dictionary starts with `@', then it is 
         transformed:
@@ -160,6 +162,13 @@ throw : function ({msgid}, ...) → exception                   *frawor-f-throw*
         `Frawor:{plid}:{msgid}:{message}' where {message} is a value returned 
         by |frawor-f-warn|. Semicolon and backslash in {plid} and {msgid} will 
         be escaped.
+require : function ({plid}, {dversion}, {throw}) → 0..2     *frawor-f-require*
+        Loads plugin {plid} and makes it dependency of the caller, also 
+        running all its features. {throw} argument determines what should be 
+        done if frawor failed to load requested plugin: if it is 1, then 
+        `Frawor:plugin/frawor:reqfailed' exception will be thrown, otherwise 
+        0 will be returned. 2 is returned when requested dependency was 
+        already added and 1 indicates that dependency was successfully loaded.
 newfeature : function ({fid}, {fopts})                   *frawor-f-newfeature*
            + unload
         Registers plugin feature with id {fid} ({fid} must contain only 
@@ -216,6 +225,11 @@ newfeature : function ({fid}, {fopts})                   *frawor-f-newfeature*
                                                          *frawor-fk-unloadpre*
         unloadpre  Just like unload, but function will be called when plugin 
                    is queued for unloading, but nothing was yet unloaded.
+                                                            *frawor-fk-depadd*
+        depadd     Reference to a function that will be called when dependency 
+                   was added using |frawor-f-require| feature. Receives 
+                   |frawor-t-plugdict|, feature dictionary and plugin id of 
+                   the added dependency as its arguments.
                                                         *frawor-fk-ignoredeps*
         ignoredeps If this key is present, then register, load, unload and 
                    unloadpre keys will be called for all plugins even if they 
@@ -325,13 +339,13 @@ adddecorator : function ({decid}, {decfunc})
 addaltspecial : function ({id}, {saver}, {setter}[, {opts}])
               + unload
         Adds saver and setter functions for `+{intname}' (see 
-        |frawor-fd-altervars|). {id} must be a string that starts with 
-        a letter and contains only letters, digits and underscores. {opts} is 
+        |frawor-t-altervars|). {id} must be a string that starts with a letter 
+        and contains only letters, digits and underscores. {opts} is 
         a dictionary with the following keys:
         Key          Description ~
         requiresarg  If it is present, then {saver} and {setter} functions are 
                      marked as functions that require additional argument, see 
-                     |frawor-fd-altervars|. This additional argument will be 
+                     |frawor-t-altervars|. This additional argument will be 
                      the only argument to saver and the second argument to 
                      setter functions. Overrides `acceptsarg'.
         acceptsarg   Like `requiresarg', but does not force argument to be 
@@ -397,7 +411,7 @@ fwc.del : function ({FWCid})                                *frawor-f-fwc.del*
 ------------------------------------------------------------------------------
 3.8. plugin/frawor/mappings features                *frawor-f-frawor/mappings*
 
-                                                        *frawor-f-addmapgroup*
+                                                       *frawor-f-mapgroup.add*
 mapgroup.add : function ({mgid}, {mappings}[, {mgopts}])
              + unload
         Add mapping group with id {mgid}. {mappings} is a dictionary which 
@@ -608,7 +622,7 @@ postresource : function ({rid}, {resource}[, {copyfunc}])
            passed by references, so it won't have any affect when you share 
            strings, numbers or function references.
 
-addresource : load + s:_r                               *frawor-f-addresource*
+addresource : load, depadd + s:_r                       *frawor-f-addresource*
         Automatically adds resources that are defined by plugins listed in 
         dependencies to s:_r dictionary. It is |frawor-fk-ignoredeps| feature, 
         so you don't need anything to get it working.
@@ -713,7 +727,7 @@ check their arguments.
 
 Resource `map' is defined in plugin/frawor/mappings.
 
-                                                           *frawor-map-maparg*
+                                                         *frawor-r-map.maparg*
 map.maparg :: {lhs}, {mode}::Char, {abbr}::Bool -> {mapdescr}
         Given an {lhs} of the mapping ({abbr}=0) or abbreviation ({abbr}=1) 
         and {mode} (see |maparg()| description) returns a dictionary with the 
@@ -731,11 +745,11 @@ map.maparg :: {lhs}, {mode}::Char, {abbr}::Bool -> {mapdescr}
 
         Note that in <vim-7.3.32 `silent', `expr', and `sid' keys are 
         unconditionally set to 0 as there was no way to obtain their values.
-map.map :: {mapdescr} -> _ + :map                             *frawor-map-map*
-        Given an {mapdescr} returned by |frawor-map-maparg|, constructs and 
+map.map :: {mapdescr} -> _ + :map                           *frawor-r-map.map*
+        Given an {mapdescr} returned by |frawor-r-map.maparg|, constructs and 
         executes a command that will create the new mapping.
-map.unmap :: {mapdescr} -> _ + :unmap                       *frawor-map-unmap*
-        Given an {mapdescr} returned by |frawor-map-maparg|, constructs and 
+map.unmap :: {mapdescr} -> _ + :unmap                     *frawor-r-map.unmap*
+        Given an {mapdescr} returned by |frawor-r-map.maparg|, constructs and 
         executes a command that will delete an existing mapping.
 
 ------------------------------------------------------------------------------
@@ -743,60 +757,60 @@ map.unmap :: {mapdescr} -> _ + :unmap                       *frawor-map-unmap*
 
 Resource `os' is defined in plugin/frawor/os.
 
-os.fullname :: String                                     *frawor-os-fullname*
+os.fullname :: String                                   *frawor-r-os.fullname*
         One of unix, win*, mac, macunix, amiga, os2, qnx, beos, vms or 
         unknown. Describes the version of vim: has(os.fullname) is true unless 
         os.fullname is equal to "unknown", see |feature-list|.
-os.name :: String                                             *frawor-os-name*
+os.name :: String                                           *frawor-r-os.name*
         Either "posix" (for *nix, mac*, qnx and vms versions of vim), "nt" 
         (for win* versions of vim except win32unix), "os2" (for os2 version of 
         vim) or "other".
-os.sep :: Char                                                 *frawor-os-sep*
+os.sep :: Char                                               *frawor-r-os.sep*
         Path separator. It is likely to be either "/", "\\" or ":".
-os.linesep :: String                                       *frawor-os-linesep*
+os.linesep :: String                                     *frawor-r-os.linesep*
         Line separator: "\r\n" for nt systems, "\r" for mac*, "\n" for other.
-os.pathsep :: String                                       *frawor-os-pathsep*
+os.pathsep :: String                                     *frawor-r-os.pathsep*
         Separator used in $PATH variable: ";" for nt and os2 systems and ":" 
         for other systems.
-os.listdir :: path[, _] -> path                            *frawor-os-listdir*
+os.listdir :: path[, _] -> path                          *frawor-r-os.listdir*
         Lists directory contents. If optional argument is given, then list of 
         absolute file names is returned, otherwise only trailing components 
         are returned.
-os.chdir :: path[, Bool] -> Bool + WD                        *frawor-os-chdir*
+os.chdir :: path[, Bool] -> Bool + WD                      *frawor-r-os.chdir*
         Changes current directory, returns 1 on success and 0 on failure. If 
         optional argument is true, then only window current directory will be 
         changed (see |:lcd|).
-os.mkdir :: path[, mode] -> Bool + FS                        *frawor-os-mkdir*
+os.mkdir :: path[, mode] -> Bool + FS                      *frawor-r-os.mkdir*
         Creates directory with given protection bits (default 0755). Returns 
         1 on success, 0 on failure. Not available on some systems (relies on 
         |mkdir()| function being available).
-os.makedirs :: path[, mode] -> Bool + FS                  *frawor-os-makedirs*
-        Like |frawor-os-mkdir|, but also creates intermediate directories if 
+os.makedirs :: path[, mode] -> Bool + FS                *frawor-r-os.makedirs*
+        Like |frawor-r-os.mkdir|, but also creates intermediate directories if 
         they do not exist. Unlike built-in |mkdir()|, mode is applied to all 
         intermediate directories created, not just to last directory.
-os.unlink :: path -> Bool + FS                              *frawor-os-unlink*
-os.remove :: path -> Bool + FS                              *frawor-os-remove*
+os.unlink :: path -> Bool + FS                            *frawor-r-os.unlink*
+os.remove :: path -> Bool + FS                            *frawor-r-os.remove*
         Removes given file (not directory) returning 1 on success and 0 on 
         failure.
-os.rmdir :: path -> Bool + FS                                *frawor-os-rmdir*
+os.rmdir :: path -> Bool + FS                              *frawor-r-os.rmdir*
         Remove given directory if it is empty. Only available on posix and nt 
         systems with some tools installed (rmdir or rm for posix, rmdir or 
         deltree for nt). Returns 1 on success and 0 on failure.
-        Note that if |frawor-os-run| is not working correctly then neither 
+        Note that if |frawor-r-os.run| is not working correctly then neither 
         will os.rmdir.
-os.removedirs :: path -> UInt + FS                      *frawor-os-removedirs*
+os.removedirs :: path -> UInt + FS                    *frawor-r-os.removedirs*
         Remove given directory and all empty intermediate ones (excluding 
         current directory). Returns number of components removed.
-        Note that if |frawor-os-run| is not working correctly then neither 
+        Note that if |frawor-r-os.run| is not working correctly then neither 
         will os.removedirs.
-os.removetree :: path -> Bool + FS                      *frawor-os-removetree*
+os.removetree :: path -> Bool + FS                    *frawor-r-os.removetree*
         Remove the given file or directory including all contained files or 
         directories (like `rm -r' on posix systems). Returns 1 on success and 
         0 on failure. Don't forget that removetree will first remove all files 
-        and only then will try to remove directories using |frawor-os-rmdir|.
-        Note that if |frawor-os-run| is not working correctly then neither 
+        and only then will try to remove directories using |frawor-r-os.rmdir|.
+        Note that if |frawor-r-os.run| is not working correctly then neither 
         will os.removetree.
-                                                              *frawor-os-walk*
+                                                            *frawor-r-os.walk*
 os.walk :: path + FS -> [(path, [ component ], [ component ])]
         For each directory in the directory tree rooted at path including path 
         itself but excluding `.' and `..' generates a 3-tuple
@@ -805,40 +819,55 @@ os.walk :: path + FS -> [(path, [ component ], [ component ])]
         subdirectories' names and {filenames} is a list of regular file names.
         Note that symbolic links to existing directories are considered to be 
         directories themselves.
-os.run :: [command[, arg1[, arg2[, ...]]]][, path]             *frawor-os-run*
-        Runs command with given arguments and returns its exit code. Optional 
-        path argument designates working directory in which command should be 
-        run.
+os.run :: command[, path] -> shell_error|-1                  *frawor-r-os.run*
+        Runs command with given arguments and returns its exit code. “Command” 
+        may be either a list of strings (in this case they will get 
+        |shellescaped()| and joined with spaces) or a plain string (note that 
+        you must use {special}=1 when using |shellescape()|). Optional path 
+        argument designates working directory in which command should be run. 
+        If path is not accessible it may return -1.
         Note that os.run depends on 'shell', 'shellquote', 'shellxquote' and 
         'shellcmdflag' options being set correctly.
-os.path.abspath :: path + FS -> path                  *frawor-os-path-abspath*
+os.readsystem :: command[, path] -> [ String ] | -1   *frawor-r-os.readsystem*
+        Like |frawor-r-os.run|, but returns command outputs instead in the 
+        same format as |readfile()| does. Additionally depends on 'shellredir' 
+        option being set correctly and |tempname()| returning writable file 
+        name.
+os.path.abspath :: path + FS -> path                *frawor-r-os.path.abspath*
         Returns an absolute path.
-os.path.realpath :: path + FS -> path                *frawor-os-path-realpath*
+os.path.realpath :: path + FS -> path              *frawor-r-os.path.realpath*
         Returns an absolute path with all symbolic links resolved.
-os.path.normpath :: path -> path                     *frawor-os-path-normpath*
-        Normalize path by removing duplicate path separators.
-os.path.basename :: path -> component                *frawor-os-path-basename*
+os.path.relpath  :: path[, path] -> path              *frawor-os.path.relpath*
+        Transforms its first argument so that it will be a path, relative to 
+        the path given in the second argument (default: current directory). 
+        Returns transformed version of path or 0 if it cannot be constructed 
+        (for example, if paths are on different drives on windows).
+os.path.normpath :: path -> path                   *frawor-r-os.path.normpath*
+        Normalize path by removing duplicate path separators and simplifying 
+        it (see |simplify()|). It also adds leading `./' to the relative 
+        paths.
+os.path.basename :: path -> component              *frawor-r-os.path.basename*
         Returns the final component of a path.
-os.path.dirname :: path -> path                       *frawor-os-path-dirname*
+os.path.dirname :: path -> path                     *frawor-r-os.path.dirname*
         Returns the directory component of a path.
-os.path.join :: [ path ] -> path                         *frawor-os-path-join*
+os.path.join :: [ path ] -> path                       *frawor-r-os.path.join*
         Joins path components into one path, removing duplicate path 
         separators. The following calls are equivalent: >
             let path=s:_r.os.path.join("foo", "bar")
             let path=s:_r.os.path.join(["foo", "bar"])
-os.path.split :: path -> [ component ]                  *frawor-os-path-split*
+os.path.split :: path -> [ component ]                *frawor-r-os.path.split*
         Returns a list of path components starting either from root (`/' on 
         posix systems, `{DriveCharacter}:' on nt systems) or from current 
         directory ('.').
-os.path.samefile :: path, path + FS -> Bool          *frawor-os-path-samefile*
+os.path.samefile :: path, path + FS -> Bool        *frawor-r-os.path.samefile*
         Returns 1 if both pathnames refer to the same actual file.
-os.path.exists :: path + FS -> Bool                    *frawor-os-path-exists*
+os.path.exists :: path + FS -> Bool                  *frawor-r-os.path.exists*
         Returns 1 if file or directory with given name exists, 0 otherwise.
-os.path.isdir :: path + FS -> Bool                      *frawor-os-path-isdir*
+os.path.isdir :: path + FS -> Bool                    *frawor-r-os.path.isdir*
         Returns 1 if given path is existing directory, 0 otherwise.
-os.path.isfile :: path + FS -> Bool                    *frawor-os-path-isfile*
+os.path.isfile :: path + FS -> Bool                  *frawor-r-os.path.isfile*
         Returns 1 if given path is existing file, 0 otherwise.
-                                                         *frawor-os-path-walk*
+                                                       *frawor-r-os.path.walk*
 os.path.walk :: path, (arg, path, [ component ] -> _)[, arg] + FS -> _
         Directory tree walk with callback function:
         For each directory in the directory tree rooted at top (including top 
@@ -861,13 +890,13 @@ os.path.walk :: path, (arg, path, [ component ] -> _)[, arg] + FS -> _
 Resource `py' is defined in plugin/frawor/python. It is not available if vim 
 is compiled without python support or loading python libraries failed.
 
-py.cmd :: String                                               *frawor-py-cmd*
+py.cmd :: String                                             *frawor-r-py.cmd*
         `python' or `python3'. Defines command which should be used to launch 
         python.
-py.filecmd :: String                                       *frawor-py-filecmd*
+py.filecmd :: String                                     *frawor-r-py.filecmd*
         `pyfile' or `py3file'. Define command which should be used to execute 
         python script.
-py.run :: String | [ String ][, arg1[, ...]] -> ? + ?          *frawor-py-run*
+py.run :: String | [ String ][, arg1[, ...]] -> ? + ?        *frawor-r-py.run*
         Run python command or list of commands. Use additional arguments to 
         make your internal variables available inside python command.
 
@@ -922,6 +951,13 @@ hl, hls, hhl, hhls
              as `aligns' has to `align'.
 
 ------------------------------------------------------------------------------
+4.4.1. strdisplaywidth resource                     *frawor-r-strdisplaywidth*
+
+Resource `strdisplaywidth' is defined in plugin/frawor/table. It contains 
+either a reference to |strdisplaywidth()| function or emulation of this 
+function for older Vims.
+
+------------------------------------------------------------------------------
 4.5. base64 resource                                         *frawor-r-base64*
 
 Resource `base64' is defined in plugin/frawor/base64. It is used for 
@@ -963,6 +999,21 @@ sign.getdef :: sgid -> sgopts                           *frawor-r-sign.getdef*
         contain keys `text', `texthl', `linehl' and `icon', see 
         |:sign-define|.
 
+------------------------------------------------------------------------------
+4.7. history resource                                       *frawor-r-history*
+
+Resource `history' is defined in plugin/frawor/history. It is used for history 
+list manipulation (see |histadd()| and friends).
+
+history.get :: htype + history -> [ String ]            *frawor-r-history.get*
+        Returns list of history lines for given history type (see 
+        |hist-names|).
+history.clear :: htype -> _ + history                 *frawor-r-history.clear*
+        Clears given history (see |hist-names|).
+history.set :: htype, histlines -> _ + history          *frawor-r-history.set*
+        Clears given history (see |hist-names|) and populates it with a list 
+        of lines.
+
 ==============================================================================
 5. Options                                                    *frawor-options*
                                                              *g:fraworOptions*
@@ -977,7 +1028,7 @@ All frawor options are defined into various modules.
 These options are defined in plugin/frawor/mappings. Unlike other frawor 
 options the following options should be prefixed with `frawormap' string, not 
 with `frawor'. Exact values of {mgid} and {mapname} are determined by plugin 
-that defined a mapping group (see |frawor-f-addmapgroup|), frawor itself does 
+that defined a mapping group (see |frawor-f-mapgroup.add|), frawor itself does 
 not define any mappings.
 
                                          *b:frawormap_mgid* *g:frawormap_mgid*
@@ -1139,7 +1190,8 @@ altervars :: [({varname}[, {value}])]                     *frawor-t-altervars*
         but no |deepcopy()| is performed, so you may alter variable {value}s 
         if they are |Lists| or |Dictionaries|.
 
-        List of special savers/setters defined by plugin/frawor/functions:
+        List of special savers/setters. They are defined by 
+        plugin/frawor/decorators/altervars unless listed otherwise:
                                                            *frawor-av-special*
         Name       Description ~
         variables  Saves and restores whole variables dictionary (by default, 
@@ -1148,12 +1200,16 @@ altervars :: [({varname}[, {value}])]                     *frawor-t-altervars*
                    tabpage or window-local variables).
         buffer     Saves and restores current buffer number.
         window     Saves and restores current tab page and window.
+        folds      Saves and restores folds state.
         winview    Saves and restores window view (using |winsaveview()| and 
                    |winrestview()|).
         matches    Saves and restores matches (using |getmatches()| and 
                    |setmatches()|).
         qflist     Saves and restores quickfix list (using |getqflist()| and 
                    |setqflist()|).
+        history    Saves and restores history. Defined by 
+                   plugin/frawor/history. Requires additional argument: 
+                   history type (see |hist-names|).
 
 mapping :: {}                                               *frawor-t-mapping*
         Dictionary which contains the following keys (at least rhs key is 
@@ -1187,6 +1243,9 @@ mapping :: {}                                               *frawor-t-mapping*
                               precise results).
                       %mgid   Mapping group id.
                       %mname  Mapping name.
+
+                      You can use dictionary instead of the function reference 
+                      for the `func' key.
                    3. Function reference: like 2. with `func' set to rhs and 
                       `args' set to [].
                    3. Dictionary: requires presence of plugin/frawor/functions 
@@ -1197,8 +1256,6 @@ mapping :: {}                                               *frawor-t-mapping*
                       just as in the previous clause, though instead of taking 
                       list of arguments from the `rhs' key, it will be taken 
                       from the `args' key.
-                      Note that this is the only way to load non-oneload 
-                      plugin before invoking a mapping.
                                                             *frawor-mk-silent*
         silent     Bool, determines whether mapping will be silent (see 
                    |map-<silent>|). Default value: 0.
@@ -1264,6 +1321,11 @@ mapping :: {}                                               *frawor-t-mapping*
                    {addarg} is the additional argument to itself that will be 
                    used on next iteration (ignored if it is equal to zero).
 
+                   You can use dictionary instead of a function reference. In 
+                   this case plugin will be loaded before strfunc will be 
+                   wrapped and called (only if `rhs' is a List or 
+                   Dictionary).
+
                    Note: `passing some keys back' means using |feedkeys()| for 
                    mappings where |frawor-mk-rhs| is a String and 
                    |frawor-mk-expr| is 0 and appending result to {rhs} in 
@@ -1310,6 +1372,9 @@ mapping :: {}                                               *frawor-t-mapping*
 *s:_pluginloaded*  plugin/frawor    Integer. Is set to 0 after plugin is 
                                   registered and then to 1 after plugin is 
                                   loaded.
+*s:_loading*       plugin/frawor    Integer. Is set to 1 when frawor started 
+                                  to load non-oneload plugin and unset after 
+                                  plugin was loaded.
 *s:_frawor*        plugin/frawor    Dictionary. Is set by |FraworRegister()|.
 *s:_messages*      plugin/frawor    Dictionary that contains strings as 
                                   values. Required for |frawor-f-warn| and 
@@ -1341,5 +1406,33 @@ mapping :: {}                                               *frawor-t-mapping*
                                   |frawor-f-addresource|.
 ==============================================================================
 8. Changelog                                                *frawor-changelog*
+Only API changes are listed here. See commit log in order to get other 
+changes.
+
+@frawor:
+    0.1: Added |frawor-f-require| and |frawor-fk-depadd|
+    0.2: Added |s:_loading| variable
+@/mappings:
+    0.1: Added possibility to specify dictionaries in `strfunc' and `func' 
+         keys.
+@/table:
+    0.1: Posted |frawor-r-strdisplaywidth|
+@/fwc:
+    0.1: (intfuncs-0.1) Added |FWC-c-idof|
+    0.2: (intfuncs-0.2) Made |FWC-f-path| filter expand argument
+    0.3: (intfuncs-0.3) Added -onlystrings support for |FWC-c-range|
+    0.4: (intfuncs-0.4) Made |FWC-f-isfunc| transform argument to a function 
+                        reference
+@/fwc/constructor:
+    0.1: Added more functions
+    1.0: Renamed some functions so that they now have “_” at the start of 
+         their names
+@/os:
+    0.1: Added |frawor-r-os.path.relpath|
+         Made |frawor-r-os.path.normpath| also simplify its argument
+    0.2: Added |frawor-r-os.readsystem|, made |frawor-r-os.run| also accept 
+         plain strings as the first argument
+@/decorators/altervars:
+    0.1: Added folds |frawor-av-special|
 
 vim: ft=help:tw=78

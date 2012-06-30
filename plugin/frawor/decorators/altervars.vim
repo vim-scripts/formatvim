@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/decorators': '0.0',
+execute frawor#Setup('0.1', {'@/decorators': '0.0',
             \                    '@/checks': '0.0',
             \      '@/decorators/altervars': '0.0'}, 1)
 "▶1 Define messages
@@ -441,6 +441,33 @@ call s:_f.addaltspecial('window', s:F.saver.window, s:F.setter.window)
 "▶2 winview
 call s:_f.addaltspecial('winview', function('winsaveview'),
             \                      function('winrestview'))
+"▶2 folds
+function s:F.saver.folds()
+    let r=[]
+    for line in range(1, line('$'))
+        if foldclosed(line)!=-1
+            execute line.'foldopen'
+            call insert(r, line)
+        endif
+    endfor
+    return r
+endfunction
+function s:F.setter.folds(flist)
+    if type(a:flist)==type([]) &&
+                \empty(filter(copy(a:flist), 'type(v:val)!='.type(0)))
+        try
+            normal! zR
+            for line in a:flist
+                execute line.'foldclose'
+            endfor
+        catch
+            echohl ErrorMsg
+            echomsg v:exception
+            echohl None
+        endtry
+    endif
+endfunction
+call s:_f.addaltspecial('folds', s:F.saver.folds, s:F.setter.folds)
 "▶2 buffer
 function s:F.saver.buffer()
     return bufnr('%')

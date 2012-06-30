@@ -28,6 +28,7 @@ let s:keylist=['begin', 'sbsdstart', 'sbsdsep', 'foldstart', 'linestart',
             \  'clend', 'lineend', 'foldend', 'sbsdend', 'end',
             \  'style']
 "▶1 Options
+let s:checkreg='(#nomagicchg not match /\\[vVmM]/ #^ |=("\\V".@.@) isreg)'
 let s:_options={
             \   'DefaultFormat': {'default': 'html',
             \                     'checker': 'key s:formats',},
@@ -45,6 +46,8 @@ let s:_options={
             \      'FoldColumn': {'default': -1, 'checker': 'range -1 inf'},
             \      'MaxDupTags': {'default':  5, 'checker': 'range  0 inf'},
             \ 'FormatConcealed': {'default':  1, 'checker': 'range  0  2' },
+            \     'StartTagReg': {'default':  0, 'checker': s:checkreg    },
+            \       'EndTagReg': {'default':  0, 'checker': s:checkreg    },
             \       'ColorFile': {'default':  0,
             \                      'scopes': 'g',
             \                     'checker': 'either (is=(0) path)'},
@@ -60,6 +63,7 @@ let s:_messages={
             \              'see format-opt-ColorFile',
             \    'exists': 'Format already exists',
             \   'upcspec': 'Undefined %%. sequence: %%%s',
+            \'nomagicchg': 'Changing magic state is not allowed',
         \}
 "▶1 *strlen
 let s:F.stuf={}
@@ -74,7 +78,6 @@ endif
 "▶2 stuf.htmlstrlen
 function s:F.stuf.htmlstrlen(str)
     let str=a:str
-    let str=substitute(str, '\m\_\s\+', ' ', 'g')
     let str=substitute(str, '\m<.\{-}>', '', 'g')
     let str=substitute(str, '\m&[^;]\+;\|.', '.', 'g')
     return len(str)
@@ -449,12 +452,10 @@ endfunction
 let s:escapehtml="substitute(".
             \     "substitute(".
             \      "substitute(".
-            \       "substitute(".
-            \        "substitute(@@@, '\\V&', '&#38;', 'g'), ".
+            \        "substitute(@@@, '\\V&', '\\&amp;', 'g'), ".
             \       "'\"', '\\&#34;', 'g'), ".
-            \      "'<', '\\&#60;', 'g'), ".
-            \     "'>', '\\&#62;', 'g'), ".
-            \    "' ', '\\&nbsp;', 'g')"
+            \      "'<', '\\&lt;', 'g'), ".
+            \     "'>', '\\&gt;', 'g')"
 let s:htmlstylestr='((@inverse@)?'.
             \             '("color: ".'.
             \              '((@bgcolor@!=#"")?'.
@@ -476,7 +477,7 @@ let s:htmlstylestr='((@inverse@)?'.
             \             '("font-style: italic; "):'.
             \             '("")).'.
             \           '((@underline@)?'.
-            \             '("text-decoration: underline; "):'.
+        \             '("text-decoration: underline; "):'.
             \             '(""))'
 let s:stylelist=['Line', 'Fold', 'DiffFiller', 'CollapsedFiller']
 let s:formats.html={
@@ -502,7 +503,8 @@ let s:formats.html={
             \                    'text-indent: 0; } '.
             \                'div { margin: 0; padding: 0; border: 0; '.
             \                      'color: %''@_fgcolor@''%; '.
-            \                      'background-color: %''@_bgcolor@''% } '.
+            \                      'background-color: %''@_bgcolor@''% '.
+            \                      'white-space: pre; } '.
             \                '.open-fold   > .fulltext { display: block; }'.
             \                '.closed-fold > .fulltext { display: none;  }'.
             \                '.open-fold   > .toggle-open   {display: none; }'.
@@ -753,13 +755,12 @@ let s:formats['latex-xcolor']={
             \                '\usepackage[HTML]{xcolor}'.
             \                '\pagecolor[HTML]{%''toupper(@_bgcolor@[1:])''%}'.
             \                '\color[HTML]{%''toupper(@_fgcolor@[1:])''%}'.
-            \                '\begin{document}\ttfamily',
-            \'linestart':    '\noindent ',
+            \                '\begin{document}{\ttfamily\noindent',
             \'line':         '%>'.s:texstylestart.".".
             \                     s:texescape.".".
             \                     s:texstyleend,
-            \'lineend':      '\par',
-            \'end':          '\end{document}',
+            \'lineend':      '\\',
+            \'end':          '}\end{document}',
             \'strescape':    s:texescape,
         \}
 unlet s:texstylestart s:texstyleend s:texescape
@@ -857,7 +858,7 @@ function s:F.redrawprogress()
                 \(s:progress.progress).'%%'
 endfunction
 "▶1 formattags
-function s:F.formattags(ignoretags)
+function s:F.formattags(ignoretags, starttagreg, endtagreg)
     "▶2 Объявление переменных
     if a:ignoretags==2
         return []
@@ -868,6 +869,7 @@ function s:F.formattags(ignoretags)
     let fcontents={}        " Кэш содержимого файлов
     " Список символов, которых надо дополнительно экранировать
     let addescapes=s:_f.getoption('AddTagCmdEscapes')
+    let ignoredtags={}
     "▶2 Обработка тёгов (основной цикл)
     for tag in tags
         "▶3 Объявление переменных
@@ -876,6 +878,12 @@ function s:F.formattags(ignoretags)
         " Перепенная, определяющая, не совпадает ли файл с тёгом с данным
         let incurf=(tfname==#fname)
         if a:ignoretags && !incurf
+            continue
+        elseif has_key(ignoredtags, tag.name)
+            continue
+        elseif !search('\V\k\@<!'.a:starttagreg.escape(tag.name, '\').
+                    \  a:endtagreg.'\k\@!', 'nwc')
+            let ignoredtags[tag.name]=1
             continue
         endif
         if !has_key(r, tag.name)
@@ -1032,6 +1040,18 @@ function s:cf.hasreq(key, reqs)
         endif
     endfor
     return 0
+endfunction
+"▶1 gettagreg
+function s:F.gettagreg(options, st)
+    let tagreg=((a:options[a:st.'tagreg'] is 0)?
+                \       (s:_f.getoption(toupper(a:st[0]).a:st[1:].'TagReg')):
+                \       (a:options[a:st.'tagreg']))
+    if tagreg is 0
+        let tagreg=''
+    else
+        let tagreg='\%('.tagreg.'\)'
+    endif
+    return tagreg
 endfunction
 "▶1 format
 "▶2 Some globals
@@ -1515,9 +1535,29 @@ let formatfunction=['function d.compiledformat()']
         endif
     endif
     if ignoretags!=2
-        let opts.tags=s:F.formattags(ignoretags)
-        let tagregex=join(map(reverse(sort(keys(opts.tags))),
-                    \         '"\\V".escape(v:val, "\\")."\\v"'), '|')
+        let starttagreg=s:F.gettagreg(a:options, 'start')
+        let endtagreg=s:F.gettagreg(a:options, 'end')
+        let opts.tags=s:F.formattags(ignoretags, starttagreg, endtagreg)
+        if empty(opts.tags)
+            let tagregex=''
+        else
+            let tagregex='\V'
+            if !empty(starttagreg)
+                let tagregex.=starttagreg
+            endif
+            if !(empty(starttagreg) && empty(endtagreg))
+                let tagregex.='\%('
+            endif
+            let tagregex.=join(map(reverse(sort(keys(opts.tags))),
+                        \          'escape(v:val, "\\")'), '\|')
+            if !(empty(starttagreg) && empty(endtagreg))
+                let tagregex.='\)'
+            endif
+            if !empty(endtagreg)
+                let tagregex.=endtagreg
+            endif
+            let tagregex.='\v'
+        endif
     else
         let opts.tags={}
         let tagregex=''
@@ -2846,6 +2886,8 @@ let s:_augroups+=['FormatPurgeColorCaches']
 let s:filcomprefs=
             \              '           columns :=(-1)  |earg range -1 inf '.
             \              '?               to         path W '.
+            \              '?      starttagreg :=(0)   '.s:checkreg.
+            \              '?        endtagreg :=(0)   '.s:checkreg.
             \              '!           number :=(-1) '.
             \              '!   relativenumber :=(-1) '.
             \              '!             list :=(-1) '.
@@ -2894,6 +2936,8 @@ endfunction
 let s:cmpcomprefs=                      'columns  in ["-1" "80" =string(&co) '.
             \                                        '=string(winwidth())] '.
             \                '?               to  path W '.
+            \                '?      starttagreg _ '.
+            \                '?        endtagreg _ '.
             \                '!           number '.
             \                '!   relativenumber '.
             \                '!             list '.

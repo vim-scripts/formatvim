@@ -35,7 +35,7 @@ function s:F.addluadir(plugdict, fdict)
         let pathstr=';'.s:_r.os.path.join(dir, '?.lua').';'.
                     \   s:_r.os.path.join(dir, '?', 'init.lua')
         if has_key(s:addedpaths, dir)
-            let s:addedpaths+=1
+            let s:addedpaths[dir]+=1
         else
             let s:addedpaths[dir]=1
             lua package.path=package.path..vim.eval('pathstr')

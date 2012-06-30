@@ -127,14 +127,11 @@ function s:F.delcommands(plugdict, fdict)
                 \type(a:plugdict.g._commands)!=type([])
         return
     endif
-    let d={}
-    while !empty(a:plugdict.g._commands)
-        let d.cmdname=remove(a:plugdict.g._commands, 0)
-        if type(d.cmdname)==type('') && d.cmdname=~#'^\u' &&
-                    \exists(':'.d.cmdname)==2
-            execute 'delcommand' d.cmdname
-        endif
-    endwhile
+    for cmd in filter(copy(a:plugdict.g._commands),
+                \     'type(v:val)=='.type('').' && v:val=~#"\\v^\\u\\w+$" && '.
+                \     'exists(":".v:val)')
+        execute 'delcommand' cmd
+    endfor
 endfunction
 call s:_f.newfeature('delcommands', {'unloadpre': s:F.delcommands,
             \                         'register': s:F.add_commands,

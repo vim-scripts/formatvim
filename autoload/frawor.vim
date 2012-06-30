@@ -51,7 +51,7 @@ endfunction
 let s:_functions+=['frawor#Reload']
 "▶1 frawor#Lockvar    :: p:, varnamelist → + :lockvar
 function frawor#Lockvar(s, nolock)
-    let nolock=split(a:nolock, ',')
+    let nolock=split(a:nolock, ',')+['_pluginloaded', '_loading']
     for varname in filter(keys(a:s), 'index(nolock, v:val)==-1')
         lockvar! a:s[varname]
     endfor

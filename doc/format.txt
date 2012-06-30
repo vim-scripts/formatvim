@@ -60,6 +60,10 @@ Plugin requires frawor plugin.
             list           Bool (`list' or `nolist').
                            Overrides |format-o-IgnoreList|.
                            Does the opposite to IgnoreList option.
+            starttagreg    Regex (in very nomagic mode: |/\V|).
+                           Overrides |format-o-StartTagReg|.
+            endtagreg      Regex (in very nomagic mode: |/\V|).
+                           Overrides |format-o-EndTagReg|.
             tags           False (`notags'), `local' or `all'.
                            Overrides |format-o-IgnoreTags|.
             foldcolumn     `nofoldcolumn', unsigned integer or -1.
@@ -150,6 +154,15 @@ IgnoreList :: Bool                                       *format-o-IgnoreList*
 IgnoreSigns :: Bool                                     *format-o-IgnoreSigns*
         If IgnoreSigns is true, then placed signs are ignored (see |:sign|). 
         Default: 0.
+
+StartTagReg :: Regex                                    *format-o-StartTagReg*
+        Defines regular expression that must match before the start of the tag 
+        text. Regex must be in very nomagic mode (|/\V|) and it is highly 
+        recommended that you use only zero-width atoms here (|/zero-width|).
+
+EndTagReg :: Regex                                        *format-o-EndTagReg*
+        Like |format-o-StartTagReg|, but defines regex that must be matched 
+        after end of the tag text.
 
 IgnoreTags :: 0 | 1 | 2                                  *format-o-IgnoreTags*
         Defines whether tags are ignored, see |taglist()|
@@ -775,14 +788,12 @@ latex-xcolor                                      *format-format-latex-xcolor*
         Experimental support for dumping to LaTeX format. Uses xcolor and 
         ttfamily fonts.
 tokens                                                  *format-format-tokens*
-        Format useful only if you require to process elements in a known 
-        order. If you want to use it, start your script with something like 
-        that: >
-            let f=load#LoadFuncdict('format')
-            let tokenlist=map(f.format('tokens'), 'eval(v:val)')
-            for token in tokenlist
-                " do something
-            endfor
+        Format useful only if you want to export color information in order to 
+        process it outside of vim: >
+            Format format tokens to tokens.dat
+
+            " Somewhere outside there should be a similar construct
+            let tokenlist=map(readfile('tokens.dat', 'b'), 'eval(v:val)')
 <       Variable `tokenlist' in the above example will contain a list of lists 
         where each list has the following structure: >
             [{type}, {data1}, ..., {dataN}]

@@ -1,0 +1,13 @@
+Add %?{condition}{if-true}{if-false} format key evaluated at compile time
+Split main formatting function
+Add per-launch cache for formats
+cursorcolumn and cursor support
+? Replace nested substitutes with \=
+Add new tests, disable some present ones
+Add support for highlight option
+Add support for numberwidth option
+Add spelling support
+Add :Format help (or tagstartregex + tagendregex options?)
+Add support for CursorLineNr (added in 7.3.479)
+Fix handling of `~' tag
+Fix :Format diffformat

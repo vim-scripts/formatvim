@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/resources': '0.0'}, 1)
+execute frawor#Setup('0.2', {'@/resources': '0.0'}, 1)
 "▶1 os resource
 let s:os={}
 "▶2 os.fullname
@@ -42,13 +42,44 @@ endif
 let s:os.path={}
 "▶3 os.path.abspath   :: path + FS → path
 function s:os.path.abspath(path)
-    let path=fnamemodify(a:path, ':p')
-    " Purge trailing path separator
-    return ((isdirectory(path) && len(path)>1)?(path[:-2]):(path))
+    let components=s:os.path.split(fnamemodify(a:path, ':p'))
+    if empty(components[-1])
+        call remove(components, -1)
+    endif
+    if components[0] is# '.'
+        let components[:0]=[fnamemodify('.', ':p')]
+        if len(components[0])>1
+            let components[0]=components[0][:-2]
+        endif
+    endif
+    return s:os.path.join(components)
 endfunction
 "▶3 os.path.realpath  :: path + FS → path
 function s:os.path.realpath(path)
     return resolve(s:os.path.abspath(a:path))
+endfunction
+"▶3 os.path.relpath   :: path[, curdir] → path
+function s:os.path.relpath(path, ...)
+    let components=s:os.path.split(s:os.path.normpath(
+                \                                    s:os.path.abspath(a:path)))
+    let tcomponents=s:os.path.split(s:os.path.normpath(
+                \                         s:os.path.abspath((a:0)?(a:1):('.'))))
+    call map([components, tcomponents], 'empty(v:val[-1])?remove(v:val, -1):0')
+    if components[0] isnot# tcomponents[0]
+        " This is valid for windows: you can't construct a relative path if 
+        " directory to which path should be relative is on another drive
+        return 0
+    endif
+    let l=min([len(components), len(tcomponents)])
+    let i=1
+    while i<l && components[i] is# tcomponents[i]
+        let i+=1
+    endwhile
+    let r=s:os.path.join(repeat(['..'], len(tcomponents)-i)+components[(i):])
+    if empty(r)
+        let r='.'
+    endif
+    return r
 endfunction
 "▶3 os.path.basename  :: path → component
 function s:os.path.basename(path)
@@ -70,7 +101,7 @@ function s:os.path.join(...)
     let components=copy((a:0 && type(a:1)==type([]))?
                 \           (a:1):
                 \           (a:000))
-    call filter(components, 'type(v:val)=='.type(""))
+    call filter(components, 'type(v:val)=='.type(''))
     return substitute(join(components, s:os.sep), s:eps.'\+',
                 \     escape(s:os.sep, '\&~'), 'g')
 endfunction
@@ -79,7 +110,7 @@ endfunction
 function s:os.path.split(path)
     let r=[]
     let path=a:path
-    let oldpath=''
+    let oldpath=0
     while oldpath isnot# path
         call insert(r, s:os.path.basename(path))
         let oldpath=path
@@ -92,7 +123,7 @@ function s:os.path.split(path)
 endfunction
 "▶3 os.path.normpath  :: path → path
 function s:os.path.normpath(path)
-    return s:os.path.join(s:os.path.split(a:path))
+    return simplify(s:os.path.join(s:os.path.split(a:path)))
 endfunction
 "▶3 os.path.samefile  :: path, path + FS → Bool
 function s:os.path.samefile(path1, path2)
@@ -100,9 +131,20 @@ function s:os.path.samefile(path1, path2)
                 \s:os.path.normpath(s:os.path.realpath(a:path2)))
 endfunction
 "▶3 os.path.exists    :: path + FS → Bool
-function s:os.path.exists(path)
-    return !empty(glob(fnameescape(a:path)))
-endfunction
+if s:os.name is# 'nt'
+    function s:os.path.exists(path)
+        " Path cannot contain these symbols, but glob('\*') will list files
+        " Same for «"<>|», but those are not special to glob()
+        if a:path=~#'[*?]'
+            return 0
+        endif
+        return !empty(glob(fnameescape(a:path), 1))
+    endfunction
+else
+    function s:os.path.exists(path)
+        return !empty(glob(fnameescape(a:path), 1))
+    endfunction
+endif
 "▶3 os.path.isdir     :: path + FS → Bool
 function s:os.path.isdir(path)
     return isdirectory(s:os.path.abspath(a:path))
@@ -125,7 +167,7 @@ endfunction
 "▶3 s:F.globdir
 function s:F.globdir(directory, ...)
     let r=split(glob(fnameescape(a:directory.s:os.sep).
-               \     get(a:000, 0, '*')),
+               \     get(a:000, 0, '*'), 1),
                \"\n", 1)
     return ((len(r)==1 && empty(r[0]))?([]):(r))
 endfunction
@@ -168,7 +210,10 @@ endfunction
 function s:os.chdir(path, ...)
     if s:os.path.isdir(a:path)
         try
-            execute ((a:0 && a:1)?('lcd'):('cd')) fnameescape(a:path)
+            " Normpath is needed because paths like `directory/' (without 
+            " preceding `/', `.' or `..') are subject to searching in &cdpath
+            execute ((a:0 && a:1)?('lcd'):('cd'))
+                        \ fnameescape(s:os.path.normpath(a:path))
             return 1
         catch
             return 0
@@ -176,54 +221,83 @@ function s:os.chdir(path, ...)
     endif
     return 0
 endfunction
-"▶2 os.run            :: command[, cwd::path] → String + sh
+"▶2 run               :: command[, path] → shell_error + sh
 let s:opts={
             \ 'eventignore': 'all',
             \   'autowrite':   0,
             \'autowriteall':   0,
             \  'lazyredraw':   1,
         \}
-function s:os.run(command, ...)
-    let hasnewlines=!empty(filter(copy(a:command), 'stridx(v:val, "\n")>0'))
+function s:F.run(cmd, ...)
+    try
+        if a:0
+            let savedopts={}
+            for [opt, val] in items(s:opts)
+                let savedopts[opt]=eval('&g:'.opt)
+                execute 'let &g:'.opt.'=val'
+            endfor
+            new
+            if !s:os.chdir(a:1, 1)
+                return -1
+            endif
+        endif
+        execute 'silent! !'.a:cmd
+        return v:shell_error
+    finally
+        if exists('savedopts')
+            for [opt, val] in items(savedopts)
+                execute 'let &g:'.opt.'=val'
+            endfor
+            bwipeout!
+            redraw!
+        endif
+    endtry
+endfunction
+"▶2 getcmd            :: command → cmd
+function s:F.getcmd(command)
+    if type(a:command)==type('')
+        return a:command
+    endif
     if s:os.name is# 'nt'
         let cmd=escape(a:command[0], '\ %')
         if len(a:command)>1
             let cmd.=' '.join(map(a:command[1:],
                         \'((v:val=~#"^[[:alnum:]/\\-]\\+$")?'.
                         \   '(v:val):'.
-                        \   '(shellescape(v:val, hasnewlines)))'))
+                        \   '(shellescape(v:val, 1)))'))
         endif
     else
-        let cmd=join(map(copy(a:command), 'shellescape(v:val, hasnewlines)'))
+        let cmd=join(map(copy(a:command), 'shellescape(v:val, 1)'))
+    endif
+    return cmd
+endfunction
+"▶2 os.run            :: command[, cwd::path] → shell_error + sh
+function s:os.run(command, ...)
+    return call(s:F.run, [s:F.getcmd(a:command)]+a:000, {})
+endfunction
+"▶2 os.readsystem :: command[, path] → [String] + sh
+function s:os.readsystem(command, ...)
+    let tempfile=tempname()
+    let cmd=s:F.getcmd(a:command)
+    let etempfile=shellescape(tempfile, stridx(cmd, "\n")!=-1)
+    if stridx(&shellredir, '%s')!=-1
+        let cmd.=printf(&shellredir, etempfile)
+    else
+        let cmd.=&shellredir.etempfile
     endif
     try
-        if a:0
-            let savedopts={}
-            for [opt, val] in items(s:opts)
-                let savedopts[opt]=eval('&g:'.opt)
-                execute 'let &g:'.opt.'='.val
-            endfor
-            new
-            if !s:os.chdir(a:1, 1)
-                bwipeout
-                return -1
-            endif
+        call call(s:F.run, [cmd]+a:000, {})
+        if !filereadable(tempfile)
+            return 0
         endif
-        if hasnewlines
-            execute 'silent! !'.cmd
-        else
-            call system(cmd)
-        endif
-        redraw!
-        return v:shell_error
+        return readfile(tempfile, 'b')
     finally
-        if exists('savedopts')
-            for [opt, val] in items(savedopts)
-                execute 'let &g:'.opt.'='.val
-            endfor
+        if filereadable(tempfile)
+            call delete(tempfile)
         endif
     endtry
 endfunction
+"▶2 os.readrun
 "▶2 mkdir, makedirs
 if exists('*mkdir')
     "▶3 os.makedirs       :: path[, mode] → Bool + FS

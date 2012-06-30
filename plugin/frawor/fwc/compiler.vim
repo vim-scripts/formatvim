@@ -1,7 +1,7 @@
 "▶1 Header
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@/fwc/parser'       : '0.0',
-            \                '@/fwc/constructor'  : '0.0',
+            \                '@/fwc/constructor'  : '1.0',
             \                '@/fwc/intfuncs'     : '0.0',
             \                '@/fwc/topconstructs': '0.0',
             \                '@/resources'        : '0.0'}, 1)
@@ -49,6 +49,14 @@ call extend(s:_messages, map({
             \   'ninlist': 'argument is not in list',
             \ 'invlstlen': 'invalid list length: expected %u, but got %u',
             \'eitherfail': 'all alternatives failed',
+            \      'nohl': 'unknown highlight group: %s',
+            \     'nocmd': 'no such command: %s',
+            \    'nofunc': 'no such function: %s',
+            \     'noopt': 'no such option: %s',
+            \   'noevent': 'event %s is not supported',
+            \     'noaug': 'autocmd group %s is not defined',
+            \    'nosign': 'unknown sign: %s',
+            \     'novar': 'no such variable: %s',
             \     'isdir': 'not a directory: %s',
             \    'isfile': 'directories are not accepted: %s',
             \    'nwrite': '%s is not writable',
@@ -62,6 +70,7 @@ call extend(s:_messages, map({
             \     'isnot': 'expected %s, but got %s',
             \       'anf': '`%s'' is not a valid action',
             \       'pnf': '`%s'' is not a valid prefix',
+            \ 'noprefarg': 'missing %u prefix arguments',
             \ 'noreqpref': 'some required prefixes are missing',
         \}, '"Error while processing check %s for %s: ".v:val'))
 let s:_messages._types=['number', 'string', 'function reference', 'list',
@@ -188,7 +197,7 @@ endfunction
 function s:compiler.fail()
     let msgstatus=self.msgs.statuses[-1]
     if msgstatus is# 'return'
-        return self[self.failcal[0]](self.failcal[1]).up()
+        return self[self.failcal[0]](self.failcal[1])._up()
     else
         return self.throw(s:cfstr)
     endif
@@ -397,7 +406,8 @@ function s:compiler.getvar(var, ...)
     elseif a:var[0] is# 'string'
         let r=[self.string(a:var[1])]
     elseif a:var[0] is# 'argument'
-        let r=[self.argbase, [self.subs[0]+a:var[1]]+a:var[2:]]
+        let r=[self.argbase, [s:F.incrementsub(self.subs[0], a:var[1])]+
+                    \        a:var[2:]]
     elseif a:var[0] is# 'cur'
         let r=[self.argbase, self.subs[:-1-a:var[1]]+a:var[2:]]
     elseif a:var[0] is# 'list'
@@ -419,6 +429,17 @@ endfunction
 "▶1 getlvarid       :: varname + self → varname
 function s:compiler.getlvarid(v)
     return printf('@$@%s%X', a:v, len(self.stack))
+endfunction
+"▶1 getulvarid      :: varname + self → varname
+function s:compiler.getulvarid(v)
+    let lvarid=printf('@$@%s%X', a:v, len(self.stack))
+    let i=0
+    while has_key(self.lvars, printf('%s_%X', lvarid, i))
+        let i+=1
+    endwhile
+    let lvarid=printf('%s_%X', lvarid, i)
+    let self.lvars[lvarid]=1
+    return lvarid
 endfunction
 "▶1 getd            :: varname + self → varname + self
 function s:compiler.getd(var)
@@ -446,43 +467,78 @@ function s:compiler.getstring(str)
     endif
     return self.getvar(a:str)
 endfunction
-"▶1 addmatches      :: &self(ldstr, exptype)
-function s:compiler.addmatches(ldstr, exptype)
+"▶1 getmatchstr     :: ldstr, exptype, varname + self → vimlexpr + self
+function s:compiler.getmatchstr(ldstr, exptype, ldtmp)
+    if a:exptype==type([])
+        return 'copy('.a:ldstr.')'
+    elseif a:exptype==type({})
+        return 'sort(keys('.a:ldstr.'))'
+    else
+        call self.let(a:ldtmp, a:ldstr)
+        return '((type('.a:ldtmp.')=='.type([]).')?'.
+                    \'('.a:ldtmp.'):'.
+                    \'(sort(keys('.a:ldtmp.'))))'
+    endif
+endfunction
+"▶1 setmatches      :: &self(ldstr, exptype, filter)
+function s:compiler.setmatches(ldstr, exptype, filter)
     if self.joinlists
-        call add(self.ldstrs, [a:ldstr, a:exptype])
+        call add(self.ldstrs, [a:ldstr, a:exptype, a:filter])
         return self
     else
-        return self.increment('@-@', self.getmatcher(self.matcher, a:ldstr,
-                    \                                self.comparg, 1))
+        let vstr=self.vstrs[-1]
+        call add(self.vstinf[vstr], ['let', a:ldstr])
+        call filter(self.l, '!(v:val[0] is# "let" && v:val[1] is# vstr)')
+        if a:filter
+            return self.let(vstr, self.getmatcher(self.matcher, a:ldstr,
+                        \                         self.comparg, 1))
+        else
+            return self.let(vstr, self.getmatchstr(a:ldstr, a:exptype,
+                        \                          self.getlvarid('curld')))
+        endif
     endif
+endfunction
+"▶1 newvstr         :: idx + self → varname + self
+function s:compiler.newvstr(idx)
+    let vstr=self.getulvarid('matches_'.matchstr(a:idx, '\v\w+$'))
+    call add(self.vstrs, vstr)
+    call self.let(vstr, '[]')
+    let self.vstinf[vstr]=[]
+    return vstr
+endfunction
+"▶1 popvstr         :: &self
+function s:compiler.popvstr()
+    let vstr=self.vstrs[-1]
+    call remove(self.vstrs, -1)
+    if !empty(self.vstinf[vstr])
+        call self.increment(self.vstrs[-1], vstr)
+        call add(self.vstinf[self.vstrs[-1]], ['inc', vstr])
+    endif
+    unlet self.vstinf[vstr]
+    return self
 endfunction
 "▶1 addjoinedmtchs  :: &self
 function s:compiler.addjoinedmtchs()
-    if !self.joinlists
-        let lststrs=[]
+    if !self.joinlists && !empty(self.ldstrs)
         let curldbase=self.getlvarid('curld').'_'
-        let ambstrs=[]
-        let i=0
-        for [ldstr, exptype] in remove(self.ldstrs, 0, -1)
-            if exptype==type([])
-                call add(lststrs, ldstr)
-            elseif exptype==type({})
-                call add(lststrs, 'sort(keys('.ldstr.'))')
-            else
-                let curldstr=curldbase.i
-                call add(ambstrs, curldstr)
-                call self.let(curldstr, ldstr)
-                call add(lststrs, '((type('.curldstr.')=='.type([]).')?'.
-                            \           '('.curldstr.'):'.
-                            \           '(sort(keys('.curldstr.'))))')
-            endif
-            let i+=1
-        endfor
-        call self.addmatches(join(lststrs, '+'), type([]))
-        if !empty(ambstrs)
-            call self.unlet(ambstrs)
-        endif
+        let lststrs=map(remove(self.ldstrs, 0, -1),
+                    \   'self.getmatchstr(v:val[0], v:val[1], curldbase.v:key)')
+        call self.setmatches(join(lststrs, '+'), type([]), 1)
     endif
+    return self
+endfunction
+"▶1 joinmatches     :: &self(idx, varname)
+function s:compiler.joinmatches(jstart, matchesstr)
+    if len(self.ldstrs)<=a:jstart
+        return self
+    endif
+    let curldbase=self.getlvarid('curld').'_'
+    call self.let(a:matchesstr,
+                \ join(map(remove(self.ldstrs, a:jstart, -1),
+                \          'self.getmatchstr(v:val[0], v:val[1], '.
+                \                           'curldbase.v:key)'),
+                \      '+'))
+    call add(self.ldstrs, [a:matchesstr, type([])])
     return self
 endfunction
 "▶1 addthrow        :: &self(msg::String, msgarg, needcurarg, ...)
@@ -503,13 +559,13 @@ function s:compiler.addthrow(msg, needcurarg, ...)
             call self.call('@%@.p._f.warn('.pargs.')')
         endif
         call self.call('@%@.F.warn('.args.')')
+    elseif msgstatus is# 'throwignore' || self.type is# 'complete'
+        " Ignore and fail
     elseif msgstatus is# 'throw'
         if exists('pargs')
             call self.call('add(@$@pmessages, ['.pargs.'])')
         endif
         call self.call('add(@$@messages, ['.args.'])')
-    elseif msgstatus is# 'throwignore'
-        " Ignore and fail
     endif
     return self.fail()
 endfunction
@@ -519,7 +575,7 @@ function s:compiler.nextthrow(cond, ...)
 endfunction
 "▶1 addsavemsgs     :: &self
 function s:compiler.addsavemsgs()
-    if self.msgs.statuses is# ['return']
+    if self.msgs.statuses[-1] is# 'return' || self.type is# 'complete'
         call add(self.msgs.savevars, [0, 0])
         return self
     else
@@ -536,9 +592,12 @@ function s:compiler.addrestmsgs(...)
     if !a:0
         call remove(self.msgs.savevars, -1)
     endif
+    if self.type is# 'complete'
+        return self
+    endif
     return   self.if('len(@$@messages)>'.msglenstr)
                     \.call('remove(@$@messages, '.msglenstr.', -1)')
-                \.up().if('len(@$@pmessages)>'.pmsglenstr)
+                \._up().if('len(@$@pmessages)>'.pmsglenstr)
                     \.call('remove(@$@pmessages, '.pmsglenstr.', -1)')
                 \.endif()
 endfunction
@@ -573,15 +632,15 @@ function s:compiler.addlencheck(minimum, maximum)
     let maximum=self.getsub(s:F.incrementsub(self.subs[-1], a:maximum))
     if a:maximum==a:minimum
         call self.addif(largsstr.' isnot '.maximum)
-                    \.addthrow('invlen', 0, minimum, largsstr)
+        call        self.addthrow('invlen', 0, minimum, largsstr)
     else
         if a:minimum>0
             call self.addif(largsstr.'<'.minimum)
-                        \.addthrow('tooshort', 0, minimum, largsstr)
+            call        self.addthrow('tooshort', 0, minimum, largsstr)
         endif
         if a:maximum!=-1
             call self.addif(largsstr.'>'.maximum)
-                        \.addthrow('toolong', 0,  maximum, largsstr)
+            call        self.addthrow('toolong', 0,  maximum, largsstr)
         endif
     endif
     return self
@@ -602,15 +661,15 @@ function s:compiler.optgetconds()
                 \&& len(self.l[0])>2
                 \&& self.l[0][0] is# 'if'
                 \&& ((self.l[0][-1] is# 'endif'
-                \  && self.l[0][-3] isnot 'else')
-                \ || (self.l[0][-2] isnot 'else'))
+                \  && self.l[0][-3] isnot# 'else')
+                \ || (self.l[0][-2] isnot# 'else'))
         let conditions=[]
         let iftree=copy(self.l[0])
         while !empty(iftree)
             let type=remove(iftree, 0)
             if type is# 'if' || type is# 'elseif'
                 let [condition, block]=remove(iftree, 0, 1)
-                if block isnot# [['throw', s:cfstr]]
+                if block!=#[['throw', s:cfstr]]
                     return 0
                 endif
                 call add(conditions, condition)
@@ -624,31 +683,34 @@ function s:compiler.optgetconds()
     endif
     return 0
 endfunction
-"▶1 optimizecompf   :: &self
+"▶1 optimizecompf   :: &self(varname)
 " XXX low-level hacks here
-function s:compiler.optimizecompf()
-    call self.down(self.l[2][-1][1])
+function s:compiler.optimizecompf(vstr)
+    call self._down(self.l[2][-1][1])
     let conditions=self.optgetconds()
-    call self.up()
+    call self._up()
     if type(conditions)==type([])
-        call self.down(self.l[2])
+        call self._down(self.l[2])
         let argidxstr=self.l[-1][1][-1][1]
         let removestr=self.l[-1][-1][0][1]
         let condition=join(conditions, ' || ')
-        let chargstr='@-@['.argidxstr.']'
+        let chargstr=a:vstr.'['.argidxstr.']'
         if condition=~#'\v^%([^@]|\V'.chargstr.'\v)+$'
-            call self.up().up()
+            call self._up()
+            call self._up()
             call remove(self.l, -2, -1)
             let condition=substitute(condition, '\V'.chargstr, 'v:val', 'g')
-            call self.call('filter(@-@, '.string('!('.condition.')').')')
+            call self.call('filter('.a:vstr.', '.string('!('.condition.')').')')
         else
             call remove(self.l, -1)
             call self.if(condition)
-                        \.call(removestr)
-                    \.up().addif()
-                        \.increment(argidxstr)
-                    \.up()
-                \.up()
+            call         self.call(removestr)
+            call     self._up()
+            call self.addif()
+            call         self.increment(argidxstr)
+            call     self._up()
+            call self._up()
+            call self._up()
         endif
     endif
     return self
@@ -779,6 +841,7 @@ function s:compiler.compilecomplete(complete, idx, type)
 endfunction
 "▶1 compilearg      :: &self(argcontext, idx, type)
 function s:compiler.compilearg(argcon, idx, type)
+    "▶2 Define variables
     if a:argcon[0] is# 'arg'
         let arg=a:argcon[1:]
     else
@@ -786,13 +849,18 @@ function s:compiler.compilearg(argcon, idx, type)
     endif
     let pmsgnum=len(self.msgs.own)
     let msg=[]
-    let i=0
     let savedonlystrings=self.o.onlystrings
+    "▶3 Variables useful only for completion
     if a:type is# 'complete'
         let addedcompletion=0
         let addedcycle=0
         let argidxstr=self.getlvarid('argidx')
+        " Name of variable containing current matches
+        let vstr=self.newvstr(a:idx)
+        let jstart=len(self.ldstrs)
     endif
+    "▲2
+    let i=0
     for proc in arg
         let i+=1
         let compargs=[proc, a:idx.'.'.i, a:type]
@@ -804,13 +872,21 @@ function s:compiler.compilearg(argcon, idx, type)
             continue
         endif
         if a:type is# 'complete'
-            if addedcompletion && !addedcycle
-                let addedcycle=1
-                call self.let(argidxstr, 0)
-                            \.while(argidxstr.'<len(@-@)')
-                                \.try()
-                                    \.pushms('throwignore')
-                                    \.witharg(['@-@', [[argidxstr]]])
+            if comptype is# 'msg'
+                continue
+            endif
+            if addedcompletion
+                if !addedcycle
+                    let addedcycle=1
+                    if self.joinlists
+                        call self.joinmatches(jstart, vstr)
+                    endif
+                    call self.let(argidxstr, 0)
+                    call        self.while(argidxstr.'<len('.vstr.')')
+                    call            self.try()
+                    call                self.pushms('throwignore')
+                    call                self.witharg([vstr, [[argidxstr]]])
+                endif
             elseif compargs[0][1][0] is# 'intfunc' &&
                         \has_key(s:_r.FWC_intfuncs[compargs[0][1][1]],
                         \        'breakscomp')
@@ -839,107 +915,130 @@ function s:compiler.compilearg(argcon, idx, type)
     if len(self.msgs.own)>pmsgnum
         call remove(self.msgs.own, pmsgnum, -1)
     endif
-    if a:type is# 'complete' && addedcycle
-        call self.without().popms()
-                    \.increment(argidxstr)
-                \.up().catch(s:cfreg)
-                    \.call('remove(@-@, '.argidxstr.')')
-                \.up()
-            \.up().up()
-            \.optimizecompf()
+    if a:type is# 'complete'
+        if addedcycle
+            call self.without()
+            call self.popms()
+            call         self.increment(argidxstr)
+            call     self._up()
+            call self.catch(s:cfreg)
+            call         self.call('remove('.vstr.', '.argidxstr.')')
+            call self._up()
+            call self._up()
+            call self._up()
+            call self.optimizecompf(vstr)
+        endif
+        call self.popvstr()
     endif
     return self
 endfunction
 "▶1 compadescr      :: &self(adescr, idx, type[, purgemax]])
 function s:compiler.compadescr(adescr, idx, type, ...)
     let purgemax=get(a:000, 0, 0)
-    "▶2 Length checks, lagsstr and nextsub variables
-    if !empty(self.subs)
-        let largsstr=self.getlargsstr()
-        if a:type is# 'check' || a:type is# 'pipe'
-            if !has_key(a:adescr, 'minimum')
-                call s:F.getlenrange(a:adescr)
-            endif
-            if !has_key(a:adescr, 'checkedfor')
-                call self.addlencheck(a:adescr.minimum, ((purgemax)?
-                            \                               (-1):
-                            \                               (a:adescr.maximum)))
-                let a:adescr.checkedfor=1
-            endif
-        endif
-        let nextsub=copy(self.subs[-1])
+    if a:type is# 'complete'
+        call self.newvstr(a:idx)
     endif
-    "▶2 `arg' key
-    if has_key(a:adescr, 'arg')
-        let i=0
-        for arg in a:adescr.arg
-            let i+=1
-            if self.o.only
-                let idx=a:idx
-            else
-                let idx=a:idx.'.'.i
-            endif
-            if a:type is# 'complete' && !self.o.only
-                call self.addif(largsstr.'-1 == '.self.getlastsub())
-            endif
-            call self.compilearg(arg, idx, a:type)
-            call self.incsub()
-            if a:type is# 'complete' && !self.o.only
-                call self.up()
-            endif
-            if self.onlyfirst
-                return self
-            endif
-        endfor
+    try
+        "▶2 Length checks, lagsstr and nextsub variables
         if !empty(self.subs)
-            unlet nextsub
+            let largsstr=self.getlargsstr()
+            if a:type is# 'check' || a:type is# 'pipe'
+                if !has_key(a:adescr, 'minimum')
+                    call s:F.getlenrange(a:adescr)
+                endif
+                if !has_key(a:adescr, 'checkedfor')
+                    call self.addlencheck(a:adescr.minimum,
+                                \         ((purgemax)?(-1):(a:adescr.maximum)))
+                    let a:adescr.checkedfor=1
+                endif
+            endif
             let nextsub=copy(self.subs[-1])
         endif
-    endif
-    "▶2 Quit if no more keys are present or if we are checking the only argument
-    if empty(self.subs) || empty(a:adescr)
-                \|| empty(filter(copy(s:_r.FWC_topconstructs._order),
-                \         'has_key(a:adescr, v:val)'))
-        return self
-    endif
-    "▲2
-    let addedsavemsgs=0
-    let caidxstr=self.getlvarid('caidx')
-    let oldsub=self.getsub(nextsub)
-    if oldsub isnot caidxstr
-        call self.let(caidxstr, oldsub)
-    endif
-    let self.subs[-1]=[caidxstr]
-    "▶2 Following keys (optional, prefixes, next, actions)
-    for key in s:_r.FWC_topconstructs._order
-        if has_key(a:adescr, key)
-            if self.o.only && !get(s:_r.FWC_topconstructs[key], 'allowonly', 0)
-                call s:_f.throw('onlyforb', key)
+        "▶2 `arg' key
+        if has_key(a:adescr, 'arg')
+            let i=0
+            for arg in a:adescr.arg
+                let i+=1
+                if self.o.only
+                    let idx=a:idx
+                else
+                    let idx=a:idx.'.'.i
+                endif
+                if a:type is# 'complete' && !self.o.only
+                    call self.addif(largsstr.'-1 == '.self.getlastsub())
+                endif
+                call self.compilearg(arg, idx, a:type)
+                call self.incsub()
+                if a:type is# 'complete' && !self.o.only
+                    call self._up()
+                endif
+                if self.onlyfirst
+                    return self
+                endif
+            endfor
+            if !empty(self.subs)
+                unlet nextsub
+                let nextsub=copy(self.subs[-1])
             endif
-            let [newnextsub, addedsavemsgs]=
-                        \call(s:_r.FWC_topconstructs[key].compile,
-                        \     [a:adescr,a:idx,caidxstr,largsstr,purgemax,a:type,
-                        \      nextsub, addedsavemsgs],
-                        \     self)
-            unlet nextsub
-            let nextsub=newnextsub
-            unlet newnextsub
         endif
-    endfor
-    "▶2 Check for processed argument length
-    " XXX a:0 is checked here
-    if !a:0 && type(self.subs[-1])==type([]) && a:type isnot 'complete'
-        let largsstr=self.getlargsstr()
-        let proclen=self.getlastsub()
-        call self.addif(proclen.' isnot '.largsstr)
-                    \.addthrow('lennmatch', 0, proclen, largsstr)
-    endif
-    "▶2 addrestmsgs
-    if addedsavemsgs
-        call self.addrestmsgs()
-    endif
+        "▶2 Quit if no more keys are present or if we are checking the only argument
+        if empty(self.subs) || empty(a:adescr)
+                    \|| empty(filter(copy(s:_r.FWC_topconstructs._order),
+                    \         'has_key(a:adescr, v:val)'))
+            return self
+        endif
+        "▲2
+        let addedsavemsgs=0
+        let caidxstr=self.getlvarid('caidx')
+        let oldsub=self.getsub(nextsub)
+        if oldsub isnot caidxstr
+            call self.let(caidxstr, oldsub)
+        endif
+        let self.subs[-1]=[caidxstr]
+        "▶2 Following keys (optional, prefixes, next, actions)
+        for key in s:_r.FWC_topconstructs._order
+            if has_key(a:adescr, key)
+                if self.o.only && !get(s:_r.FWC_topconstructs[key], 'allowonly',
+                            \          0)
+                    call s:_f.throw('onlyforb', key)
+                endif
+                if a:type is# 'complete'
+                    call self.newvstr(a:idx)
+                endif
+                let [newnextsub, addedsavemsgs]=
+                            \call(s:_r.FWC_topconstructs[key].compile,
+                            \     [a:adescr, a:idx, caidxstr, largsstr,
+                            \      purgemax, a:type, nextsub, addedsavemsgs],
+                            \     self)
+                unlet nextsub
+                let nextsub=newnextsub
+                unlet newnextsub
+                if a:type is# 'complete'
+                    call self.popvstr()
+                endif
+            endif
+        endfor
+        "▶2 Check for processed argument length
+        " XXX a:0 is checked here
+        if !a:0 && type(self.subs[-1])==type([]) && a:type isnot 'complete'
+            let largsstr=self.getlargsstr()
+            let proclen=self.getlastsub()
+            call self.addif(proclen.' isnot '.largsstr)
+            call        self.addthrow('lennmatch', 0, proclen, largsstr)
+        endif
+        "▶2 addrestmsgs
+        if addedsavemsgs
+            call self.addrestmsgs()
+        endif
+        "▲2
+        return self
+    "▶2 popvstr
+    finally
+        if a:type is# 'complete'
+            call self.popvstr()
+        endif
+    endtry
     "▲2
-    return self
 endfunction
 "▶1 compstr         :: vars, String, type, doreturn → [String]
 let s:defcompletematcher=['matcher', ['intfunc', 'smart', 2]]
@@ -949,6 +1048,7 @@ function s:F.compstr(vars, string, type, doreturn)
                 \   'type': a:type,
                 \   'subs': [],
                 \   'vars': a:vars,
+                \  'lvars': {},
                 \   'vids': {},
                 \'argbase': '@@@',
                 \  'preva': [],
@@ -972,6 +1072,8 @@ function s:F.compstr(vars, string, type, doreturn)
         let t.comparg=t.argbase.t.getsubs([-1])
         let t.joinlists=0
         let t.ldstrs=[]
+        let t.vstrs=['@-@']
+        let t.vstinf={'@-@': []}
     endif
     "▲2
     let a:vars.F={'warn': s:_f.warn, 'throw': s:_f.throw}
@@ -988,19 +1090,23 @@ function s:F.compstr(vars, string, type, doreturn)
         call add(t.subs, 0)
     endif
     if t.type is# 'check' || t.type is# 'pipe'
-        call        t.let('@$@messages',  '[]')
-                    \.let('@$@pmessages', '[]')
-                    \.try()
+        call t.let('@$@messages',  '[]')
+        call t.let('@$@pmessages', '[]')
+        call t.try()
         call t.compadescr(tree, '', t.type)
-        call t
-                \.up().finally()
-                    \.for('@$@targs', '@$@messages')
-                        \.call('call(@%@.F.warn, @$@targs, {})').up()
-                    \.for('@$@targs', '@$@pmessages')
-                        \.call('call(@%@.p._f.warn, @$@targs, {})').up()
-                \.up().up()
+        call t._up()
+        call t.finally()
+        call     t.for('@$@targs', '@$@messages')
+        call         t.call('call(@%@.F.warn, @$@targs, {})')
+        call     t._up()
+        call     t.for('@$@targs', '@$@pmessages')
+        call         t.call('call(@%@.p._f.warn, @$@targs, {})')
+        call     t._up()
+        call t._up()
+        call t._up()
     else
-        call t.let('@-@', '[]').compadescr(tree, '', t.type)
+        call t.let('@-@', '[]')
+        call t.compadescr(tree, '', t.type)
     endif
     if a:doreturn is# 1
         if t.type is# 'check'
@@ -1011,11 +1117,12 @@ function s:F.compstr(vars, string, type, doreturn)
             call t.return('@-@')
         endif
     endif
-    return [t.o, t.tolist()]
+    return [t.o, t._tolist()]
 endfunction
 "▶1 Register fwc_compile resource
 call s:_f.postresource('fwc_compile', s:F.compstr)
 "▶1
 " TODO implement recursive structures checking
+" TODO cache compilation results
 call frawor#Lockvar(s:, '')
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80
