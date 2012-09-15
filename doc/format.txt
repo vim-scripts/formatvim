@@ -245,9 +245,16 @@ ShowProgress :: 0, 1 or 2                              *format-o-ShowProgress*
 
 ColorFile :: 0 or filename (file must be readable)        *format-o-ColorFile*
         If this option is not zero, then read colors from file {ColorFile} 
-        instead of config/formatvim/colors-default-'t_Co'.yaml. Relevant only 
-        for vim running in color terminal. Format of the file must be the 
-        following (it is a very limited subset of YAML): >
+        instead of {rtp}/config/formatvim/colors-default-'t_Co'.yaml. Relevant 
+        only for vim running in color terminal or when using 
+        |format-format-csi| (in the latter case 
+        {rtp}/config/formatvim/colors-default.yaml is used by default which 
+        has only 16 colors). It is allowed to skip {rtp}/config/formatvim 
+        part: if no path separators or forward slashes appear in the option 
+        value then it is searched there.
+        Format of the file must be the following (it is a very limited subset 
+        of YAML):
+        >
             # Comment
             --- # Document start (may be omitted)
             # Default color
@@ -569,6 +576,11 @@ haslf                                                      *format-spec-haslf*
         set both nolf and haslf to 1 if you want to have line breaks defined 
         only by your format specification. Default: 0.
 
+addopts                                                  *format-spec-addopts*
+        Dictionary. All keys from this dictionary are copied (|deepcopy()|) 
+        and accessible as |format-spec-@__key@|. Only keys containing latin 
+        letters, digits and underscores are allowed.
+
 Note that after each lineend, foldstart and foldend a newline will be added 
 unless nolf option is present: using "{range}FormatCommand format 
 {formatName}" is equivalent to: >
@@ -736,6 +748,9 @@ of ordinary variables):
                       the current file) or a pair [{filename}, {line-number}]. 
                       Is empty if tags are ignored. See |taglist()| for 
                       description of {tag-options}.
+        curtags       Dictionary where keys are line numbers and values are 
+                      lists of {tag-options} (see |taglist()|). Only tags from 
+                      current file are present in this dictionary.
         cline         Number of line under the cursor.
         docline       0 if 'cursorline' option is false or ignored, 
                       1 otherwise, see |format-o-IgnoreCursor|
@@ -747,6 +762,11 @@ of ordinary variables):
                       |:sign-define|.
         placedsigns   Dictionary where keys are line numbers and values are 
                       2-tuples (id, sign-definition).
+        strescape     String equal to |format-spec-key-strescape|.
+
+@__key@                                                  *format-spec-@__key@*
+        Value of the specified key defined in |format-spec-addopts| (well, 
+        |deepcopy()| of it).
 
 The following arguments are unique for the |format-spec-key-concealed|:
 @?@                                                          *format-spec-@?@*
@@ -787,6 +807,9 @@ bbcode-unixforum                              *format-format-bbcode-unixforum*
 latex-xcolor                                      *format-format-latex-xcolor*
         Experimental support for dumping to LaTeX format. Uses xcolor and 
         ttfamily fonts.
+csi                                                        *format-format-csi*
+        Uses terminal escape sequences to describe color information.
+        See also |format-o-ColorFile|.
 tokens                                                  *format-format-tokens*
         Format useful only if you want to export color information in order to 
         process it outside of vim: >

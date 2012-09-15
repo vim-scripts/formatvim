@@ -323,7 +323,9 @@ function s:F.parseplugpath(file)
         let i+=1
     endfor
     if !empty(foundrtp)
-        return [get(removedcomponents, 0, 'plugin'),
+        return [((len(removedcomponents)>1)?
+                    \ removedcomponents[0]:
+                    \ '/script'),
                     \join(removedcomponents, '/'), foundrtp]
     else
         return ['/unknown', join(removedcomponents, '/'), '']
@@ -432,6 +434,7 @@ function s:F.updatedeplen(plid, newval, updated)
     endif
 endfunction
 "▶1 newplugin       :: version, sid, file, dependencies, oneload, g → +s:pls,
+let s:ftplugtypes=['ftplugin', 'syntax', 'indent']
 function s:F.newplugin(version, sid, file, dependencies, oneload, g)
     "▶2 Checking whether a:file is a string
     if type(a:file)!=type('')
@@ -486,6 +489,7 @@ function s:F.newplugin(version, sid, file, dependencies, oneload, g)
                 \           'id': plid,
                 \  'runtimepath': plrtp,
                 \      'version': plversion,
+                \   'isftplugin': index(s:ftplugtypes, plugtype)!=-1,
                 \      'oneload': !!a:oneload,
                 \         'file': ((a:version is 0)?(get(a:g, '_sfile', 0)):
                 \                                   (a:file)),
@@ -950,7 +954,7 @@ endfunction
 let s:features[s:newfeature.id]=s:newfeature
 let s:featordered.all+=[s:newfeature]
 "▶1 Plugin registration
-call s:F.newplugin([0, 2], s:Eval('+matchstr(expand("<sfile>"), ''\d\+'')'),
+call s:F.newplugin([0, 3], s:Eval('+matchstr(expand("<sfile>"), ''\d\+'')'),
             \      expand('<sfile>:p'), {}, 1, s:)
 let s:shadow[s:_frawor.id].features.newfeature.newfeature=s:newfeature
 unlet s:newfeature
@@ -1002,7 +1006,7 @@ function s:F.require(plugdict, fdict, dplid, dversion, throw)
         call s:_f.throw('thrownbool', a:dplid, a:plugdict.id)
     endif
     "▲2
-    let dplid=s:F.expandplid(a:dplid)
+    let dplid=s:F.expandplid(a:dplid, a:plugdict.id)
     if has_key(a:plugdict.dependencies, dplid)
         return 2
     endif

@@ -2,7 +2,8 @@
 emulate -L zsh
 typeset -xr TESTDIR=$1
 shift
-test -d $TESTDIR || mkdir -p $TESTDIR
+rm -rf $TESTDIR
+mkdir -p $TESTDIR
 local -r REV=${1:-.}
 (( $# )) && shift
 if [[ $REV == '.' ]] ; then

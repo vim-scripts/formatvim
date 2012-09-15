@@ -312,7 +312,6 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
         call self.addif(a:caidxstr.'=='.a:largsstr.'-1')
         call        self.setmatches(plstr, type([]), 1)
         call        self.break()
-        call self._up()
     endif
     call self.let(astr, self.getmatcher(get(a:adescr, 'prefixesmatcher',
                 \                           s:prefdefmatcher), plstr,
@@ -412,7 +411,6 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
                             \            a:type)
                 call        self.increment(a:caidxstr, idxdiffstr)
                 call        self.break()
-                call self._up()
             endfor
             call self._up()
             call self._up()
@@ -466,7 +464,6 @@ function s:r.prefixes.compile(adescr, idx, caidxstr, largsstr, purgemax, type,
     if a:type is# 'complete'
         call self.addif(astr.' is 0')
         call        self.break()
-        call self._up()
     endif
     if a:type is# 'check' || a:type is# 'pipe'
         if hasnext
@@ -623,25 +620,25 @@ endfunction
 "▶2 optimizenullact :: &self(caidxstr)
 " XXX low-level hacks here
 function s:r.actions.optimizenullact(caidxstr)
-    if len(self.l)==2 && self.l[1][0] is# 'if'
-                \&& (len(self.l[1])==3 ||
-                \    (len(self.l[1])==4 && self.l[-1] is# 'endif'))
-                \&& len(self.stack[-2])==3
-                \&& self.stack[-2][0] is# 'if'
-                \&& self.l[1][1] is# self.stack[-2][1]
-        call extend(self.l, self.l[1][2])
-        call remove(self.l, 1)
-    elseif len(self.l)==3 && self.l[1][0] is# 'let'
-                \&& self.l[1][2] is# a:caidxstr
-                \&& self.l[2][0] is# 'if'
-                \&& (len(self.l[2])==3 ||
-                \    (len(self.l[2])==4 && self.l[-1] is# 'endif'))
-                \&& len(self.stack[-2])==3
-                \&& self.stack[-2][0] is# 'if'
-                \&& self.l[2][1][:(-1-len(self.l[1][1]))] is
-                \   self.stack[-2][1][:(-1-len(a:caidxstr))]
-        call extend(self.l, self.l[2][2])
-        call remove(self.l, 1, 2)
+    if len(self._l)==2 && self._l[1][0] is# 'if'
+                \&& (len(self._l[1])==3 ||
+                \    (len(self._l[1])==4 && self._l[-1] is# 'endif'))
+                \&& len(self._stack[-2])==3
+                \&& self._stack[-2][0] is# 'if'
+                \&& self._l[1][1] is# self._stack[-2][1]
+        call extend(self._l, self._l[1][2])
+        call remove(self._l, 1)
+    elseif len(self._l)==3 && self._l[1][0] is# 'let'
+                \&& self._l[1][2] is# a:caidxstr
+                \&& self._l[2][0] is# 'if'
+                \&& (len(self._l[2])==3 ||
+                \    (len(self._l[2])==4 && self._l[-1] is# 'endif'))
+                \&& len(self._stack[-2])==3
+                \&& self._stack[-2][0] is# 'if'
+                \&& self._l[2][1][:(-1-len(self._l[1][1]))] is
+                \   self._stack[-2][1][:(-1-len(a:caidxstr))]
+        call extend(self._l, self._l[2][2])
+        call remove(self._l, 1, 2)
     endif
     return self
 endfunction

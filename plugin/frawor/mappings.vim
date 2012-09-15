@@ -743,7 +743,7 @@ function s:F.mapgroup.add(plugdict, fdict, mgid, mappings, ...)
                     \    'sid': a:plugdict.sid,
                     \   'maps': {},
                     \ 'leader': '',
-                    \ 'buffer': (a:plugdict.type is# 'ftplugin'),
+                    \ 'buffer': a:plugdict.isftplugin,
                     \ 'nouser': (mgid[0] is# '_'),
                     \'dontmap': 0,}
         "▶3 Add options: presence -> mgroup (nouser, dontmap, buffer)
@@ -792,8 +792,8 @@ function s:F.mapgroup.add(plugdict, fdict, mgid, mappings, ...)
         "▲4
     endif
     "▶3 filetype
-    if !mgroup.dontmap && a:plugdict.type is# 'ftplugin'
-        let mgroup.filetype=matchstr(a:plugdict.id, '\v^[^/]*', 9)
+    if !mgroup.dontmap && a:plugdict.isftplugin
+        let mgroup.filetype=matchstr(a:plugdict.id, '\v\/@<=[^/]+')
         let mgroup.dontmap=1
     endif
     "▲3

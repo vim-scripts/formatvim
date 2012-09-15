@@ -10,6 +10,9 @@ CONTENTS                                                        *FWC-contents*
     2. Internal functions                          |FWC-functions|
         2.1. Matchers                              |FWC-matchers|
         2.2. Checkers and filters                  |FWC-cf|
+    3. @/fwc/constructor plugin                    |FWC-constructor-plugin|
+        3.1. Object structure                      |FWC-constructor-object|
+        3.2. Functions                             |FWC-constructor-functions|
 
 ==============================================================================
 1. Top level structure                                       *FWC* *FWC-{FWC}*
@@ -120,7 +123,11 @@ String   Meaning ~
 Integer and floating-point numbers format in FWC is more permissive then vim 
 own format: it allows to use underscore to separate digits to make them more 
 readable, omit numbers before and after the dot, put spaces after sign, ...
-    {float} :: [+-]? " "* ( "inf" | [0-9_]* "."? [0-9_]* ("e" [+-]? [0-9]+)? )
+    {float} :: ( "+" | "-" ) ( "nan" | "inf" | {unum} | {hnum} | {onum} )
+    {unum}  :: ( [1-9] {d}* | 0 )? ( "." {d}* )? ( "e" ( "+" | "-" )? [0-9]+ )?
+       {d}  :: [0-9] | "_"
+    {hnum}  :: "0x" ( [0-9] | [a-f] | [A-F] | "_" )*
+    {onum}  :: "0" ( [0-7] | "_" )+
 All elements are optional (but there must be at least one element), case does 
 not matter:
     FWC       Vim  | FWC      Vim~
@@ -225,6 +232,7 @@ Each variable is either
 4. A function call (with dot argument undefined), see |FWC-{func}|.
 5. A list, see |FWC-{list}|.
 6. A string, see |FWC-{str}|.
+7. A number, see |FWC-{float}|.
 You can also use parenthesis around variable and use "$" to evaluate {var} at 
 compile time and insert the results: for example, to convert current argument 
 to a string using built-in |string()| function you cannot do `|*string', but 
@@ -238,6 +246,7 @@ at compile time, so no local variables and no arguments are available.
                  | "*" {func}
                  | {list}
                  | {str}
+                 | ( {float} & ! ( [+-] "inf" | "nan" ) )
                                                                 *FWC-{subscr}*
 Each subscript must start with a dot and be followed by
 1. A word: `.string' will try to access key "string".
@@ -438,9 +447,12 @@ run {var}   (|FWC-{var}|)                                          *FWC-f-run*
     Filter: calls current argument with {var} as an arguments list and 
             replaces it with the result of the call. |self| will be set to 
             a new empty dictionary for this call.
+    Completer: completes to function name which accepts required number of 
+               arguments.
 
 earg                                                             *FWC-f-earg*
     Filter: replaces argument with the result of evaluating itself.
+    Completer: ignored.
 
 not {arg}    (|FWC-{arg}|)                                        *FWC-c-not*
     Checker: fails if processing argument using {arg} succeeds.
@@ -588,6 +600,8 @@ path {pathspec}                                      *FWC-c-path* *FWC-f-path*
             with \, [, ], ? and * escaped). This means that you can use 
             ~ directory shortcut, |:_%|, |:_#|, enviroment variables, 
             |`-expansion| and |`=|.
+    Completer: tries to do something like zsh pathname completion. Always 
+               completes directories.
                     {pathspec} :: [df]? "r"? [wWp]? "x"?
                                 & ! ( "d" | ^ ) "r"
                                 & ! "d" [wWp]? "x"
@@ -629,9 +643,11 @@ isfunc {one}   (|FWC-{one}|)                     *FWC-f-isfunc* *FWC-c-isfunc*
              (dict.key).
     Filter: checks argument with above rules and if check succeeds, transforms 
             it into a function reference (unless it is a reference already).
+    Completer: completes function names.
 
 isreg                                                            *FWC-c-isreg*
     Checker: checks whether argument is a valid regular expression.
+    Completer: ignored.
 
 bool                                                 *FWC-c-bool* *FWC-f-bool*
     Checker: checks whether argument is 0 or 1 (if |FWC-o-onlystrings| is 
@@ -657,5 +673,146 @@ value {var} {arg}   (|FWC-{var}|, |FWC-{arg}|)
 any, _                                                   *FWC-c-any* *FWC-c-_*
     Checker: matches any argument.
     Completer: ignored.
+
+==============================================================================
+3. @/fwc/constructor plugin                           *FWC-constructor-plugin*
+
+Plugin plugin/frawor/fwc/constructor is used to create function body by 
+creating syntax tree using a tree “object”. When using this plugin code 
+normally looks like this: >
+    let t=s:_r.new_constructor()
+    call t.if('!exists("g:var")')
+    call   t.let('g:var', '"Foo"')
+    call t.endif()
+    let lines=t._tolist()
+    let d={}
+    execute "function d.f(args)\n".
+           \    join(lines, "\n")."\n".
+           \"endfunction"
+    return d.f
+It is intended to make optimizations easier as operating on syntax tree 
+requires less effort then operating on a list of lines.
+
+This plugin provides a resource: “new_constructor” which is a function that 
+returns tree object:
+
+------------------------------------------------------------------------------
+3.1. Object structure                                 *FWC-constructor-object*
+
+Tree object is a dictionary that contains at top level functions described in 
+|FWC-constructor-functions| and two other keys:
+
+_tree :: [ block ]                                              *FWC-ck-_tree*
+_stack :: [block | tree]                                       *FWC-ck-_stack*
+    Key “_tree” contains root of syntax tree as a list of blocks. Key “_stack” 
+    contains a list of trees or blocks that determine current and older states 
+    of the tree.
+_l :: block | tree                                                 *FWC-ck-_l*
+    Always points to last item of |FWC-ck-_stack|.
+block :: [type, arg1[, arg2[, ...]]]                   *FWC-constructor-block*
+    “block” is a list where first item is always string and the following are 
+    block arguments. Existing blocks:
+  do :: (String)                                                   *FWC-cb-do*
+    Block that describes a line. Is used for |FWC-cf-continue|, 
+    |FWC-cf-break|, |FWC-cf-do|.
+                                                                   *FWC-cb-if*
+  if :: [cond, tree[, "elseif", cond, tree]+[, "else", tree][, "endif"]]
+    Block that describes if condition. Is used by |FWC-cf-if| and 
+    |FWC-cf-addif|, more block arguments are added by |FWC-cf-elseif|, 
+    |FWC-cf-else|, |FWC-cf-endif| and |FWC-cf-addif|.
+  try :: [tree[, "catch", regex, tree]+[, "finally", tree]        *FWC-cb-try*
+    Block that describes try..catch..finally structure. Is used by 
+    |FWC-cf-try|, more arguments are added by |FWC-cf-catch| and 
+    |FWC-cf-finally|.
+  while :: (cond, tree)                                         *FWC-cb-while*
+    Block that describes a while cycle. Is used by |FWC-cf-while|.
+  for :: (var, list, tree)                                        *FWC-cb-for*
+    Block that describes a for cycle. Is used by |FWC-cf-for|.
+  execute :: (command, expr)                                  *FWC-cb-execute*
+    Block that describes a command which is invoked using “{command} |expr|” 
+    syntax. Is used by |FWC-cf-return|, |FWC-cf-call|, |FWC-cf-execute|, 
+    |FWC-cf-echo|, |FWC-cf-echomsg|, |FWC-cf-echon| and |FWC-cf-throw|.
+  let :: (var, type, expr)                                        *FWC-cb-let*
+    Block that describes a variable assignment. {type} is one of "" (for 
+    |:let|), "+" (for |:let+=|), "-" (for |let-=|) and so on. Is used by 
+    |FWC-cf-let|, |FWC-cf-strappend|, |FWC-cf-increment| and 
+    |FWC-cf-decrement|.
+  unlet :: ([ var ])                                            *FWC-cb-unlet*
+    Block that describes |:unlet| command. Is used by |FWC-cf-unlet|.
+
+------------------------------------------------------------------------------
+3.2. Functions                                     *FWC-constructor-functions*
+
+_add :: a[, b[, ...]] -> + self._l                               *FWC-cf-_add*
+    Appends given arguments to |FWC-ck-_l|.
+_up :: () + self._l, self._stack                                  *FWC-cf-_up*
+    Removes one item from |FWC-ck-_stack| and updates |FWC-ck-_l|.
+_down :: [ a ] -> + self._l, self._stack                        *FWC-cf-_down*
+    Pushes given item to |FWC-ck-_stack| and updates |FWC-ck-_l|.
+_deeper :: a[, b[, ...]] -> + self._l, self._stack            *FWC-cf-_deeper*
+    Adds given arguments to |FWC-ck-_l| as one list and pushes this list to 
+    |FWC-ck-_stack| updating |FWC-ck-_l|.
+_out :: () + self._l, self._stack                                *FWC-cf-_out*
+    Pops one item from |FWC-ck-_stack| if this item is a block, thus leaving 
+    |FWC-ck-_l| pointing to a tree.
+_toblock :: blocktype -> + self._l, self._stack              *FWC-cf-_toblock*
+    Removes items from |FWC-ck-_stack| until it finds block with given type.
+_tolist :: () -> [ String ]                                   *FWC-cf-_tolist*
+    Constructs and returns a list of VimL commands.
+break :: () -> self                                          *FWC-cf-break*
+continue :: () -> self                                       *FWC-cf-continue*
+    Adds |FWC-cb-do| with argument equal to function name and goes up one 
+    level.
+do :: command -> self                                              *FWC-cf-do*
+    Adds |FWC-cb-do| with given argument.
+if :: expr -> + self                                               *FWC-cf-if*
+    Adds |FWC-cb-if| with given expression as a first argument and empty tree 
+    as a second, pushes added block and this tree to |FWC-ck-_stack|.
+elseif :: expr -> + self                                       *FWC-cf-elseif*
+    Adds "elseif", expr and empty tree arguments to current if block (removing 
+    all last elements from |FWC-ck-_stack| until this block is not found). 
+    Pushes new tree to |FWC-ck-_stack|.
+else :: () -> + self                                             *FWC-cf-else*
+    Like above, but adds "else" and empty tree arguments only.
+endif :: () -> + self                                           *FWC-cf-endif*
+    Like above, but adds only "endif" argument and goes up one level.
+addif :: expr -> + self                                         *FWC-cf-addif*
+    Runs |FWC-cf-if| or |FWC-cf-elseif| depending on |FWC-ck-_l|: 
+    |FWC-cf-elseif| is chosen current block is |FWC-cb-if| and it was not 
+    ended with "else" or "endif" arguments; |FWC-cf-if| is chosen otherwise.
+try :: () -> + self                                               *FWC-cf-try*
+    Adds |FWC-cb-try| with empty tree as an argument and pushes this tree to 
+    |FWC-ck-_stack|.
+catch :: regex? -> + self                                       *FWC-cf-catch*
+    Adds "catch", regex (default: .*; escapes "/" in regex and surrounds it 
+    with "/") and an empty tree to current try block (removing all last 
+    elements from |FWC-ck-_stack| until this block is not found) and pushes 
+    added block and this tree to |FWC-ck-_stack|.
+finally :: () -> + self                                       *FWC-cf-finally*
+    Like above, but adds "finally" and empty tree.
+while :: expr -> + self                                         *FWC-cf-while*
+for :: var, expr -> + self                                      *FWC-cf-for*
+    Adds |FWC-cb-while| or |FWC-cb-for| with given arguments and an empty tree 
+    and pushes added block and this tree to |FWC-ck-_stack|.
+endwhile :: () -> + self                                     *FWC-cf-endwhile*
+endfor :: () -> + self                                       *FWC-cf-endfor*
+    Finds outer "for" or "while" section and goes up one level.
+execute :: expr -> + self                                     *FWC-cf-execute*
+call :: expr -> + self                                        *FWC-cf-call*
+echo :: expr -> + self                                        *FWC-cf-echo*
+echomsg :: expr -> + self                                     *FWC-cf-echomsg*
+echon :: expr -> + self                                       *FWC-cf-echon*
+    Adds |FWC-cb-execute| with function name and given argument as an 
+    arguments.
+return :: expr -> + self                                       *FWC-cf-return*
+throw :: expr -> + self                                        *FWC-cf-throw*
+    Like above, but also goes up one level.
+let :: var, expr -> + self                                  *FWC-cf-let*
+strappend :: var, expr -> + self                            *FWC-cf-strappend*
+    Adds |FWC-cb-let| that describe |:let| and |:let.=| statements.
+increment :: var[, expr] -> + self                          *FWC-cf-increment*
+decrement :: var[, expr] -> + self                          *FWC-cf-decrement*
+    Like above, but describes |:let+=| and |:let-=|. If second argument is 
+    omitted it is considered to be 1.
 
 vim: ft=help:tw=78

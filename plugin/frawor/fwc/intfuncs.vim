@@ -367,7 +367,7 @@ function s:r.if.pipe(desc, idx, type)
         call    self.compilearg(a:desc[2], a:idx.'(if)', a:type)
         call self._up()
         if len(a:desc[3])>1
-            call self.addif()
+            call self.addelse()
             call        self.compilearg(a:desc[3], a:idx.'(else)', a:type)
             call        self._up()
         endif
@@ -438,14 +438,14 @@ let s:r.not={'args': ['arg'], 'breakscomp': 1}
 "▶2 optimize
 " XXX low-level hacks here
 function s:r.not.optimize(idx, type)
-    call self._down(self.l[1])
+    call self._down(self._l[1])
     let conditions=self.optgetconds()
     call self._up()
     if type(conditions)==type([])
-        call remove(self.l, 0, -1)
+        call remove(self._l, 0, -1)
         call self._add('if', 0, [])
         call self.nextthrow('!('.join(conditions, ' || ').')', 'notfail', a:idx)
-        call remove(self.l, 1, 3)
+        call remove(self._l, 1, 3)
     endif
     return self
 endfunction
@@ -493,7 +493,7 @@ function s:r.either.check(desc, idx, type)
     call self.addrestmsgs()
     call self._up()
     call self.popms()
-    call self.addif()
+    call self.addelse()
     call self.addthrow('eitherfail', 1, a:idx)
     call self._up()
     call self._up()
@@ -598,6 +598,7 @@ function s:F.adddict(dic, idx, type)
     let msglenstr=self.getlvarid('msglen')
     let pmsglenstr=self.getlvarid('pmsglen')
     let hascheck=0
+    let hasany=0
     let i=-1
     for check in a:dic[1][1:]
         let i+=1
@@ -610,6 +611,7 @@ function s:F.adddict(dic, idx, type)
         elseif check[0] is# 'expr'
             call self.addif(self.getexpr(check[1], keystr).' isnot 0')
         elseif check[0] is# 'any'
+            let hasany=1
             call self.compilearg(check[1], a:idx.'.'.i.'(val)', a:type)
             call self.continue()
             break
@@ -635,17 +637,17 @@ function s:F.adddict(dic, idx, type)
             call self._up()
             call self.addif(foundstr)
             call        self.continue()
-            call self._up()
             continue
         endif
         call self.compilearg(check[2], a:idx.'.'.i.'(val)', a:type)
         call self.continue()
-        call self._up()
     endfor
     if hascheck
         call remove(self.msgs.savevars, -1)
     endif
-    call self.addthrow('keynmatch', 1, a:idx, keystr)
+    if !hasany
+        call self.addthrow('keynmatch', 1, a:idx, keystr)
+    endif
     call remove(self.subs, -1)
     return self
 endfunction
@@ -944,7 +946,7 @@ function s:r.range.check(desc, idx, type)
         if acceptfloat
             let astr='((stridx('.curargstr.', ".")==-1)?'.
                         \'(str2float('.curargstr.'):'.
-                        \'(str2nr('.   curargstr.'))))'
+                        \'(+('.   curargstr.'))))'
         else
             let astr='str2nr('.curargstr.')'
         endif
@@ -1049,10 +1051,8 @@ function s:r.path.addpathp(idx)
     call            self.addif('filewritable('.dirnamestr.')==2')
     call                self.let(foundstr, 1)
     call                self.break()
-    call                self._up()
     call            self.addif(existsstr.'('.dirnamestr.')')
     call                self.break()
-    call                self._up()
     call            self.let(prevdirstr, dirnamestr)
     call            self.let(dirnamestr, osdirnamestr.'('.dirnamestr.')')
     call        self._up()

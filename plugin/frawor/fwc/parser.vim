@@ -154,16 +154,20 @@ function s:parser.readreg(endstr)
     return c
 endfunction
 "▶1 readflt    :: () + self → String|0 + self(s)
-"  {flt} :: ( "+" | "-" ) ( "nan" | "inf" | {unum} )
-" {unum} :: {d}* "."? {d}* ( "e" ( "+" | "-" )? [0-9]+ )?
+"  {flt} :: ( "+" | "-" ) ( "nan" | "inf" | {unum} | {hnum} | {onum} )
+" {unum} :: ( [1-9] {d}* | 0 )? ( "." {d}* )? ( "e" ( "+" | "-" )? [0-9]+ )?
 "    {d} :: [0-9] | "_"
+" {hnum} :: "0x" ( [0-9] | [a-f] | [A-F] | "_" )*
+" {onum} :: "0" ( [0-7] | "_" )+
 function s:parser.readflt()
     if !empty(self.ungot)
         call self.ungotjoin()
     endif
     call self.delblanks()
     let c=matchstr(self.s,
-                \'\v\c^[+-]? *%(nan|inf|[0-9_]*\.?[0-9_]*%(e[+-]?\d+)?)')
+                \'\v\c^[+-]?\ *%(nan|inf|0[0-7_]+|'.
+                \               '%(0|[1-9][0-9_]*)?%(\.[0-9_]*)?%(e[+-]?\d+)?|'.
+                \               '0x[0-9a-fA-F_]+)')
     call self.removestr(len(c))
     if empty(c)
         return 0
@@ -558,7 +562,7 @@ function s:parser.getnumber()
         if c is# '$'
             return self.getvar()
         else
-            call self.ungetc(c)
+            return self.ungetc(c)
         endif
     elseif f[-3:] is# 'inf'
         let sign=f[0]
@@ -566,7 +570,7 @@ function s:parser.getnumber()
             let sign='+'
         endif
         return self.addcon('inf', sign).conclose()
-    elseif f is# 'nan'
+    elseif f[-3:] is# 'nan'
         return self.addcon('nan').conclose()
     endif
     let r=eval(f)
@@ -661,11 +665,15 @@ endfunction
 "       | {chvar}
 "       | {expr}
 "       | {list}
+"       | {number}
 "       | context(evaluate, {var})
 "       | context(string, String)
 function s:parser.getvar()
     let c=self.readc()
-    if c=~#'^\w'
+    if c=~#'^\d' || c is# '+' || c is# '-'
+        call self.ungetc(c)
+        return self.getnumber()
+    elseif c=~#'^\w'
         call self.addcon('plugvar')
         call self.ungetc(c)
         call self.getsubscr()

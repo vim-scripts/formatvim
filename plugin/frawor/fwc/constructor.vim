@@ -1,8 +1,9 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('1.0', {'@/resources': '0.0'}, 1)
+execute frawor#Setup('4.1', {'@/resources': '0.0'}, 1)
 let s:constructor={}
 let s:comp={}
+let s:constructor._comp=s:comp
 "▶1 string     :: a → String
 function s:constructor.string(val)
     if type(a:val)==type('') && a:val=~#"[\r\n@]"
@@ -19,19 +20,19 @@ function s:constructor.string(val)
 endfunction
 "▶1 _add       :: item, ... + self → self + self
 function s:constructor._add(...)
-    let self.l+=a:000
+    let self._l+=a:000
     return self
 endfunction
 "▶1 _up        :: &self
 function s:constructor._up()
-    call remove(self.stack, -1)
-    let self.l=self.stack[-1]
+    call remove(self._stack, -1)
+    let self._l=self._stack[-1]
     return self
 endfunction
 "▶1 _down      :: &self(list)
 function s:constructor._down(list)
-    call add(self.stack, a:list)
-    let self.l=a:list
+    call add(self._stack, a:list)
+    let self._l=a:list
     return self
 endfunction
 "▶1 _deeper    :: ()[, conelement1[, ...]] + self → self + self
@@ -42,14 +43,14 @@ function s:constructor._deeper(...)
 endfunction
 "▶1 _out       :: &self
 function s:constructor._out()
-    if type(get(self.l, 0))==type('')
+    if type(get(self._l, 0))==type('')
         return self._up()
     endif
     return self
 endfunction
 "▶1 _toblock
 function s:constructor._toblock(block)
-    while get(self.l, 0) isnot a:block
+    while get(self._l, 0) isnot a:block
         call self._up()
     endwhile
     return self
@@ -61,11 +62,11 @@ function s:comp.do(r, toextend, indent, item)
 endfunction
 "▶2 continue   :: &self
 function s:constructor.continue()
-    return self._out()._deeper('do', 'continue')._up()
+    return self._out()._deeper('do', 'continue')._up()._up()
 endfunction
 "▶2 break      :: &self
 function s:constructor.break()
-    return self._out()._deeper('do', 'break')._up()
+    return self._out()._deeper('do', 'break')._up()._up()
 endfunction
 "▶2 do         :: &self(vimLstr)
 function s:constructor.do(str)
@@ -107,21 +108,21 @@ endfunction
 function s:constructor.endif()
     return self._toblock('if')._add('endif')._up()
 endfunction
-"▶2 addif      :: &self(expr?)
-function s:constructor.addif(...)
-    if a:0
-        if get(self.l, 0) is# 'if' && get(self.l, -2) isnot# 'else' &&
-                    \                 get(self.l, -1) isnot# 'endif'
-            return call(self.elseif, a:000, self)
-        else
-            return call(self.if, a:000, self)
-        endif
+"▶2 addif      :: &self(expr)
+function s:constructor.addif(expr)
+    if get(self._l, 0) is# 'if' && get(self._l, -2) isnot# 'else' &&
+                \                  get(self._l, -1) isnot# 'endif'
+        return self.elseif(a:expr)
     else
-        if get(self.l, 0) is# 'if'
-            return self.else()
-        else
-            return self
-        endif
+        return self.if(a:expr)
+    endif
+endfunction
+"▶2 addelse    :: &self
+function s:constructor.addelse()
+    if get(self._l, 0) is# 'if'
+        return self.else()
+    else
+        return self
     endif
 endfunction
 "▶1 try block
@@ -168,6 +169,10 @@ endfunction
 function s:constructor.while(expr)
     return self._out()._deeper('while', a:expr)._deeper()
 endfunction
+"▶2 endwhile   :: &self()
+function s:constructor.endwhile()
+    return self._toblock('while')._up()
+endfunction
 "▶2 comp.for
 function s:comp.for(r, toextend, indent, item)
     call add(a:r, repeat(' ', &sw*a:indent).'for '.remove(a:item, 0).' in '.
@@ -175,9 +180,13 @@ function s:comp.for(r, toextend, indent, item)
     call extend(a:toextend, map(remove(a:item, 0), '['.(a:indent+1).', v:val]'))
     call add(a:toextend, [a:indent, 'endfor'])
 endfunction
-"▶2 for        :: &self(vars, expr)
-function s:constructor.for(vars, expr)
-    return self._out()._deeper('for', a:vars, a:expr)._deeper()
+"▶2 for        :: &self(var, expr)
+function s:constructor.for(var, expr)
+    return self._out()._deeper('for', a:var, a:expr)._deeper()
+endfunction
+"▶2 endfor     :: &self()
+function s:constructor.endfor()
+    return self._toblock('for')._up()
 endfunction
 "▶1 execute: call, throw, return
 "▶2 comp.execute
@@ -247,7 +256,7 @@ endfunction
 "▶1 _tolist    :: () + self → [String]
 function s:constructor._tolist()
     let r=[]
-    let items=map(deepcopy(self.tree), '[0, v:val]')
+    let items=map(deepcopy(self._tree), '[0, v:val]')
     let toextend=[]
     while !empty(items)
         let [indent, item]=remove(items, 0)
@@ -255,8 +264,8 @@ function s:constructor._tolist()
             call add(r, repeat(' ', &sw*indent).item)
         else
             let type=remove(item, 0)
-            if has_key(s:comp, type)
-                call call(s:comp[type], [r, toextend, indent, item], {})
+            if has_key(self._comp, type)
+                call call(self._comp[type], [r, toextend, indent, item], {})
             endif
             if !empty(toextend)
                 call extend(items, remove(toextend, 0, -1), 0)
@@ -267,11 +276,11 @@ function s:constructor._tolist()
     return r
 endfunction
 "▶1 new
-call extend(s:constructor, {'tree': [], 'stack': [],})
+call extend(s:constructor, {'_tree': [], '_stack': [],})
 function s:F.new()
     let r=deepcopy(s:constructor)
-    call add(r.stack, r.tree)
-    let r.l=r.stack[-1]
+    call add(r._stack, r._tree)
+    let r._l=r._stack[-1]
     return r
 endfunction
 call s:_f.postresource('new_constructor', s:F.new)

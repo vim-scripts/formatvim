@@ -230,25 +230,26 @@ let s:opts={
         \}
 function s:F.run(cmd, ...)
     try
+        let savedopts={}
+        for [opt, val] in items(s:opts)
+            let savedopts[opt]=eval('&g:'.opt)
+            execute 'let &g:'.opt.'=val'
+        endfor
         if a:0
-            let savedopts={}
-            for [opt, val] in items(s:opts)
-                let savedopts[opt]=eval('&g:'.opt)
-                execute 'let &g:'.opt.'=val'
-            endfor
-            new
-            if !s:os.chdir(a:1, 1)
+            if !s:os.chdir(a:1)
                 return -1
             endif
         endif
         execute 'silent! !'.a:cmd
         return v:shell_error
     finally
+        if a:0
+            cd -
+        endif
         if exists('savedopts')
             for [opt, val] in items(savedopts)
                 execute 'let &g:'.opt.'=val'
             endfor
-            bwipeout!
             redraw!
         endif
     endtry

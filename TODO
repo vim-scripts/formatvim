@@ -4,10 +4,8 @@ Add per-launch cache for formats
 cursorcolumn and cursor support
 ? Replace nested substitutes with \=
 Add new tests, disable some present ones
-Add support for highlight option
-Add support for numberwidth option
 Add spelling support
-Add :Format help (or tagstartregex + tagendregex options?)
 Add support for CursorLineNr (added in 7.3.479)
+Add support for |cpo-n| if support for a view just like in vim will be added
 Fix handling of `~' tag
 Fix :Format diffformat

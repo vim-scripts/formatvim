@@ -31,6 +31,7 @@ CONTENTS                                                     *frawor-contents*
         4.5. base64 resource                      |frawor-r-base64|
         4.6. sign resource                        |frawor-r-sign|
         4.7. history resource                     |frawor-r-history|
+        4.8. new_constructor resource             |frawor-r-new_constructor|
     5. Options                                    |frawor-options|
         5.1. Mapping options                      |frawor-mapoptions|
     6. Type definitions                           |frawor-types|
@@ -83,7 +84,7 @@ FraworRegister({version}, {sid}, {file}, {dependencies}, {oneload}, {g})
                             @           plugin/
         There two special cases: `^' gets expanded to plugin id without one 
         component (but with trailing slash) and `@.' gets expanded to plugin 
-        id (both only for {dependencies} dictionary).
+        id (both only for {dependencies} dictionary and |frawor-f-require|).
                                                      *frawor-anonymous-plugin*
         You may specify 0 instead of {version}. In this case plugin type will 
         be `/anonymous', plugin id will be equal to `file' argument (possibly 
@@ -1014,6 +1015,14 @@ history.set :: htype, histlines -> _ + history          *frawor-r-history.set*
         Clears given history (see |hist-names|) and populates it with a list 
         of lines.
 
+------------------------------------------------------------------------------
+4.8. new_constructor resource                       *frawor-r-new_constructor*
+
+Resource “new_constructor” is defined in plugin/frawor/fwc/constructor. It is 
+used to create VimL code by creating a syntax tree:
+    new_constructor :: () -> tree
+Tree object is described in |FWC-constructor-plugin|.
+
 ==============================================================================
 5. Options                                                    *frawor-options*
                                                              *g:fraworOptions*
@@ -1054,14 +1063,19 @@ version :: [ Integer ]                                      *frawor-t-version*
 plugdict :: {}                                             *frawor-t-plugdict*
         Dictionary which describes plugin. It has the following keys:
         Key           Description ~
-        type          Plugin type (first path component after runtimepath, 
-                      string "/unknown" if detection of runtimepath failed and 
-                      string "/anonymous" if |FraworRegister()| got zero 
+        type          Plugin type (first path component after runtimepath if 
+                      there are at least two of them, string "/unknown" if 
+                      detection of runtimepath failed, string "/script" if 
+                      there were not more then one component after runtimepath 
+                      and string "/anonymous" if |FraworRegister()| got zero 
                       instead of version).
         id            Plugin id.
         runtimepath   Plugin runtimepath, empty if detection of rtp failed or 
                       |FraworRegister()| got zero instead of version.
         version       Plugin version, see |frawor-t-version|.
+        isfiletype    Bool, true if plugin is devoted to some filetype 
+                      (determined by chekcing whether plugin id starts with 
+                      ftplugin/, syntax/ or indent/).
         oneload       Bool, true if plugin should be loaded only once.
         file          Path to plugin file ({file} argument to 
                       |FraworRegister()| for non-anonymous plugins, |s:_sfile| 
@@ -1412,6 +1426,8 @@ changes.
 @frawor:
     0.1: Added |frawor-f-require| and |frawor-fk-depadd|
     0.2: Added |s:_loading| variable
+    0.3: Added isftplugin key to |frawor-t-plugdict|,
+         adjusted the way plugin type is determined.
 @/mappings:
     0.1: Added possibility to specify dictionaries in `strfunc' and `func' 
          keys.
@@ -1427,6 +1443,12 @@ changes.
     0.1: Added more functions
     1.0: Renamed some functions so that they now have “_” at the start of 
          their names
+    1.1: Made block compiling functions be located in self._comp now
+    2.0: Renamed self.tree and self.stack to self._tree and self._stack
+    3.0: Renamed self.l to self._l
+    3.1: Made self.continue and self.break go up one level.
+    4.0: Splitted self.addif(expr?) into self.addif(expr) and self.addelse()
+    4.1: Added self.endfor() and self.endwhile().
 @/os:
     0.1: Added |frawor-r-os.path.relpath|
          Made |frawor-r-os.path.normpath| also simplify its argument

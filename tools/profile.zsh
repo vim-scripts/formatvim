@@ -1,10 +1,15 @@
 #!/bin/zsh
 : ${TESTDIR:=/tmp/frawor-profile}
+if [[ -z $RTP ]] ; then
+    RTP=$TESTDIR
+else
+    RTP+=,$TESTDIR
+fi
 ./gentestdir.zsh $TESTDIR $1
 (( $# )) && shift
-typeset -x TESTDIR
+typeset -x TESTDIR RTP
 pushd $TESTDIR
-vim -u <(<<< 'set nocompatible rtp=$TESTDIR') -U NONE \
+vim -u <(<<< 'let &rtp=$RTP') -N -U NONE -i NONE \
     --startuptime starttime.dat \
     --cmd 'profile start profile.dat' \
     --cmd 'profile func *' \

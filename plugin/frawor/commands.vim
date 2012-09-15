@@ -281,8 +281,8 @@ function s:F.command.add(plugdict, fdict, cid, cstr, copts)
                 \'funs': [],
                 \  'fs': {},
                 \}
-    if a:plugdict.type is# 'ftplugin'
-        let cmd.filetype=matchstr(a:plugdict.id, '\v^[^/]*', 9)
+    if a:plugdict.isftplugin
+        let cmd.filetype=matchstr(a:plugdict.id, '\v\/@<=[^/]+')
     endif
     let cmdstring=''
     let addargs=[]
@@ -291,7 +291,7 @@ function s:F.command.add(plugdict, fdict, cid, cstr, copts)
     let cmd.rsp=s:F.getspfunc(a:plugdict.id, a:cid, a:copts, 'r')
     "▶3 Create :command -options
     for [key, value] in sort(items(s:cmddefaults))
-        if a:plugdict.type is# 'ftplugin' && key is# 'buffer'
+        if a:plugdict.isftplugin && key is# 'buffer'
             let value=1
         elseif has_key(a:copts, key)
             "▶4 Completion
