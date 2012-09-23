@@ -7,5 +7,6 @@ Add new tests, disable some present ones
 Add spelling support
 Add support for CursorLineNr (added in 7.3.479)
 Add support for |cpo-n| if support for a view just like in vim will be added
+Make it support using line spec for line numbers, sign and fold columns
 Fix handling of `~' tag
 Fix :Format diffformat

@@ -757,8 +757,9 @@ _out :: () + self._l, self._stack                                *FWC-cf-_out*
     |FWC-ck-_l| pointing to a tree.
 _toblock :: blocktype -> + self._l, self._stack              *FWC-cf-_toblock*
     Removes items from |FWC-ck-_stack| until it finds block with given type.
-_tolist :: () -> [ String ]                                   *FWC-cf-_tolist*
-    Constructs and returns a list of VimL commands.
+_tolist :: [ min] -> [ String ]                               *FWC-cf-_tolist*
+    Constructs and returns a list of VimL commands. If {min} optional argument 
+    is present and true, then it removes indent and minimizes vim commands.
 break :: () -> self                                          *FWC-cf-break*
 continue :: () -> self                                       *FWC-cf-continue*
     Adds |FWC-cb-do| with argument equal to function name and goes up one 

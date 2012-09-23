@@ -272,6 +272,20 @@ ColorFile :: 0 or filename (file must be readable)        *format-o-ColorFile*
         changes made to this option will be ignored if plugin is already 
         loaded (though you may use |frawor#Reload()|).
 
+        In the tools/ directory there is a script which helps you with 
+        creating color table: tools/getcolors.pl. It requires perl bindings to 
+        imagemagick, imagemagick shell commands and xdotool (to get focused 
+        window) installed, latter is optional. Usage is the following: >
+            # If you have N-colored terminal
+            ./tools/getcolors.pl colors.yaml N
+
+            # If you created a screenshot with color table by yourself and 
+            # want getcolors.pl to parse it (lines and columns are arguments 
+            # to SetupTable function in colortable.vim)
+            ./tools/getcolors.pl image.png lines columns > colors.yaml
+<       Note: you can’t use the script in first form with less then four 
+              colors.
+
 ==============================================================================
 4. Format specification description                              *format-spec*
 

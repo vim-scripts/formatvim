@@ -7,7 +7,7 @@ if !exists('s:_pluginloaded')
                 \                  '@/options': '0.0',
                 \                       '@/os': '0.0',
                 \                      '@/fwc': '0.0',
-                \          '@/fwc/constructor': '4.1',
+                \          '@/fwc/constructor': '4.2',
                 \     '@/decorators/altervars': '0.0',
                 \                   '@/base64': '0.0',}, 0)
     let s:cmd={}
@@ -94,7 +94,8 @@ function s:F.stuf.bbstrlen(str)
 endfunction
 "▶1 squote
 function s:F.squote(str)
-    return substitute(string(a:str), "\n", '''."\\n".''', 'g')
+    return substitute(substitute(string(a:str), "\n", '''."\\n".''', 'g'),
+                \                               '%',  '%%',          'g')
 endfunction
 "▶1 addsubs
 function s:F.addsubs(var, ...)
@@ -341,10 +342,10 @@ function s:F.procpc(str, opts, key, req, atargs)
     while !empty(str)
         let pidx=stridx(str, '%')
         if pidx==-1
-            call add(chunks, string(str))
+            call add(chunks, s:F.squote(str))
             break
         elseif pidx!=0
-            call add(chunks, string(str[:(pidx-1)]))
+            call add(chunks, s:F.squote(str[:(pidx-1)]))
         endif
         let str=str[(pidx+1):]
         let [shift, chunk]=s:F.getexpr(str, a:opts)
@@ -511,8 +512,14 @@ let s:htmlstylestr='((@inverse@)?'.
             \             '("font-style: italic; "):'.
             \             '("")).'.
             \           '((@underline@)?'.
-        \             '("text-decoration: underline; "):'.
+            \             '("text-decoration: underline; "):'.
             \             '(""))'
+let s:htmlinput='<input class="s%%S %s" type="xxxinvalid" '.
+            \          'readonly="readonly" tabindex="-1" '.
+            \          'onselect="this.blur(); return false;" '.
+            \          'onmousedown="this.blur(); return false;" '.
+            \          'onclick="this.blur(); return false;" '.
+            \          'size="%s" value="%s" />'
 let s:formats.html={
             \'style':        '%>((@styleid@!=#"")?'.
             \                   '(".s".@styleid@." {".'.
@@ -611,13 +618,11 @@ let s:formats.html={
             \                            '"''<span id=\"''.".ide.".''\">''"), '.
             \                        '"")''%',
             \'clstart':      '<span class="s%S">',
-            \'linenr':       '<input class="s%S LineNR" type="xxxinvalid" '.
-            \                       'readonly="readonly" tabindex="-1" '.
-            \                       'size="%''(@_linenumlen@+'.
-            \                                 '!!@_foldcolumn@+1)''%" '.
-            \                       'value="%''((@_foldcolumn@)?'.
+            \'linenr':       printf(s:htmlinput, 'LineNR',
+            \                       '%''(@_linenumlen@+!!@_foldcolumn@+1)''%',
+            \                       '%''((@_foldcolumn@)?'.
             \                                    '(@_leadingspace@):'.
-            \                                    '(""))''%%#% "/>',
+            \                                    '(""))''%%#% '),
             \'line':         '<span class="s%S">%s</span>',
             \'concealed':    '<span class="Concealed">'.
             \                   '<span class="s%S Shown">%s</span>'.
@@ -639,12 +644,10 @@ let s:formats.html={
             \                           '("#line".tag))."-0"))'.
             \                '''%">',
             \'tagend':       '</a>',
-            \'foldcolumn':   '<input class="s%S FoldColumn" type="xxxinvalid" '.
-            \                        'readonly="readonly" tabindex="-1" '.
-            \                        'size="%''@_foldcolumn@''%" '.
-            \                        'value="%''substitute(@@@, "\\V>", '.
-            \                                             '"\\&gt;", "g")''%"'.
-            \                '/>',
+            \'foldcolumn':   printf(s:htmlinput, 'FoldColumn',
+            \                       '%''@_foldcolumn@''%',
+            \                       '%''substitute(@@@, "\\V>", "\\&gt;", '.
+            \                                     '"g")''%'),
             \'fold':         '<span class="s%S Text">%s</span>'.
             \                '<span class="FoldFiller">% %.-</span>',
             \'difffiller':   '<span class="s%S DiffFiller">%-</span>',
@@ -665,12 +668,11 @@ let s:formats.html={
             \'sbsdsep':      '</td><td class="SbSDSep SbSDSep%C">%|</td>'.
             \                '<td class="SbSD%C">',
             \'sbsdend':      '</td></tr>',
-            \'sign':         '<input class="s%S Sign" type="xxxinvalid" '.
-            \                       'readonly="readonly" tabindex="-1" '.
-            \                       'size="2" value="%s" />',
+            \'sign':         printf(s:htmlinput, 'Sign', 2, '%s'),
             \'addopts': {'stylelist': ['Line', 'Fold', 'DiffFiller',
             \                          'CollapsedFiller']},
         \}
+unlet s:htmlinput
 if s:whatterm is# 'gui'
     function s:F.readfile(fname)
         if !filereadable(a:fname)
@@ -1110,11 +1112,66 @@ endfunction
 let s:cf={}
 function s:cf.new(cformat)
     return extend(copy(self), {'cformat': a:cformat,
-                \              'opts':    a:cformat.opts})
+                \              'opts':    a:cformat.opts,
+                \              'vars':    {},
+                \              'nextvar': 'a',})
 endfunction
 "▶1 cf.has
 function s:cf.has(key)
     return has_key(self.cformat, a:key)
+endfunction
+"▶1 cf.newvar
+function s:F.inc(next)
+    if empty(a:next)
+        return add(a:next, 'a')
+    endif
+    let c=a:next[-1]
+    if c is# '9'
+        call remove(a:next, -1)
+        return add(s:F.inc(a:next), 'a')
+    elseif c is# 'Z'
+        if len(a:next)>1
+            let a:next[-1]='0'
+        else
+            call remove(a:next, -1)
+            return add(s:F.inc(a:next), 'a')
+        endif
+    elseif c is# 'z'
+        let a:next[-1]='A'
+    else
+        let a:next[-1]=nr2char(char2nr(c)+1)
+    endif
+    return a:next
+endfunction
+function s:cf.newvar(var)
+    if a:var !~# '\v^(\a\:)@!\a\w*$'
+        throw 'Invalid variable name: '.a:var
+    endif
+    if !has_key(self.vars, a:var)
+        let self.vars[a:var]=self.nextvar
+        let i=len(self.nextvar)-1
+        let self.nextvar=join(s:F.inc(split(self.nextvar, '\v.@=')), '')
+    endif
+    return self.vars[a:var]
+endfunction
+"▶1 cf.getvar
+function s:cf.getvar(var)
+    let v=matchstr(a:var, '\v^(\a\:)@!\w+')
+    let tail=a:var[len(v):]
+    if empty(v)
+        return a:var
+    elseif !has_key(self.vars, v)
+        throw 'No variable: '.v
+    endif
+    return self.vars[v]
+endfunction
+"▶1 cf.expr
+function s:cf.expr(expr)
+    return substitute(a:expr, '\v\%(\%|\-?\d+|\a\w*)',
+                \     '\=submatch(1) is# "%"   ? '.
+                \           '"%" : '.
+                \           'self.getvar(submatch(1))',
+                \     'g')
 endfunction
 "▶1 cf.get
 function s:cf.get(key, ...)
@@ -1123,22 +1180,22 @@ function s:cf.get(key, ...)
     elseif self.cformat[a:key].isexpr
         let atargs=copy(s:defatargs)
         call map(s:keyargs[a:key][:-2], 'extend(atargs,{v:val : a:000[v:key]})')
-        let atargs.opts='opts'
+        let atargs.opts='%opts'
         return s:F.procpc(self.cformat[a:key].str, self.opts, a:key, 0, atargs)
     endif
-    return 'cformat.'.a:key.'.f('.join(a:000, ', ').', opts)'
+    return '%cformat.'.a:key.'.f('.join(a:000, ',').',%opts'.')'
 endfunction
 "▶1 cf.getspecstr
 function s:cf.getspecstr(...)
-    let args='cformat, '.join(a:000, ', ')
+    let args='%cformat,'.join(a:000, ',')
     if self.opts.docline
-        let condition='iscline'
+        let condition='%iscline'
         if self.opts.dosigns
-            let condition.=' && !(has_key(opts.placedsigns, clnr) && '.
-                        \     'has_key(opts.placedsigns[clnr][1], "linehl"))'
+            let condition.='&&!(has_key(%opts.placedsigns,%clnr) && '.
+                        \     'has_key(%opts.placedsigns[%clnr][1],''linehl''))'
         endif
-        return 'call(s:F.compiledspec, ['.args.']+'.
-                \               '(('.condition.')?(["CursorLine"]):([])), {})'
+        return 'call(s:F.compiledspec,['.args.']+'.
+                \               '(('.condition.')?([''CursorLine'']):([])),{})'
     else
         return 's:F.compiledspec('.args.')'
     endif
@@ -1177,40 +1234,78 @@ endfunction
 "▶1 ff
 let s:ff={}
 let s:ffcomp={}
-"▶2 .let
-" function s:ffcomp.letlist(r, toextend, indent, item)
-    " if len(a:item)==1
-        " return self._comp.let(a:r, a:toextend, a:indent, a:item[0])
-    " else
-        " call add(a:r, repeat(' ', &sw*a:indent).'let '.
-                    " \'['.join(map(copy(a:item), 'v:val[0]'), ',').']='.
-                    " \'['.join(map(copy(a:item), 'v:val[1]'), ','))
-    " endif
-" endfunction
-" function s:ff.let(var, expr)
-    " if get(self._l, 0) is# 'letlist'
-        " let self._l[1]+=[a:var, a:expr]
-        " return self
-    " else
-        " return self._out()._deeper('letlist', [a:var, a:expr])
-    " endif
-" endfunction
-"▶2 ff.letspec
-function s:ff.letspec(spname, ...)
-    return self.let(a:spname.'spec',
-                \   's:F.compiledspec(cformat,'.
-                \                 join(map(copy(a:000), '"''".v:val."''"'),',').
-                \                   ')')
+"▶2 ffcomp.c
+function s:ffcomp.c(cmd, arg)
+    return get(self._cmds, a:cmd, a:cmd).
+                \((a:arg =~# '\v^[a-zA-Z0-9_@!]')?(' '):('')).a:arg
 endfunction
-"▶2 letcf
-function s:ff.letcf(var, ...)
-    if self.__cf.has(a:1)
-        return self.let(a:var, call(self.__cf.get, a:000+['""'], self.__cf))
+"▶2 ff.expr
+function s:ff.expr(expr)
+    return self.__cf.expr(a:expr)
+endfunction
+"▶2 ff.__let
+function s:ff.__let(var, type, expr)
+    return self._out()._deeper('let',self.expr(a:var),a:type,self.expr(a:expr))
+                \._out()
+endfunction
+"▶2 ff.let
+function s:ff.let(var, expr)
+    if a:var =~# '\v^\%\a\w*$'
+        let var=self.__cf.newvar(a:var[1:])
     else
-        return self.let(a:var, '""')
+        let var=a:var
+    endif
+    return self.__let(var, '', a:expr)
+endfunction
+"▶2 ff.__leta
+function s:ff.__leta(var, type, expr)
+    if a:var =~# '\v^\%\a\w*$'
+        let var=self.__cf.newvar(a:var[1:])
+    else
+        let var=self.expr(a:var)
+    endif
+    if !empty(self._l) && self._l[-1][0] is# 'let' && self._l[-1][2] is# a:type
+        let expr=self.expr(a:expr)
+        let lblock=self._l[-1]
+        if lblock[1][0] is# '['
+            let lblock[1]=lblock[1][:-2].','.var.']'
+            let lblock[3]=lblock[3][:-2].','.expr.']'
+        else
+            let lblock[1]='['.lblock[1].','.var.']'
+            let lblock[3]='['.lblock[3].','.expr.']'
+        endif
+        return self
+    else
+        return call(self.__let, [var, a:type, a:expr], self)
     endif
 endfunction
-"▶2 appendcf
+"▶2 ff.leta
+function s:ff.leta(var, expr)
+    return self.__leta(a:var, '', a:expr)
+endfunction
+"▶2 ff.letabrk
+function s:ffcomp.letabreak(...)
+    " Do nothing
+endfunction
+function s:ff.letabreak()
+    return self._out()._deeper('letabreak')._out()
+endfunction
+"▶2 ff.letspec
+function s:ff.letspec(spname, ...)
+    return self.leta('%'.a:spname.'spec',
+                \    's:F.compiledspec(%cformat,'.
+                \                   join(map(copy(a:000),'"''".v:val."''"'),',').
+                \                    ')')
+endfunction
+"▶2 ff.letcf
+function s:ff.letcf(var, ...)
+    if self.__cf.has(a:1)
+        return self.leta(a:var, call(self.__cf.get, a:000+["''"], self.__cf))
+    else
+        return self.leta(a:var, "''")
+    endif
+endfunction
+"▶2 ff.appendcf
 function s:ff.appendcf(var, ...)
     if self.__cf.has(a:1)
         return self.append(a:var, call(self.__cf.get, a:000+[a:var], self.__cf))
@@ -1218,7 +1313,7 @@ function s:ff.appendcf(var, ...)
         return self
     endif
 endfunction
-"▶2 letc
+"▶2 ff.letc
 function s:ff.letc(var, ...)
     let self.__curvar=a:var
     if a:0>1
@@ -1227,7 +1322,7 @@ function s:ff.letc(var, ...)
         return call(self.let,   [self.__curvar, a:1],  self)
     endif
 endfunction
-"▶2 appendc
+"▶2 ff.appendc
 function s:ff.appendc(...)
     if a:0>1
         return call(self.appendcf, [self.__curvar]+a:000, self)
@@ -1235,9 +1330,27 @@ function s:ff.appendc(...)
         return call(self.append,   [self.__curvar, a:1],  self)
     endif
 endfunction
+"▶2 ff.call, .for, .while, .if, .elseif, .addif
+for s:f in ['call', 'for', 'while', 'if', 'elseif', 'addif', 'strappend']
+    execute      'function s:ff.'.s:f."(...)\n".
+                \'    return call(self.__orig.'.s:f.', '.
+                \                'map(copy(a:000), "self.expr(v:val)"), '.
+                \                "self)\n".
+                \'endfunction'
+endfor
+unlet s:f
+"▶2 ff.increment
+function s:ff.increment(var, ...)
+    return self.__let(a:var, '+', get(a:000, 0, 1))
+endfunction
+"▶2 ff.decrement
+function s:ff.decrement(var, ...)
+    return self.__let(a:var, '-', get(a:000, 0, 1))
+endfunction
 "▶2 newff
 function s:F.newff(cf)
     let r=s:_r.new_constructor()
+    let r.__orig=filter(copy(r), 'type(v:val)==2')
     call extend(r, s:ff)
     call extend(r._comp, s:ffcomp)
     let r.append=r.strappend
@@ -1477,24 +1590,24 @@ function s:F.initspecs(ff, opts)
     call a:ff.letspec('normal',  'Normal')
     call a:ff.letspec('special', highlight.SpecialKey)
     call a:ff.letspec('nt',      highlight.NonText)
-    let spspecstr='specialspec'
-    let ntspecstr='ntspec'
+    let spspecstr='%specialspec'
+    let ntspecstr='%ntspec'
     if a:opts.formatconcealed==2
         call a:ff.letspec('con', highlight.Conceal)
     endif
     if a:opts.dosigns
         call a:ff.letspec('sc',  highlight.SignColumn)
-        let spspecstr='((has_key(opts.placedsigns, clnr) && '.
-                    \   'has_key(opts.placedsigns[clnr][1], "linehl"))?'.
-                    \       '(s:F.compiledspec(cformat,'.
-                    \                  '"'.highlight.SpecialKey.'", '.
-                    \                  'opts.placedsigns[clnr][1].linehl)):'.
+        let spspecstr='((has_key(%opts.placedsigns,%clnr)&&'.
+                    \   'has_key(%opts.placedsigns[%clnr][1],''linehl''))?'.
+                    \       '(s:F.compiledspec(%cformat,'.
+                    \                  ''''.highlight.SpecialKey."',".
+                    \                  '%opts.placedsigns[%clnr][1].linehl)):'.
                     \       '('.spspecstr.'))'
-        let ntspecstr='((has_key(opts.placedsigns, clnr) && '.
-                    \   'has_key(opts.placedsigns[clnr][1], "linehl"))?'.
-                    \       '(s:F.compiledspec(cformat,'.
-                    \                  '"'.highlight.NonText.'", '.
-                    \                  'opts.placedsigns[clnr][1].linehl)):'.
+        let ntspecstr='((has_key(%opts.placedsigns,%clnr)&&'.
+                    \   'has_key(%opts.placedsigns[%clnr][1], ''linehl''))?'.
+                    \       '(s:F.compiledspec(%cformat,'.
+                    \                  "'".highlight.NonText."',".
+                    \                  '%opts.placedsigns[%clnr][1].linehl)):'.
                     \       '('.ntspecstr.'))'
     endif
     "▶2 Cursor
@@ -1502,8 +1615,8 @@ function s:F.initspecs(ff, opts)
         call a:ff.letspec('cl', 'Normal', 'CursorLine')
         call a:ff.letspec('clsp', highlight.SpecialKey, 'CursorLine')
         call a:ff.letspec('clnt', highlight.NonText,    'CursorLine')
-        let spspecstr='((iscline)?(clspspec):('.spspecstr.'))'
-        let ntspecstr='((iscline)?(clntspec):('.ntspecstr.'))'
+        let spspecstr='((%iscline)?(%clspspec):('.spspecstr.'))'
+        let ntspecstr='((%iscline)?(%clntspec):('.ntspecstr.'))'
     endif
     "▶2 Folds
     if a:opts.foldcolumn
@@ -1738,11 +1851,13 @@ function s:F.format(type, slnr, elnr, options, ...)
     "▲2
     let ff=s:F.newff(cf)
     "▶2 Initialize ff variables
-    call ff.let('cformat', s:F.addsubs('s:compiledfmts', a:type))
-    call ff.let('opts', s:F.addsubs('s:compiledfmts', a:type, 'opts'))
-    call ff.let('r', '[]')    " List with formatted output
-    call ff.let('clnr', slnr) " Line being processed
+    call ff.leta('%cformat', s:F.addsubs('s:compiledfmts', a:type))
+    call ff.leta('%opts', s:F.addsubs('s:compiledfmts', a:type, 'opts'))
+    call ff.leta('%r', '[]')    " List with formatted output
+    call ff.leta('%clnr', slnr) " Line being processed
+    call ff.letabreak()
     let [spspecstr, ntspecstr, highlight]=s:F.initspecs(ff, opts)
+    call ff.letabreak()
     "▲2
     let specialcolumns={}
     "▶2 Tag helper variables
@@ -1817,9 +1932,9 @@ function s:F.format(type, slnr, elnr, options, ...)
     "▲3
     if showprogress
         set laststatus=2
-        call ff.let('oldprogress',    0                  )
-        call ff.let('linesprocessed', 0                  )
-        call ff.let('linestoprocess', elnr-slnr+1)
+        call ff.leta('%oldprogress',    0                  )
+        call ff.leta('%linesprocessed', 0                  )
+        call ff.leta('%linestoprocess', elnr-slnr+1        )
         if s:whatterm is# 'cterm'
             let canresize=0
             " Вторая часть прогресс бара
@@ -1832,10 +1947,10 @@ function s:F.format(type, slnr, elnr, options, ...)
             endif
             " Старые значения % сделанного и длины строки из '='; первая часть 
             " progress bar’а со строкой =
-            call ff.let('oldcolnum', 0)
-            call ff.let('barstart', string('['))
-            call ff.let('barlen', barlen)
-            call ff.let('barend', string(repeat(" ", barlen).'] '))
+            call ff.leta('%oldcolnum', 0)
+            call ff.leta('%barstart', string('['))
+            call ff.leta('%barlen', barlen)
+            call ff.leta('%barend', string(repeat('' '', barlen).'] '))
         else
             let canresize=1
             let s:progress.oldcolnum=0
@@ -1850,396 +1965,399 @@ function s:F.format(type, slnr, elnr, options, ...)
     if opts.dosigns
         let persistentsc=!cf.hasreq('sign', ['a:line'])
         if persistentsc
-            call ff.letcf('nosignsc', 'sign', '"  "', 'scspec', 0, 0)
-            call ff.let('scols', '{}')
-            call ff.for('[sname, sign]', 'items(opts.signdefinitions)')
-            call    ff.if('has_key(sign, "texthl")')
-            call        ff.let('spec', 's:F.compiledspec(cformat, sign.texthl)')
+            call ff.letcf('%nosignsc', 'sign', '"  "', '%scspec', 0, 0)
+            call ff.leta('%scols', '{}')
+            call cf.newvar('sname')
+            call cf.newvar('sign')
+            call ff.for('[%sname,%sign]', 'items(%opts.signdefinitions)')
+            call    ff.if('has_key(%sign,''texthl'')')
+            call        ff.leta('%spec','s:F.compiledspec(%cformat,%sign.texthl)')
             call    ff.else()
-            call        ff.let('spec', 'scspec')
+            call        ff.leta('%spec', '%scspec')
             call    ff.endif()
             if s:whatterm is# 'gui'
-                call ff.if('has_key(sign, "icon")')
-                call    ff.letcf('scols[sname]', 'sign', 'sign.icon', 'spec',
+                call ff.if('has_key(sign,''icon'')')
+                call    ff.letcf('%scols[%sname]', 'sign', '%sign.icon', '%spec',
                             \    0, 2)
                 call ff.else()
             endif
-            call ff.if('has_key(sign, "text")')
-            call    ff.letcf('scols[sname]', 'sign','sign.text','spec',0,1)
+            call ff.if('has_key(%sign,''text'')')
+            call    ff.letcf('%scols[%sname]', 'sign','%sign.text','%spec',0,1)
             call ff.else()
-            call    ff.letcf('scols[sname]', 'sign', '"  "', 'scspec', 0,1)
+            call    ff.letcf('%scols[%sname]', 'sign', '''  ''',  '%scspec', 0,1)
             call ff.endfor()
         endif
     endif
     "▶2 Folds
     if opts.allfolds || opts.foldcolumn
         let persistentfdc=!cf.hasreq('foldcolumn', ['a:line'])
-        call ff.let('fclnr', slnr)
+        call ff.leta('%fclnr', slnr)
         call setwinvar(0, '&foldminlines', 0)
         "▶3 Get folds closed at the moment
         if !opts.ignorefolds
-            call ff.let('closedfolds',     '{}')
-            call ff.let('closedfoldslist', '[]')
+            call ff.leta('%closedfolds',     '{}')
+            call ff.leta('%closedfoldslist', '[]')
             if !opts.allfolds
-                call ff.let('closedfoldsends', '[]')
+                call ff.leta('%closedfoldsends', '[]')
             endif
-            call ff.while('fclnr<='.elnr)
-            call    ff.if('foldclosed(fclnr)!=-1')
-            call         ff.call('add(closedfoldslist, fclnr)')
-            call         ff.letc('closedfolds[fclnr]', 'linestart', 1,
-                        \        'foldspec', 'fclnr')
+            call ff.while('%fclnr<='.elnr)
+            call    ff.if('foldclosed(%fclnr)!=-1')
+            call         ff.call('add(%closedfoldslist,%fclnr)')
+            call         ff.letc('%closedfolds[%fclnr]', 'linestart', 1,
+                        \        '%foldspec', '%fclnr')
             if !opts.foldcolumn
                 if opts.dosigns
-                    call ff.appendc('sign', '"  "', 'foldspec', 'fclnr', 0)
+                    call ff.appendc('sign', '"  "', '%foldspec', '%fclnr', 0)
                 endif
                 if opts.dosomenr
-                    call ff.appendc('sign', '"  "', 'foldspec', 'fclnr', 0)
+                    call ff.appendc('sign', '"  "', '%foldspec', '%fclnr', 0)
                 endif
-                call     ff.appendc('fold', 'foldtextresult(fclnr)', 'foldspec',
-                            \       'fclnr')
-                call     ff.appendc('lineend', 1, 'foldspec', 'fclnr', 0)
+                call     ff.appendc('fold', 'foldtextresult(%fclnr)',
+                            \               '%foldspec', '%fclnr')
+                call     ff.appendc('lineend', 1, '%foldspec', '%fclnr', 0)
             endif
             if !opts.allfolds
-                call     ff.call('add(closedfoldsends, foldclosedend(fclnr))')
+                call     ff.call('add(%closedfoldsends, foldclosedend(%fclnr))')
                 if showprogress
-                    call ff.decrement('linestoprocess',
-                                \     'closedfoldsends[-1]-fclnr')
+                    call ff.decrement('%linestoprocess',
+                                \     '%closedfoldsends[-1]-%fclnr')
                 endif
-                call     ff.let('fclnr', 'closedfoldsends[-1]')
+                call     ff.leta('%fclnr', '%closedfoldsends[-1]')
             endif
             call    ff.endif()
-            call    ff.increment('fclnr')
+            call    ff.increment('%fclnr')
             call ff.endwhile()
         endif
         "▶3 Process other folds
         "▶4 Initializing fold column-related variables
         if opts.foldcolumn
-            call ff.let('foldlevel',   -1)
-            call ff.let('fdchange',     0)
-            call ff.let('foldlevels',  '{}')
-            call ff.let('foldcolumns', '{}')
+            call ff.leta('%foldlevel',   -1)
+            call ff.leta('%fdchange',     0)
+            call ff.leta('%foldlevels',  '{}')
+            call ff.leta('%foldcolumns', '{}')
             if persistentfdc
-                call ff.let('foldcolumns[-1]', 'repeat(['.
+                call ff.leta('%foldcolumns[-1]', 'repeat(['.
                             \cf.get('foldcolumn',
                             \       'repeat('.s:F.squote(opts.leadingspace).','.
                             \               opts.foldcolumn.')',
-                            \       'fcspec', 0, -1, '""').'], 3)')
+                            \       '%fcspec', 0, -1, "''").'], 3)')
             else
-                call ff.let('foldcolumnstarts', '{}')
-                call ff.let('foldcolumns[-1]',
-                            \string(repeat(opts.leadingspace, opts.foldcolumn)))
+                call ff.leta('%foldcolumnstarts', '{}')
+                call ff.leta('%foldcolumns[-1]',
+                            \s:F.squote(repeat(opts.leadingspace,
+                            \                  opts.foldcolumn)))
             endif
         endif
         "▶4 Initializing common variables
-        call ff.let('possiblefolds', '{}')
-        call ff.let('&foldlevel',     0)
-        call ff.let('oldfoldnumber', -1)
-        call ff.let('foldnumber',     0)
+        call ff.leta('%possiblefolds', '{}')
+        call ff.leta('&foldlevel',     0)
+        call ff.leta('%oldfoldnumber', -1)
+        call ff.leta('%foldnumber',     0)
         "▶4 Main cycle: getting all folds
-        call ff.while('oldfoldnumber!=foldnumber')
-        call      ff.let('oldfoldnumber', 'foldnumber')
-        call      ff.let('fclnr', slnr)
+        call ff.while('%oldfoldnumber!=%foldnumber')
+        call      ff.leta('%oldfoldnumber', '%foldnumber')
+        call      ff.leta('%fclnr', slnr)
         "▶5 Fold column
         if opts.foldcolumn
             call  ff.if('&foldlevel>='.(opts.foldcolumn-1))
-            call     ff.let('rstart', '&foldlevel-'.(opts.foldcolumn-3))
-            call     ff.let('rend',   '&foldlevel')
-            call     ff.let('fdctext',
-                         \'((rstart<=rend)?'.
-                         \   '((rend<10)?'.
-                         \       '(join(range(rstart, rend), "")):'.
-                         \   '((rstart<10)?'.
-                         \       '(join(range(rstart, 9), "").'.
-                         \        'repeat(">", rend-9))'.
+            call     ff.leta('%rstart', '&foldlevel'.printf('%+d', -(opts.foldcolumn-3)))
+            call     ff.leta('%rend',   '&foldlevel')
+            call     ff.let('%fdctext',
+                         \'((%rstart<=%rend)?'.
+                         \   '((%rend<10)?'.
+                         \       '(join(range(%rstart,%rend),'''')):'.
+                         \   '((%rstart<10)?'.
+                         \       '(join(range(%rstart,9),'''').'.
+                         \        'repeat(''>'',%rend-9))'.
                          \   ':'.
-                         \       '(repeat(">", '.(opts.foldcolumn-2).'))))'.
+                         \       '(repeat(''>'','.(opts.foldcolumn-2).'))))'.
                          \':'.
-                         \   '(""))')
-            call     ff.let('fdcnexttext', 'fdctext.((&foldlevel>=9)?'.
-                         \                            '(">"):'.
-                         \                         '((&foldlevel)?'.
-                         \                            '(&foldlevel+1):'.
-                         \                            '("|")))')
-            call     ff.let('fdcclosedtext',
+                         \   '(''''))')
+            call     ff.let('%fdcnexttext', '%fdctext.((&foldlevel>=9)?'.
+                         \                              '(''>''):'.
+                         \                           '((&foldlevel)?'.
+                         \                              '(&foldlevel+1):'.
+                         \                              '(''|'')))')
+            call     ff.leta('%fdcclosedtext',
                          \'((&foldlevel>='.opts.foldcolumn.')?'.
-                         \   '(((rstart<=10)?'.
-                         \       '(rstart-1):'.
-                         \       '(">")).fdctext):'.
+                         \   '(((%rstart<=10)?'.
+                         \       '(%rstart-1):'.
+                         \       '(''>'')).%fdctext):'.
                          \   '(repeat("|", '.(opts.foldcolumn-1).')))."+"')
-            call     ff.let('fdctextend',
+            call     ff.leta('%fdctextend',
                          \  'repeat('.s:F.squote(opts.leadingspace).', '.
-                         \          (opts.foldcolumn-1).'-len(fdctext))')
+                         \          (opts.foldcolumn-1).'-len(%fdctext))')
             call  ff.else()
-            call     ff.let('fdctext', 'repeat("|", &foldlevel)')
-            call     ff.let('fdcnexttext', 'fdctext."|"')
-            call     ff.let('fdctextend',
+            call     ff.let('%fdctext', 'repeat("|",&foldlevel)')
+            call     ff.let('%fdcnexttext', '%fdctext."|"')
+            call     ff.leta('%fdctextend',
                          \  'repeat('.s:F.squote(opts.leadingspace).', '.
-                         \          (opts.foldcolumn-1).'-len(fdctext))')
-            call     ff.let('fdcclosedtext', 'fdctext."+".fdctextend')
+                         \          (opts.foldcolumn-1).'-len(%fdctext))')
+            call     ff.let('%fdcclosedtext', '%fdctext."+".%fdctextend')
             call  ff.endif()
-            call  ff.append('fdcnexttext', 'fdctextend')
-            call  ff.let('fdcopenedtext', 'fdctext."-".fdctextend')
+            call  ff.append('%fdcnexttext', '%fdctextend')
+            call  ff.leta('%fdcopenedtext', '%fdctext."-".%fdctextend')
             if persistentfdc
-             call ff.let('foldcolumns[&foldlevel]', '['.
-                         \   join(map(['fdcclosedtext', 'fdcopenedtext',
-                         \             'fdcnexttext'],
-                         \            'cf.get("foldcolumn",v:val,"fcspec",0,'.
-                         \                   '"&foldlevel",''""'')'), ', ').']')
+             call ff.let('%foldcolumns[&foldlevel]', '['.
+                         \   join(map(['%fdcclosedtext', '%fdcopenedtext',
+                         \             '%fdcnexttext'],
+                         \            'cf.get("foldcolumn",v:val,"%fcspec",0,'.
+                         \                   '"&foldlevel","''''")'), ', ').']')
             else
-             call ff.let('foldcolumns[&foldlevel]', 'fdcnexttext')
+             call ff.leta('%foldcolumns[&foldlevel]', '%fdcnexttext')
             endif
         endif
         "▶5 Obtaining folds positions
-        call      ff.while('fclnr<='.elnr)
-        call         ff.if('foldclosed(fclnr)>-1')
-        call              ff.let('foldend', 'foldclosedend(fclnr)')
+        call      ff.while('%fclnr<='.elnr)
+        call         ff.if('foldclosed(%fclnr)>-1')
+        call              ff.leta('%foldend', 'foldclosedend(%fclnr)')
         if opts.allfolds
-            call          ff.let('foldtext', 'foldtextresult(fclnr)')
+            call          ff.leta('%foldtext', 'foldtextresult(%fclnr)')
             if cf.has('foldstart')
-                call      ff.if('!has_key(possiblefolds, fclnr)')
-                call         ff.let('possiblefolds[fclnr]', '{}')
+                call      ff.if('!has_key(%possiblefolds,%fclnr)')
+                call         ff.let('%possiblefolds[%fclnr]', '{}')
                 call      ff.endif()
-                call      ff.if('!has_key(possiblefolds[fclnr], "start")')
-                call         ff.let('possiblefolds[fclnr].start', '[]')
+                call      ff.if('!has_key(%possiblefolds[%fclnr],''start'')')
+                call         ff.let('%possiblefolds[%fclnr].start', '[]')
                 call      ff.endif()
-                call           ff.call('add(possiblefolds[fclnr].start, '.
-                            \          cf.get('foldstart', 'foldtext',
-                            \                 'foldspec', 'fclnr', '&foldlevel',
-                            \                 '""').')')
+                call           ff.call('add(%possiblefolds[%fclnr].start,'.
+                            \          cf.get('foldstart', '%foldtext',
+                            \                 '%foldspec', '%fclnr',
+                            \                 '&foldlevel', "''").')')
             endif
             if cf.has('foldend')
-                call       ff.let('foldinsbefore', 'foldend+1')
-                call       ff.if('!has_key(possiblefolds, foldinsbefore)')
-                call          ff.let('possiblefolds[foldinsbefore]', '{}')
+                call       ff.leta('%foldinsbefore', '%foldend+1')
+                call       ff.if('!has_key(%possiblefolds,%foldinsbefore)')
+                call          ff.let('%possiblefolds[%foldinsbefore]', '{}')
                 call       ff.endif()
-                call       ff.if('!has_key(possiblefolds[foldinsbefore],"end")')
-                call          ff.let('possiblefolds[foldinsbefore].end', '[]')
+                call       ff.if('!has_key(%possiblefolds[%foldinsbefore],''end'')')
+                call          ff.let('%possiblefolds[%foldinsbefore].end', '[]')
                 call       ff.endif()
-                call       ff.call('add(possiblefolds[foldinsbefore].end, '.
-                            \      cf.get('foldend', 'foldtext', 'foldspec',
-                            \             'foldend', '&foldlevel', '""').')')
+                call       ff.call('add(%possiblefolds[%foldinsbefore].end,'.
+                            \      cf.get('foldend', '%foldtext', '%foldspec',
+                            \             '%foldend', '&foldlevel', "''").')')
             endif
         endif
         if opts.foldcolumn
-            call          ff.let('foldlevels[fclnr]', '&foldlevel')
-            call          ff.if('!has_key(foldlevels, foldend+1)')
-            call              ff.let('foldlevels[foldend+1]', '&foldlevel-1')
+            call          ff.leta('%foldlevels[%fclnr]', '&foldlevel')
+            call          ff.if('!has_key(%foldlevels, %foldend+1)')
+            call              ff.let('%foldlevels[%foldend+1]', '&foldlevel-1')
             call          ff.endif()
-            let self.__curvar='closedfolds[fclnr]'
+            let self.__curvar='%closedfolds[%fclnr]'
             if !persistentfdc
               if !opts.ignorefolds
-                call      ff.if('has_key(closedfolds, fclnr)')
-                call         ff.appendc('foldcolumn', 'fdcclosedtext', 'fcspec',
-                            \           'fclnr', '&foldlevel')
+                call      ff.if('has_key(%closedfolds, %fclnr)')
+                call         ff.appendc('foldcolumn', '%fdcclosedtext', '%fcspec',
+                            \           '%fclnr', '&foldlevel')
                 if opts.dosigns
-                    call      ff.appendc('sign', '"  "', 'foldspec', 'fclnr', 0,)
+                    call      ff.appendc('sign', '"  "', '%foldspec', '%fclnr', 0,)
                 endif
                 if opts.dosomenr
-                    call      ff.appendc('linenr',cf.getnrstr('fclnr'),
-                                \        'foldspec', 'fclnr')
+                    call      ff.appendc('linenr',cf.getnrstr('%fclnr'),
+                                \        '%foldspec', '%fclnr')
                 endif
-                call          ff.appendc('fold', 'foldtextresult(fclnr)',
-                            \            'foldspec', 'fclnr')
-                call          ff.appendc('lineend', 1, 'foldspec', 'fclnr', 0)
+                call          ff.appendc('fold', 'foldtextresult(%fclnr)',
+                            \            '%foldspec', '%fclnr')
+                call          ff.appendc('lineend', 1, '%foldspec', '%fclnr', 0)
                 call      ff.endif()
               endif
-              call        ff.letcf('foldcolumnstarts[fclnr]', 'foldcolumn',
-                          \        'fdcopenedtext', 'fcspec', 'fclnr',
+              call        ff.letcf('%foldcolumnstarts[%fclnr]', 'foldcolumn',
+                          \        '%fdcopenedtext', '%fcspec', '%fclnr',
                           \        '&foldlevel')
             elseif !opts.ignorefolds
-              call        ff.if('has_key(closedfolds, fclnr)')
-              call            ff.appendc('foldcolumns[&foldlevel][0]')
+              call        ff.if('has_key(%closedfolds, %fclnr)')
+              call            ff.appendc('%foldcolumns[&foldlevel][0]')
               if opts.dosigns
-                  call        ff.appendc('sign', '"  "', 'foldspec', 'fclnr', 0)
+                  call        ff.appendc('sign', '"  "', '%foldspec', '%fclnr', 0)
               endif
               if opts.dosomenr
-                  call        ff.appendc('linenr', cf.getnrstr('fclnr'),
-                              \          'foldspec', 'fclnr')
+                  call        ff.appendc('linenr', cf.getnrstr('%fclnr'),
+                              \          '%foldspec', '%fclnr')
               endif
-              call            ff.appendc('fold', 'foldtextresult(fclnr)',
-                          \              'foldspec', 'fclnr')
-              call            ff.appendc('lineend', 1, 'foldspec', 'fclnr', 0)
+              call            ff.appendc('fold', 'foldtextresult(%fclnr)',
+                          \              '%foldspec', '%fclnr')
+              call            ff.appendc('lineend', 1, '%foldspec', '%fclnr', 0)
               call        ff.endif()
             endif
         endif
-        call              ff.let('fclnr', 'foldend')
-        call              ff.increment('foldnumber')
+        call              ff.let('%fclnr', '%foldend')
+        call              ff.increment('%foldnumber')
         call         ff.endif()
-        call         ff.increment('fclnr')
+        call         ff.increment('%fclnr')
         call      ff.endwhile()
         call      ff.increment('&foldlevel')
         call ff.endwhile()
     endif
     "▶2 Main cycle: processing lines
-    call ff.while('clnr<='.(elnr+((&diff)?(1):(0))))
-    call     ff.letc('curstr', '""')
+    call ff.while('%clnr<='.(elnr+((&diff)?(1):(0))))
+    call     ff.letc('%curstr', "''")
     if opts.docline
-        call ff.let('iscline', 'clnr=='.opts.cline)
+        call ff.leta('%iscline', '%clnr=='.opts.cline)
     endif
     "▶3 Fold column support
     if opts.foldcolumn
       if &diff
-        call ff.let('fillfoldlevel', 'foldlevel')
+        call ff.leta('%fillfoldlevel', '%foldlevel')
       endif
-      call   ff.if('has_key(foldlevels, clnr)')
-      call        ff.let('fdchange', 1)
-      call        ff.let('foldlevel', 'foldlevels[clnr]')
+      call   ff.if('has_key(%foldlevels, %clnr)')
+      call        ff.let('%fdchange', 1)
+      call        ff.leta('%foldlevel', '%foldlevels[%clnr]')
       call   ff.else()
-      call        ff.let('fdchange', 0)
+      call        ff.let('%fdchange', 0)
       call   ff.endif()
     endif
     "▶3 Progress bar support
     if showprogress
       if canresize
-        call ff.let('barlen', 'winwidth(0)-'.((showprogress==2)?
+        call ff.leta('%barlen', 'winwidth(0)-'.((showprogress==2)?
                 \                               (((opts.linenumlen)*2)+10):
                 \                               ('8')))
       endif
-      call   ff.increment('linesprocessed')
-      call   ff.let('progress', '100*linesprocessed/linestoprocess')
-      call   ff.let('colnum', ((canresize)?
-              \                   ('barlen'):
+      call   ff.increment('%linesprocessed')
+      call   ff.leta('%progress', '100*%linesprocessed/%linestoprocess')
+      call   ff.leta('%colnum', ((canresize)?
+              \                   ('%barlen'):
               \                   (barlen)).
-              \               '*linesprocessed/linestoprocess')
+              \               '*%linesprocessed/%linestoprocess')
       if showprogress!=2
-        call ff.if('progress!=oldprogress || '.
-                    \'colnum!='.((canresize)?
+        call ff.if('%progress!=%oldprogress || '.
+                    \'%colnum!='.((canresize)?
                     \                 ('s:progress.'):
-                    \                 ('')).'oldcolnum')
+                    \                 ('%')).'oldcolnum')
       endif
       if canresize
-        call    ff.let('bar', '"[".repeat("=", colnum).">".'.
-                    \         'repeat(" ", barlen-colnum)."] "')
+        call    ff.leta('%bar', '"[".repeat("=",%colnum).">".'.
+                    \         'repeat('' '',%barlen-%colnum)."] "')
       else
-        call    ff.if('colnum!=oldcolnum')
-        call       ff.append('barstart', 'repeat("=", colnum-oldcolnum)')
-        call       ff.let('barend', 'barend[(colnum-oldcolnum):]')
+        call    ff.if('%colnum!=%oldcolnum')
+        call       ff.append('%barstart', 'repeat("=",%colnum-%oldcolnum)')
+        call       ff.let('%barend', '%barend[%colnum-%oldcolnum :]')
         call    ff.endif()
-        call    ff.let('bar', 'barstart.">".barend')
+        call    ff.let('%bar', '%barstart.">".%barend')
       endif
-      call      ff.append('bar', ((showprogress==2)?
-            \                     ('repeat(" ", '.opts.linenumlen.'-len(clnr))'.
-            \                      '.clnr."/'.elnr.' ".'):
+      call      ff.append('%bar', ((showprogress==2)?
+            \                     ('repeat('' '','.opts.linenumlen.'-len(%clnr))'.
+            \                      '.%clnr.''/'.elnr.' ''.'):
             \                     ('')).
-            \                 'repeat(" ", 3-len(progress)).progress."%%"')
-      call      ff.call('setwinvar(0, "&statusline", bar)')
+            \                 'repeat('' '',3-len(%progress)).%progress."%%"')
+      call      ff.call('setwinvar(0,''&statusline'',%bar)')
       call      ff.do('redrawstatus')
       if showprogress!=2
         call ff.endif()
       endif
-      call   ff.let('oldprogress', 'progress')
-      call   ff.let(((canresize)?('s:progress.'):('')).'oldcolnum',
-                  \ 'colnum')
+      call   ff.let('%oldprogress', '%progress')
+      call   ff.leta(((canresize)?('s:progress.'):('%')).'oldcolnum',
+                  \ '%colnum')
       if canresize
-       call  ff.let('s:progress.progress', 'progress')
-       call  ff.let('s:progress.linesprocessed', 'linesprocessed')
+       call  ff.leta('s:progress.progress', '%progress')
+       call  ff.leta('s:progress.linesprocessed', '%linesprocessed')
        if showprogress==2
-        call ff.let('s:progress.clnr', 'clnr')
+        call ff.leta('s:progress.clnr', '%clnr')
        endif
       endif
     endif
     "▶3 Processing deleted lines
     if &diff
-      call   ff.let('filler', 'diff_filler(clnr)')
-      call   ff.if('filler>0')
-      call      ff.letcf('curstrstart', 'linestart', 2.
+      call   ff.leta('%filler', 'diff_filler(%clnr)')
+      call   ff.if('%filler>0')
+      call      ff.letcf('%curstrstart', 'linestart', 2.
                   \                     ((collapsafter)?
-                  \                       '+(filler>='.collapsafter.')':
-                  \                       ''), 'fillspec', 'clnr')
+                  \                       '+(%filler>='.collapsafter.')':
+                  \                       ''), '%fillspec', '%clnr')
       "▶4 Leading columns (fold, sign, number)
       if opts.foldcolumn
-        call    ff.append('curstrstart', ((persistentfdc)?
-                    \                      ('foldcolumns[fillfoldlevel][2]'):
+        call    ff.append('%curstrstart', ((persistentfdc)?
+                    \                      ('%foldcolumns[%fillfoldlevel][2]'):
                     \                      (cf.get('foldcolumn',
-                    \                              'foldcolumns[fillfoldlevel]',
-                    \                              'fcspec', 'clnr',
-                    \                              'fillfoldlevel',
-                    \                              'curstrstart'))))
+                    \                              '%foldcolumns[%fillfoldlevel]',
+                    \                              '%fcspec', '%clnr',
+                    \                              '%fillfoldlevel',
+                    \                              '%curstrstart'))))
       endif
       if opts.dosigns
-        call    ff.append('curstrstart', ((persistentsc)?
-                    \                       ('nosignsc'):
-                    \                       (cf.get('sign', '"  "', 'scspec',
-                    \                               'clnr', 0, 'curstrstart'))))
+        call    ff.append('%curstrstart', ((persistentsc)?
+                    \                       ('%nosignsc'):
+                    \                       (cf.get('sign', '"  "', '%scspec',
+                    \                               '%clnr', 0, '%curstrstart'))))
       endif
       if opts.dosomenr
-        call    ff.appendcf('curstrstart', 'linenr','""', 'nrspec', 'clnr')
+        call    ff.appendcf('%curstrstart', 'linenr',"''", '%nrspec', '%clnr')
       endif
       "▶4 Filler
       if !persistentfiller
         if collapsafter
-          call  ff.if('filler<'.collapsafter)
+          call  ff.if('%filler<'.collapsafter)
         endif
-        call        ff.let('curfil', 'filler')
-        call        ff.while('curfil')
-        call            ff.let('curstr', 'curstrstart')
+        call        ff.let('%curfil', '%filler')
+        call        ff.while('%curfil')
+        call            ff.let('%curstr', '%curstrstart')
         call            ff.appendc('difffiller', s:F.squote(opts.difffillchar),
-                    \              'fillspec', 'clnr', 'curfil')
-        call            ff.appendc('lineend', 2, 'fillspec', 'clnr',0)
-        call            ff.call('add(r, curstr)')
-        call            ff.decrement('curfil')
+                    \              '%fillspec', '%clnr', '%curfil')
+        call            ff.appendc('lineend', 2, '%fillspec', '%clnr',0)
+        call            ff.call('add(%r,%curstr)')
+        call            ff.decrement('%curfil')
         call        ff.endwhile()
         if collapsafter
           call  ff.else()
-          call      ff.let('curstr', 'curstrstart')
-          call      ff.appendc('collapsedfiller', 'filler', 'fillspec', 'clnr')
-          call      ff.appendc('lineend', 3, 'fillspec', 'clnr', 0)
-          call      ff.call('add(r, curstr)')
+          call      ff.let('%curstr', '%curstrstart')
+          call      ff.appendc('collapsedfiller', '%filler', '%fillspec', '%clnr')
+          call      ff.appendc('lineend', 3, '%fillspec', '%clnr', 0)
+          call      ff.call('add(%r,%curstr)')
           call  ff.endif()
         endif
       else
-        call    ff.let('curstr', 'curstrstart')
+        call    ff.let('%curstr', '%curstrstart')
         call    ff.appendc(s:F.squote(fillerstr))
-        call    ff.appendc('lineend', 2, 'fillspec', 'clnr', 0)
-        call    ff.increment('r', 'repeat([curstr], filler)')
+        call    ff.appendc('lineend', 2, '%fillspec', '%clnr', 0)
+        call    ff.increment('%r', 'repeat([%curstr],%filler)')
       endif
       "▲4
-      call      ff.let('curstr', '""')
+      call      ff.let('%curstr', "''")
       call   ff.endif()
-      call   ff.if('clnr>'.elnr)
+      call   ff.if('%clnr>'.elnr)
       call      ff.break()
       call   ff.endif()
     endif
     "▶3 Processing folds
     if !opts.ignorefolds && !opts.allfolds && !opts.foldcolumn "▶4
-      call   ff.if('foldclosed(clnr)!=-1')
-      call      ff.letcf('curstr', 'linestart', 1, 'foldspec', 'clnr')
+      call   ff.if('foldclosed(%clnr)!=-1')
+      call      ff.letcf('%curstr', 'linestart', 1, '%foldspec', '%clnr')
       if opts.dosigns
-        call    ff.appendc('sign', '"  "', 'foldspec', 'clnr', 0)
+        call    ff.appendc('sign', '"  "', '%foldspec', '%clnr', 0)
       endif
       if opts.dosomenr
-        call    ff.appendc('linenr', cf.getnrstr('clnr'), 'foldspec',
-                    \                 'clnr')
+        call    ff.appendc('linenr', cf.getnrstr('%clnr'), '%foldspec',
+                    \                 '%clnr')
       endif
-      call      ff.appendc('fold', 'foldtextresult(clnr)', 'foldspec', 'clnr')
-      call      ff.appendc('lineend', 1, 'foldspec', 'clnr', 0)
-      call      ff.call('add(r, curstr)')
-      call      ff.let('clnr', 'foldclosedend(clnr)+1')
+      call      ff.appendc('fold', 'foldtextresult(%clnr)', '%foldspec', '%clnr')
+      call      ff.appendc('lineend', 1, '%foldspec', '%clnr', 0)
+      call      ff.call('add(%r,%curstr)')
+      call      ff.let('%clnr', 'foldclosedend(%clnr)+1')
       call      ff.continue()
       call      ff.else()
     elseif opts.allfolds || opts.foldcolumn "▶4
       if opts.allfolds
-        call ff.if('has_key(possiblefolds, clnr)')
-        call    ff.let('pf', 'possiblefolds[clnr]')
+        call ff.if('has_key(%possiblefolds,%clnr)')
+        call    ff.let('%pf', '%possiblefolds[%clnr]')
         if cf.has('foldend')
-          call  ff.if('has_key(pf, "end")')
-          call      ff.increment('r', 'pf.end')
+          call  ff.if('has_key(%pf,''end'')')
+          call      ff.increment('%r', '%pf.end')
           call  ff.endif()
         endif
         if cf.has('foldstart')
-          call  ff.if('has_key(pf, "start")')
-          call      ff.increment('r', 'pf.start')
+          call  ff.if('has_key(%pf,''start'')')
+          call      ff.increment('%r', '%pf.start')
           call  ff.endif()
         endif
         call ff.endif()
       endif
       if !opts.ignorefolds
-        call ff.if('!empty(closedfoldslist) && clnr==closedfoldslist[0]')
-        call    ff.call('remove(closedfoldslist, 0)')
-        call    ff.call('add(r, closedfolds[clnr])')
+        call ff.if('!empty(%closedfoldslist)&&%clnr==%closedfoldslist[0]')
+        call    ff.call('remove(%closedfoldslist,0)')
+        call    ff.call('add(%r,%closedfolds[%clnr])')
         if !opts.allfolds
-          call  ff.let('clnr', 'remove(closedfoldsends, 0)+1')
-          call  ff.decrement('foldlevel')
+          call  ff.let('%clnr', 'remove(%closedfoldsends,0)+1')
+          call  ff.decrement('%foldlevel')
           call  ff.continue()
         endif
         call ff.endif()
@@ -2247,27 +2365,27 @@ function s:F.format(type, slnr, elnr, options, ...)
     endif
     "▶3 Processing regular lines
     "▶4 Initializing variables
-    call        ff.let('linestr',  'getline(clnr)')
-    call        ff.let('linelen',  'len(linestr)')
-    call        ff.let('curcol',   1)
+    call        ff.let('%linestr',  'getline(%clnr)')
+    call        ff.let('%linelen',  'len(%linestr)')
+    call        ff.leta('%curcol',   1)
     " Indicates that this line differs
-    call        ff.let('diffattr', ((&diff)?('diff_hlID(clnr, 1)'):(0)))
+    call        ff.leta('%diffattr', ((&diff)?('diff_hlID(%clnr,1)'):(0)))
     let hasspcol=0
     if !empty(tagregex) && cf.has('tagend')
         let hasspcol=1
         " Contains tag ends
-        call    ff.let('specialcolumns', string(specialcolumns))
+        call    ff.leta('%specialcolumns', string(specialcolumns))
     endif
     if &diff "▶5
         " XXX diffid is taken from beyond the end of line because inside the 
         "     line there may be differences in highlighting: overall line is 
         "     highlighted in one color and parts that differ in the other
-        call    ff.if('diffattr')
-        call        ff.let('diffid', 'diff_hlID(clnr, linelen+1)')
-        call        ff.let('diffhlname', 'synIDattr(synIDtrans(diffid),"name",'.
-                    \                              '"'.s:whatterm.'")')
-        call        ff.let('dspec', 's:F.compiledspec(cformat,"Normal",'.
-                    \                                'diffhlname)')
+        call    ff.if('%diffattr')
+        call        ff.let('%diffid', 'diff_hlID(%clnr,%linelen+1)')
+        call        ff.let('%diffhlname', 'synIDattr(synIDtrans(%diffid),''name'','.
+                    \                              ''''.s:whatterm.''')')
+        call        ff.let('%dspec', 's:F.compiledspec(%cformat,''Normal'','.
+                    \                                 '%diffhlname)')
         call    ff.endif()
     endif
     "▶5 Care about 'lcs' option
@@ -2289,165 +2407,165 @@ function s:F.format(type, slnr, elnr, options, ...)
     let npregex=s:F.squote(npregex)
     "▲5
     if has_key(listchars, 'trail') "▶5
-      call      ff.let('trail', 'len(matchstr(linestr, ''\v\s+$''))')
-      call      ff.if('trail')
-      call          ff.decrement('linelen', 'trail')
-      call          ff.let('linestr', 'linestr[:(linelen-1)].'.
-                  \                   'substitute(linestr[(linelen):], " ", '.
+      call      ff.leta('%trail', 'len(matchstr(%linestr,''\v\s+$''))')
+      call      ff.if('%trail')
+      call          ff.decrement('%linelen', '%trail')
+      call          ff.let('%linestr', '%linestr[:%linelen-1].'.
+                  \                   'substitute(%linestr[%linelen :], " ", '.
                   \                        s:F.squote(escape(listchars.trail,
-                  \                                          '&~\')).',"g")')
+                  \                                          '&~\')).',''g'')')
       call      ff.endif()
     endif                          "▲5
     "▶4 Line start
     call        ff.appendc('linestart', 0,
                 \          ((&diff)?
-                \              ('((diffattr)?(dspec):(normalspec))'):
-                \              ('normalspec')), 'clnr')
+                \              ('(%diffattr?%dspec :%normalspec)'):
+                \              ('%normalspec')), '%clnr')
     if opts.foldcolumn "▶5
       if persistentfdc
-        call    ff.appendc('foldcolumns[foldlevel][2-fdchange]')
+        call    ff.appendc('%foldcolumns[%foldlevel][2-%fdchange]')
       else
-        call    ff.if('has_key(foldcolumnstarts, clnr)')
-        call        ff.appendc('foldcolumnstarts[clnr]')
+        call    ff.if('has_key(%foldcolumnstarts,%clnr)')
+        call        ff.appendc('%foldcolumnstarts[%clnr]')
         call    ff.else()
-        call        ff.appendc('foldcolumn', 'foldcolumns[foldlevel]', 'fcspec',
-                    \          'clnr', 'foldlevel')
+        call        ff.appendc('foldcolumn', '%foldcolumns[%foldlevel]', '%fcspec',
+                    \          '%clnr', '%foldlevel')
         call    ff.endif()
       endif
     endif
     if opts.dosigns "▶5
-      call      ff.if('has_key(opts.placedsigns, clnr)')
+      call      ff.if('has_key(%opts.placedsigns,%clnr)')
       if persistentsc
-        call        ff.appendc('scols[opts.placedsigns[clnr][1].id]')
+        call        ff.appendc('%scols[%opts.placedsigns[%clnr][1].id]')
       else
-        call        ff.let('sign', 'opts.placedsigns[clnr][1]')
-        call        ff.let('sspec', 'has_key(sign, "texthl")?'.
-                    \                  's:F.compiledspec(cformat,sign.texthl):'.
-                    \                  'scspec')
+        call        ff.let('%sign', '%opts.placedsigns[%clnr][1]')
+        call        ff.let('%sspec', 'has_key(%sign,''texthl'')?'.
+                    \                  's:F.compiledspec(%cformat,%sign.texthl):'.
+                    \                  '%scspec')
         if s:whatterm is# 'gui'
-          call      ff.addif('has_key(sign, "icon")')
-          call          ff.appendc('sign', 'sign.icon', 'sspec', 'clnr', 2)
+          call      ff.addif('has_key(%sign,''icon'')')
+          call          ff.appendc('sign', '%sign.icon', '%sspec', '%clnr', 2)
           call      ff._up()
         endif
-        call        ff.addif('has_key(sign, "text")')
-        call            ff.appendc('sign', 'sign.text', 'sspec', 'clnr', 1)
+        call        ff.addif('has_key(%sign,''text'')')
+        call            ff.appendc('sign', '%sign.text', '%sspec', '%clnr', 1)
         call        ff.else()
-        call            ff.appendc('sign','"  "', 'scspec', 'clnr', 1)
+        call            ff.appendc('sign','"  "', '%scspec', '%clnr', 1)
         call        ff.endif()
       endif
       call      ff.else()
       if persistentsc
-        call        ff.appendc('nosignsc')
+        call        ff.appendc('%nosignsc')
       else
-        call        ff.appendc('sign', '"  "', 'scspec', 'clnr', 0)
+        call        ff.appendc('sign', '"  "', '%scspec', '%clnr', 0)
       endif
       call      ff.endif()
     endif
     if opts.docline && cf.has('clstart') "▶5
-      call      ff.if('iscline')
-      call          ff.appendc('clstart', 'clspec', 'clnr')
+      call      ff.if('%iscline')
+      call          ff.appendc('clstart', '%clspec', '%clnr')
       call      ff.endif()
     endif
     if opts.dosomenr "▶5
-      call      ff.appendc('linenr', cf.getnrstr('clnr'),
+      call      ff.appendc('linenr', cf.getnrstr('%clnr'),
                        \   ((opts.docline)?
-                       \      ('((iscline)?'.
-                       \          '(nrclspec):'.
-                       \          '(nrspec))'):
-                       \      ('nrspec')), 'clnr')
+                       \      ('(%iscline?'.
+                       \          '%nrclspec :'.
+                       \          '%nrspec)'):
+                       \      ('%nrspec')), '%clnr')
     endif
     "▶4 Processing line text
     if !empty(tagregex)
-      call      ff.let('ignoretag', 0)
+      call      ff.let('%ignoretag', 0)
     endif
-    call        ff.let('id', 0)
-    call        ff.while('curcol<=linelen')
-    call            ff.let('startcol', 'curcol')
+    call        ff.leta('%id', 0)
+    call        ff.while('%curcol<=%linelen')
+    call            ff.let('%startcol', '%curcol')
     if opts.formatconcealed
-      call          ff.let('concealed', 0)
+      call          ff.leta('%concealed', 0)
     endif
     "▶5 Getting length of zone with same highlighting
     "▶6 Tags
     if empty(tagregex)
-      let whcalls=[['increment', ['curcol']]]
+      let whcalls=[['increment', ['%curcol']]]
     else
-      let whcalls= [['if', ['!ignoretag']],
-                  \ [   'let', ['tag', 'matchstr(linestr, '.
+      let whcalls= [['if', ['!%ignoretag']],
+                  \ [   'let', ['tag', 'matchstr(%linestr,'.
                   \                               '''\v\k@<!%''.'.
-                  \                                 'curcol.''c%('.
+                  \                                 '%curcol.''c%('.
                   \                                  s:F.squote(tagregex)[1:-2].
                   \                                 ')\k@!'')']],
-                  \ [   'if', ['!empty(tag)']],
-                  \ [       'let', ['ignoretag', 1]],
+                  \ [   'if', ['!empty(%tag)']],
+                  \ [       'let', ['%ignoretag', 1]],
                   \ [       'break', []],
                   \ [   'endif', []],
                   \ ['endif', []],
-                  \ ['increment', ['curcol']]]
-      call          ff.let('tag', 'ignoretag?'.
-                  \                     '"":'.
-                  \                     'matchstr(linestr, '.
+                  \ ['increment', ['%curcol']]]
+      call          ff.leta('%tag', '%ignoretag?'.
+                  \                     ''''':'.
+                  \                     'matchstr(%linestr,'.
                   \                               '''\v\k@<!%''.'.
-                  \                                 'curcol.''c%('.
+                  \                                 '%curcol.''c%('.
                   \                                  s:F.squote(tagregex)[1:-2].
                   \                                 ')\k@!'')')
-      call          ff.if('!empty(tag)')
-      call              ff.let('ignoretag', 1)
+      call          ff.if('!empty(%tag)')
+      call              ff.let('%ignoretag', 1)
       call          ff.else()
-      call              ff.let('ignoretag', '(index(values(specialcolumns), '.
-                  \                                       '"tag")!=-1)')
+      call              ff.let('%ignoretag', 'index(values(%specialcolumns),'.
+                  \                                       '''tag'')!=-1')
     endif
     "▲6
-    call                ff.let('id', 'synID(clnr, curcol, 1)')
+    call                ff.leta('%id', 'synID(%clnr,%curcol,1)')
     "▶6 Concealed characters
     if opts.formatconcealed
       let nocconceal=(opts.docline && (stridx(&concealcursor, 'n')!=-1))
       if nocconceal
-        call            ff.if('if !iscline')
+        call            ff.if('!%iscline')
       endif
-      call                  ff.let('concealinfo', 'synconcealed(clnr, curcol)')
-      call                  ff.let('concealed',   'concealinfo[0]')
+      call                  ff.let('%concealinfo', 'synconcealed(%clnr,%curcol)')
+      call                  ff.let('%concealed',   '%concealinfo[0]')
       if nocconceal
         call            ff.endif()
       endif
-      call              ff.addif('concealed')
-      call                  ff.increment('curcol')
-      call                  ff.while('concealinfo is#synconcealed(clnr,curcol)')
+      call              ff.addif('%concealed')
+      call                  ff.increment('%curcol')
+      call                  ff.while('%concealinfo is#synconcealed(%clnr,%curcol)')
       call                      map(copy(whcalls),
                   \                 'call(ff[v:val[0]],v:val[1],ff)')
       call                  ff.endwhile()
       if &conceallevel==1
-        call                ff.if('empty(concealinfo[1])')
-        call                    ff.let('concealinfo[1]',
+        call                ff.if('empty(%concealinfo[1])')
+        call                    ff.let('%concealinfo[1]',
                     \                  s:F.squote(get(listchars,'conceal',' ')))
         call                ff.endif()
       elseif &conceallevel==3
-        call                ff.let('concealinfo[1]', '""')
+        call                ff.let('%concealinfo[1]', "''")
       endif
       call              ff._up()
     endif
     "▶6 Line with differences
     if &diff
-      call              ff.addif('diffattr')
-      call                  ff.let('diffid', 'diff_hlID(clnr, curcol)')
-      call                  ff.increment('curcol')
-      call                  ff.while('id==synID(clnr, curcol, 1) && '.
-                  \                  'diffid==diff_hlID(clnr, curcol) && '.
+      call              ff.addif('%diffattr')
+      call                  ff.let('%diffid', 'diff_hlID(%clnr,%curcol)')
+      call                  ff.increment('%curcol')
+      call                  ff.while('%id==synID(%clnr,%curcol,1)&&'.
+                  \                  '%diffid==diff_hlID(%clnr,%curcol)&&'.
                   \                  ((hasspcol)?
-                  \                       ('!has_key(specialcolumns, '.
-                  \                                 'curcol) && '):('')).
-                  \                  'curcol<=linelen')
+                  \                       ('!has_key(%specialcolumns,'.
+                  \                                 '%curcol)&&'):('')).
+                  \                  '%curcol<=%linelen')
       call                      map(copy(whcalls),
                   \                 'call(ff[v:val[0]],v:val[1],ff)')
       call                  ff.endwhile()
       call              ff._up()
     endif
     call                ff.addelse()
-    call                    ff.increment('curcol')
-    call                    ff.while('id==synID(clnr, curcol, 1) && '.
+    call                    ff.increment('%curcol')
+    call                    ff.while('%id==synID(%clnr,%curcol,1)&&'.
                 \                    ((hasspcol)?
-                \                         ('!has_key(specialcolumns, '.
-                \                                   'curcol) && '):('')).
-                \                    'curcol<=linelen')
+                \                         ('!has_key(%specialcolumns,'.
+                \                                   '%curcol)&&'):('')).
+                \                    '%curcol<=%linelen')
     call                        map(copy(whcalls),
                 \                   'call(ff[v:val[0]],v:val[1],ff)')
     call                    ff.endwhile()
@@ -2461,78 +2579,78 @@ function s:F.format(type, slnr, elnr, options, ...)
     "▶5 Formatting line
     "▶6 Getting text to be formatted
     if opts.formatconcealed==1
-      call          ff.if('concealed')
-      call              ff.let('cstr', 'concealinfo[1]')
+      call          ff.if('%concealed')
+      call              ff.let('%cstr', '%concealinfo[1]')
       call          ff.else()
     endif
-    call                ff.let('cstr', 'strpart(linestr, startcol-1, '.
-                \                                       'curcol-startcol)')
+    call                ff.let('%cstr', 'strpart(%linestr,%startcol-1,'.
+                \                                        '%curcol-%startcol)')
     if opts.formatconcealed==1
       call          ff.endif()
     endif
     "▶6 Getting specification according to which text will be formatted
     if opts.formatconcealed
-      call          ff.addif('concealed')
+      call          ff.addif('%concealed')
       if opts.formatconcealed==2
-        call            ff.let('hlname', 'synIDattr(synIDtrans(id), "name", '.
-                    \                              '"'.s:whatterm.'")')
+        call            ff.let('%hlname', 'synIDattr(synIDtrans(%id),''name'','.
+                    \                              ''''.s:whatterm.''')')
       else
-        call            ff.let('hlname', string(highlight.Conceal))
+        call            ff.let('%hlname', string(highlight.Conceal))
       endif
       call          ff._up()
     endif
     if has_key(listchars, 'trail')
-      call          ff.addif('trail==-1')
-      call              ff.let('hlname', string(highlight.SpecialKey))
+      call          ff.addif('%trail==-1')
+      call              ff.let('%hlname', string(highlight.SpecialKey))
       call          ff._up()
     endif
     call            ff.addelse()
-    call                ff.let('hlname', 'synIDattr(synIDtrans(id), "name", '.
-                \                                   '"'.s:whatterm.'")')
+    call                ff.let('%hlname', 'synIDattr(synIDtrans(%id),''name'','.
+                \                                  ''''.s:whatterm.''')')
     if has_key(listchars, 'trail') || opts.formatconcealed
       call          ff.endif()
     endif
     if &diff
-      call          ff.addif('diffattr')
-      call              ff.let('spec', cf.getspecstr('hlname', 'diffhlname'))
-      call              ff.let('ddspec', cf.getspecstr('"Normal"','diffhlname'))
+      call          ff.addif('%diffattr')
+      call              ff.let('%spec', cf.getspecstr('%hlname', '%diffhlname'))
+      call              ff.leta('%ddspec', cf.getspecstr("'Normal'", '%diffhlname'))
       call          ff._up()
     endif
     if opts.dosigns
-      call          ff.addif('has_key(opts.placedsigns, clnr) && '.
-                  \          'has_key(opts.placedsigns[clnr][1], "linehl")')
-      call              ff.let('spec', 's:F.compiledspec(cformat, hlname, '.
-                  \                         'opts.placedsigns[clnr][1].linehl)')
+      call          ff.addif('has_key(%opts.placedsigns,%clnr)&&'.
+                  \          'has_key(%opts.placedsigns[%clnr][1],''linehl'')')
+      call              ff.let('%spec', 's:F.compiledspec(%cformat,%hlname,'.
+                  \                         '%opts.placedsigns[%clnr][1].linehl)')
       call          ff._up()
     endif
     call            ff.addelse()
-    call                ff.let('spec', cf.getspecstr('hlname'))
+    call                ff.let('%spec', cf.getspecstr('%hlname'))
     if &diff || opts.dosigns
       call          ff.endif()
     endif
     "▶6 Processing tabs and unprintable symbols
     if opts.formatconcealed
-      call          ff.if('!concealed')
+      call          ff.if('!%concealed')
     endif
-    call                ff.let('idx', 'match(cstr, '.npregex.')')
-    call                ff.if('idx!=-1')
-    call                    ff.let('rstartcol',
-                \                  's:F.stuf.strlen(linestr[:(startcol-1)])')
-    call                    ff.while('idx!=-1')
+    call                ff.leta('%idx', 'match(%cstr,'.npregex.')')
+    call                ff.if('%idx!=-1')
+    call                    ff.let('%rstartcol',
+                \                  's:F.stuf.strlen(%linestr[:(%startcol-1)])')
+    call                    ff.while('%idx!=-1')
     " Part of the current line up to next tabulation
-    call                        ff.let('fcstr', '((idx)?(cstr[:(idx-1)]):(""))')
-    call                        ff.let('ridx',  's:F.stuf.strlen(fcstr)')
-    call                        ff.let('istab', 'cstr[idx] is# "\t"')
+    call                        ff.let('%fcstr', '%idx?%cstr[:(%idx-1)]:""')
+    call                        ff.let('%ridx',  's:F.stuf.strlen(%fcstr)')
+    call                        ff.leta('%istab', '%cstr[%idx]is#"\t"')
     "▶7 Formatting string up to tabulation
     if !has_key(listchars, 'tab')
-      call                      ff.if('!istab')
+      call                      ff.if('!%istab')
     endif
-    call                            ff.if('!empty(fcstr)')
-    call                                ff.appendc('line', 'fcstr',
+    call                            ff.if('!empty(%fcstr)')
+    call                                ff.appendc('line', '%fcstr',
                 \                                  ((&diff)?
-                \                                      ('(diffattr?(ddspec):'.
-                \                                                 '(spec))'):
-                \                                      ('spec')), 'clnr', 'idx')
+                \                                      ('(%diffattr?%ddspec :'.
+                \                                                  '%spec)'):
+                \                                      ('%spec')), '%clnr', '%idx')
     call                            ff.endif()
     if !has_key(listchars, 'tab')
       call                      ff.endif()
@@ -2540,53 +2658,51 @@ function s:F.format(type, slnr, elnr, options, ...)
     "▶7 Formatting tabulation
     let longtab=((&list && has_key(listchars, 'tab')) || !&list)
     if longtab
-      call                      ff.if('istab')
-      call                          ff.let('i', &tabstop.'-'.
-                  \                             '((rstartcol+ridx-1)%'.
-                  \                               &tabstop.')')
+      call                      ff.if('%istab')
+      let ival=&tabstop.'-'.'((%rstartcol+%ridx-1)%%'.&tabstop.')'
       if has_key(listchars, 'tab')
         let lcstabfirst=matchstr(listchars.tab, '\v^.')
         let lcstabnext=listchars.tab[len(lcstabfirst):]
-        call                        ff.let('tabstr',s:F.squote(lcstabfirst).'.'.
+        call                        ff.let('%tabstr',s:F.squote(lcstabfirst).'.'.
                     \                      'repeat('.s:F.squote(lcstabnext).','.
-                    \                              ' i-1)')
-        call                        ff.appendc('line', 'tabstr',
+                    \                              ival.'-1)')
+        call                        ff.appendc('line', '%tabstr',
                     \                          ((&diff)?
-                    \                              ('(diffattr?(ddspec):'.
-                    \                                         '('.spspecstr.'))'):
-                    \                              (spspecstr)), 'clnr', 'idx')
-        call                        ff.let('cstr', 'cstr[(idx+1):]')
+                    \                              ('(%diffattr?%ddspec :'.
+                    \                                           spspecstr.')'):
+                    \                              (spspecstr)), '%clnr', '%idx')
+        call                        ff.let('%cstr', '%cstr[(%idx+1):]')
       else
-        call                        ff.let('tabstr', 'repeat(" ", i)')
-        call                        ff.let('cstr','fcstr.tabstr.cstr[(idx+1):]')
+        call                        ff.let('%tabstr', 'repeat('' '','.ival.')')
+        call                        ff.let('%cstr','%fcstr.%tabstr.%cstr[%idx+1:]')
       endif
       call                      ff.else()
     endif
     "▲7
-    call                            ff.let('cstr', 'cstr[len(fcstr):]')
-    call                            ff.let('char', 'matchstr(cstr, "\\v^.")')
-    call                            ff.let('cstr', 'cstr[len(char):]')
+    call                            ff.leta('%cstr', '%cstr[len(%fcstr):]')
+    call                            ff.let('%char', 'matchstr(%cstr,"\\v^.")')
+    call                            ff.let('%cstr', '%cstr[len(%char):]')
     "▶7 Formatting non-breaking spaces
     if has_key(listchars, 'nbsp')
-      call                          ff.if('char is# " "')
+      call                          ff.if('%char is#" "')
       call                              ff.appendc('line',
                   \                                s:F.squote(listchars.nbsp),
                   \                                    (&diff)?
-                  \                                        ('(diffattr?'.
-                  \                                          '(ddspec):'.
-                  \                                          '('.spspecstr.'))'):
+                  \                                        ('(%diffattr?'.
+                  \                                              '%ddspec :'.
+                  \                                              spspecstr.')'):
                   \                                        (spspecstr),
-                  \                                'clnr', 'idx')
+                  \                                '%clnr', '%idx')
       call                          ff.else()
     endif
     "▲7
-    call                                ff.appendc('line', 'strtrans(char)',
+    call                                ff.appendc('line', 'strtrans(%char)',
                 \                                  (&diff)?
-                \                                      ('(diffattr?'.
-                \                                           '(ddspec):'.
-                \                                           '('.ntspecstr.'))'):
+                \                                      ('(%diffattr?'.
+                \                                                '%ddspec :'.
+                \                                                ntspecstr.')'):
                 \                                      (ntspecstr),
-                \                                  'clnr', 'idx')
+                \                                  '%clnr', '%idx')
     "▶7 Ending some if’s
     if has_key(listchars, 'nbsp')
       call                          ff.endif()
@@ -2595,30 +2711,30 @@ function s:F.format(type, slnr, elnr, options, ...)
       call                      ff.endif()
     endif
     "▲7
-    call                        ff.let('idx', 'match(cstr, '.npregex.')')
+    call                        ff.let('%idx', 'match(%cstr,'.npregex.')')
     call                    ff.endwhile()
     call                ff.endif()
     "▶6 Concealed characters
     if opts.formatconcealed
       call          ff.endif()
       if opts.formatconcealed==2
-        call        ff.if('concealed')
-        call            ff.appendc('cformat.concealed.f(concealinfo[1],'.
-                    \                                  'conspec,clnr,curcol,'.
-                    \                                  'curstr,opts,cstr,spec)')
+        call        ff.if('%concealed')
+        call            ff.appendc('%cformat.concealed.f(%concealinfo[1],'.
+                    \                                   '%conspec,%clnr,%curcol,'.
+                    \                                   '%curstr,%opts,%cstr,%spec)')
         call        ff.else()
       endif
     endif
     "▶6 Reset trail
     if has_key(listchars, 'trail')
-      call              ff.if('trail>0 && curcol>linelen')
-      call                  ff.increment('linelen', 'trail')
-      call                  ff.let('trail', -1)
+      call              ff.if('%trail>0&&%curcol>%linelen')
+      call                  ff.increment('%linelen', '%trail')
+      call                  ff.let('%trail', -1)
       call              ff.endif()
     endif
     "▶6 Including formatted part
-    call                ff.if('!empty(cstr)')
-    call                    ff.appendc('line', 'cstr', 'spec', 'clnr', 'curcol')
+    call                ff.if('!empty(%cstr)')
+    call                    ff.appendc('line', '%cstr', '%spec', '%clnr', '%curcol')
     call                ff.endif()
     "▶6 End if
     if opts.formatconcealed==2
@@ -2626,18 +2742,18 @@ function s:F.format(type, slnr, elnr, options, ...)
     endif
     "▶5 Tags support
     if hasspcol && cf.has('tagend')
-      call          ff.if('get(specialcolumns, curcol) is# "tag"')
-      call              ff.appendc('tagend', 'tag', 'spec', 'clnr', 'curcol')
-      call              ff.call('remove(specialcolumns, curcol)')
-      call              ff.let('tag', '""')
-      call              ff.let('ignoretag', 0)
+      call          ff.if('get(%specialcolumns,%curcol)is#''tag''')
+      call              ff.appendc('tagend', '%tag', '%spec', '%clnr', '%curcol')
+      call              ff.call('remove(%specialcolumns,%curcol)')
+      call              ff.let('%tag', "''")
+      call              ff.leta('%ignoretag', 0)
       call          ff.endif()
     endif
     if hasspcol && cf.has('tagstart')
-      call          ff.if('!empty(tag)')
-      call              ff.appendc('tagstart', 'tag', 'spec', 'clnr', 'curcol')
+      call          ff.if('!empty(%tag)')
+      call              ff.appendc('tagstart', '%tag', '%spec', '%clnr', '%curcol')
       if cf.has('tagstart')
-        call            ff.let('specialcolumns[curcol+len(tag)]', '"tag"')
+        call            ff.let('%specialcolumns[%curcol+len(%tag)]', "'tag'")
       endif
       call          ff.endif()
     endif
@@ -2647,46 +2763,46 @@ function s:F.format(type, slnr, elnr, options, ...)
     if has_key(listchars, 'eol') "▶5
       call      ff.appendc('line', s:F.squote(listchars.eol),
             \              (&diff)?
-            \                  ('(diffattr?(dspec):('.ntspecstr.'))'):
-            \                  (ntspecstr), 'clnr', 'curcol+1')
+            \                  ('(%diffattr?%dspec :'.ntspecstr.')'):
+            \                  (ntspecstr), '%clnr', '%curcol+1')
     endif
     if opts.docline && cf.has('clend') "▶5
-      call      ff.if('iscline')
-      call          ff.appendc('clend', 'clspec', 'clnr')
+      call      ff.if('%iscline')
+      call          ff.appendc('clend', '%clspec', '%clnr')
       call      ff.endif()
     endif
     if cf.has('lineend') "▶5
-      call      ff.appendc('lineend', 0, 'normalspec', 'clnr', 'curcol')
+      call      ff.appendc('lineend', 0, '%normalspec', '%clnr', '%curcol')
     endif
     "▲3
     if !opts.ignorefolds && !opts.allfolds && !opts.foldcolumn
       call   ff.endif()
     endif
-    call     ff.call('add(r, curstr)')
-    call     ff.increment('clnr')
+    call     ff.call('add(%r,%curstr)')
+    call     ff.increment('%clnr')
     call ff.endwhile()
     "▶2 Beginning and end
     if opts.allfolds
-     cal ff.if('has_key(possiblefolds, clnr)')
-     call    ff.let('pf', 'possiblefolds[clnr]')
-     call    ff.if('has_key(pf, "end")')
-     call        ff.increment('r', 'pf.end')
+     cal ff.if('has_key(%possiblefolds,%clnr)')
+     call    ff.let('%pf', '%possiblefolds[%clnr]')
+     call    ff.if('has_key(%pf,''end'')')
+     call        ff.increment('%r', '%pf.end')
      call    ff.endif()
      cal ff.endif()
     endif
     if !sbsd
      if cf.has('begin')
-      cal ff.call('insert(r, cformat.begin.f(normalspec, "", opts, '.
-            \                               'cformat.stylestr))')
+      cal ff.call('insert(%r,%cformat.begin.f(%normalspec,'''',%opts,'.
+            \                                '%cformat.stylestr))')
      endif
      if cf.has('end')
-      cal ff.call('add(r, cformat.end.f(normalspec, '.elnr.', "", opts, '.
-            \                          'cformat.stylestr))')
+      cal ff.call('add(%r,%cformat.end.f(%normalspec,'.elnr.','''',%opts,'.
+            \                           '%cformat.stylestr))')
      endif
     endif
-    call ff.do('return r')
+    call ff.do('return '.cf.getvar('r'))
     "▲2
-    let f=['function d.compiledformat()']+ff._tolist()+['endfunction']
+    let f=['function d.compiledformat()']+ff._tolist(1)+['endfunction']
     let d={}
     " " FIXME Remove debugging line
     " call writefile(f, $HOME.'/tmp/cformat.vim')
@@ -2883,5 +2999,4 @@ unlet s:format
 if !has('syntax')
     call s:_f.warn('synnsup')
 endif
-" vim: ft=vim:ts=8:fdm=marker:fenc=utf-8:fmr=▶,▲
-
+" vim: ft=vim:ts=8:fdm=marker:fenc=utf-8:fmr=▶,▲:tw=100

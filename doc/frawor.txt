@@ -1449,6 +1449,8 @@ changes.
     3.1: Made self.continue and self.break go up one level.
     4.0: Splitted self.addif(expr?) into self.addif(expr) and self.addelse()
     4.1: Added self.endfor() and self.endwhile().
+    4.2: Made it possible to minimize code (currently only indent is removed 
+         and command names are truncated).
 @/os:
     0.1: Added |frawor-r-os.path.relpath|
          Made |frawor-r-os.path.normpath| also simplify its argument
