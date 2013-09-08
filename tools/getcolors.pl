@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use Image::Magick;
-use YAML;
+use YAML::XS;
 use File::Basename;
 use Cwd;
 if($ARGV[0] eq "--help") {
@@ -238,6 +238,6 @@ if(defined $targetfile) {
 else {
     $F=*STDOUT;
 }
-print $F YAML::Dump(&GetRGBTable($image, @args));
+print $F YAML::XS::Dump(&GetRGBTable($image, @args));
 close $F;
 # 4, 3, 132, 275, 8, 17

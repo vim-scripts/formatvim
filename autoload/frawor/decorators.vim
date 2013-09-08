@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/resources': '0.0'}, 1)
+execute frawor#Setup('0.0', {'@/resources': '0.0'})
 "▶1 Define messages
 if v:lang=~?'ru'
     let s:_messages={

@@ -2,7 +2,7 @@
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@/resources': '0.0',
             \             '@/fwc/intfuncs': '0.0',
-            \        '@/fwc/topconstructs': '0.0'}, 1)
+            \        '@/fwc/topconstructs': '0.0'})
 let s:parser={}
 "▶1 Define messages
 let s:_messages={

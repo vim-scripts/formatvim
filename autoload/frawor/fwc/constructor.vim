@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('4.2', {'@/resources': '0.0'}, 1)
+execute frawor#Setup('4.2', {'@/resources': '0.0'})
 let s:constructor={}
 let s:comp={}
 let s:constructor._comp=s:comp
@@ -292,8 +292,8 @@ function s:constructor._tolist(...)
     let r=[]
     let items=map(deepcopy(self._tree), '[0, v:val]')
     let toextend=[]
-    let self._comp.indent=((a:0 && a:1)?(s:F.indentmin):(s:F.indent))
-    let self._comp._cmds=((a:0 && a:1)?(s:cmdmin):({}))
+    let self._comp.indent=((!a:0 || a:1)?(s:F.indentmin):(s:F.indent))
+    let self._comp._cmds=((!a:0 || a:1)?(s:cmdmin):({}))
     while !empty(items)
         let [indent, item]=remove(items, 0)
         if type(item)==type('')

@@ -119,7 +119,10 @@ if v:lang=~?'ru'
                 \                'быть непустым списком '.
                 \                'целых неотрицательных чисел',
                 \  'thrownbool': 'Ошибка добавления зависимости %s '.
-                \                'дополнения %s: последний аргумент '.
+                \                'дополнения %s: последний обязательный '.
+                \                'аргумент должен быть нулём или единицей',
+                \  'plidrnbool': 'Ошибка добавления зависимости %s '.
+                \                'дополнения %s: необязательный аргумент '.
                 \                'должен быть нулём или единицей',
             \}
 else
@@ -212,7 +215,10 @@ else
                 \                'to plugin %s: plugin version should be '.
                 \                'a non-empty list of non-negative integers',
                 \  'thrownbool': 'Error while adding dependency %s '.
-                \                'to plugin %s: last argument should be '.
+                \                'to plugin %s: last required argument '.
+                \                'should be either 0 or 1',
+                \  'plidrnbool': 'Error while adding dependency %s '.
+                \                'to plugin %s: optional argument should be '.
                 \                'either 0 or 1',
             \}
 endif
@@ -223,7 +229,7 @@ endfunction
 let s:_functions+=['s:Eval']
 "▶1 expandplid      :: String → plid
 let s:prefixes={
-            \'@/': 'plugin/frawor/',
+            \'@/': 'autoload/frawor/',
             \'@:': 'ftplugin/',
             \'@%': 'autoload/',
             \'@' : 'plugin/',
@@ -261,10 +267,11 @@ function s:F.compareversions(a, b)
 endfunction
 "▶1 normpath        :: path + FS → path
 let s:sep=fnamemodify(expand('<sfile>:h'), ':p')[-1:]
+let s:sesep=escape(s:sep, '\&~')
+let s:resep='\V'.escape(s:sep, '\').'\+'
 function s:F.normpath(path)
-    return expand(fnameescape(substitute(resolve(a:path),
-                \                        '\V'.escape(s:sep, '\').'\+',
-                \                        escape(s:sep, '\&~'), 'g')), 1)
+    return substitute(expand(fnameescape(resolve(a:path)), 1),
+                \     s:resep, s:sesep, 'g')
 endfunction
 "▶1 parseplugpath   :: filename + FS → (plugtype, plid, runtimepath)
 let s:rtpcache={}
@@ -433,9 +440,9 @@ function s:F.updatedeplen(plid, newval, updated)
                     \   '0)')
     endif
 endfunction
-"▶1 newplugin       :: version, sid, file, dependencies, oneload, g → +s:pls,
+"▶1 newplugin       :: version, sid, file, dependencies, g → +s:pls,
 let s:ftplugtypes=['ftplugin', 'syntax', 'indent']
-function s:F.newplugin(version, sid, file, dependencies, oneload, g)
+function s:F.newplugin(version, sid, file, dependencies, g)
     "▶2 Checking whether a:file is a string
     if type(a:file)!=type('')
         call s:_f.throw('filenotstr')
@@ -490,7 +497,6 @@ function s:F.newplugin(version, sid, file, dependencies, oneload, g)
                 \  'runtimepath': plrtp,
                 \      'version': plversion,
                 \   'isftplugin': index(s:ftplugtypes, plugtype)!=-1,
-                \      'oneload': !!a:oneload,
                 \         'file': ((a:version is 0)?(get(a:g, '_sfile', 0)):
                 \                                   (a:file)),
                 \          'sid': a:sid,
@@ -563,11 +569,7 @@ function s:F.newplugin(version, sid, file, dependencies, oneload, g)
     call s:F.updatedeplen(plid, s:deplen[plid], {})
     call s:F.initfeatures(plugdict)
     let plugdict.g._pluginloaded=0
-    if a:oneload
-        call s:F.loadplugin(plugdict)
-    else
-        call s:F.addcons(plugdict)
-    endif
+    call s:F.loadplugin(plugdict)
 endfunction
 "▶1 addfeature      :: plugdict, feature(ircl)[, load] → + shadowdict
 function s:F.addfeature(plugdict, feature, ...)
@@ -671,7 +673,6 @@ function s:F.loadplugin(plid)
     if plugdict.status!=2
         let shadowdict=s:shadow[plugdict.id]
         let s:loading[plid]=1
-        let plugdict.g._loading=1
         let d={}
         try
             let olddeplen=s:deplen[plid]
@@ -710,9 +711,6 @@ function s:F.loadplugin(plid)
                 call s:F.addfeature(plugdict, feature, 1)
             endfor
             "▲2
-            if !plugdict.oneload
-                execute 'source '.fnameescape(plugdict.file)
-            endif
             if s:deplen[plid]>olddeplen
                 call s:F.updatedeplen(plid, s:deplen[plid], {})
             endif
@@ -732,7 +730,6 @@ function s:F.loadplugin(plid)
             endif
             "▲2
         finally
-            unlet plugdict.g._loading
             unlet s:loading[plid]
         endtry
     endif
@@ -954,8 +951,8 @@ endfunction
 let s:features[s:newfeature.id]=s:newfeature
 let s:featordered.all+=[s:newfeature]
 "▶1 Plugin registration
-call s:F.newplugin([0, 3], s:Eval('+matchstr(expand("<sfile>"), ''\d\+'')'),
-            \      expand('<sfile>:p'), {}, 1, s:)
+call s:F.newplugin([1, 1], s:Eval('+matchstr(expand("<sfile>"), ''\d\+'')'),
+            \      expand('<sfile>:p'), {}, s:)
 let s:shadow[s:_frawor.id].features.newfeature.newfeature=s:newfeature
 unlet s:newfeature
 "▶1 warn feature    :: {f}, msgid, … + p:_messages → message + echomsg
@@ -995,7 +992,7 @@ function s:F.throw(plugdict, fdict, msgid, ...)
 endfunction
 call s:_f.newfeature('throw', {'cons': s:F.throw})
 "▶1 require feature :: {f}, plid, version, throw → + plugdict
-function s:F.require(plugdict, fdict, dplid, dversion, throw)
+function s:F.require(plugdict, fdict, dplid, dversion, throw, ...)
     "▶2 Check arguments
     if type(a:dplid)!=type('') || empty(a:dplid)
         call s:_f.throw('plidnstr', a:plugdict.id)
@@ -1004,11 +1001,13 @@ function s:F.require(plugdict, fdict, dplid, dversion, throw)
         call s:_f.throw('invplversion', a:dplid, a:plugdict.id)
     elseif type(a:throw)!=type(0)
         call s:_f.throw('thrownbool', a:dplid, a:plugdict.id)
+    elseif a:0 && type(a:1)!=type(0)
+        call s:_f.throw('plidrnbool', a:dplid, a:plugdict.id)
     endif
     "▲2
     let dplid=s:F.expandplid(a:dplid, a:plugdict.id)
     if has_key(a:plugdict.dependencies, dplid)
-        return 2
+        return (a:0 && a:1 ? dplid : 2)
     endif
     "▶2 Add dependency
     unlockvar 1 a:plugdict.dependencies
@@ -1039,7 +1038,7 @@ function s:F.require(plugdict, fdict, dplid, dversion, throw)
                                 \'v:val.load(a:plugdict, fdicts[v:val.name])')
                 endif
                 call s:F.runfeatures(a:plugdict, 'depadd', dplid)
-                return 1
+                return (a:0 && a:1 ? dplid : 1)
             endif
         else
             if a:throw
@@ -1075,9 +1074,12 @@ function s:F.require(plugdict, fdict, dplid, dversion, throw)
         endif
     endfor
     call s:F.runfeatures(a:plugdict, 'depadd', dplid)
-    return 1
+    return (a:0 && a:1 ? dplid : 1)
 endfunction
 call s:_f.newfeature('require', {'cons': s:F.require})
+"▶1 Load modules with ignoredeps features
+call FraworLoad('@/functions')
+call FraworLoad('@/autocommands')
 "▶1
 call frawor#Lockvar(s:, 'dependents,features,featordered,loading,shadow,pls,'.
             \           'rtpcache,dircache,deplen,plfeatures')

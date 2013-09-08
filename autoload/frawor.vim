@@ -11,7 +11,7 @@ function s:Eval(expr)
 endfunction
 let s:_functions+=['s:Eval']
 "▶1 frawor#Setup      :: version, dependencies[, oneload] → vimlstr
-function frawor#Setup(version, dependencies, ...)
+function frawor#Setup(version, dependencies)
     if type(a:version)==type('')
         let ver=map(split(a:version, '\.'), '+v:val')
     else
@@ -22,7 +22,6 @@ function frawor#Setup(version, dependencies, ...)
                 \   '(map(split(v:val, "\\."), "+v:val")):'.
                 \   '(v:val))')
     let dstr=substitute(string(deps), "\n", '''."\\n".''', 'g')
-    let oneload=((a:0)?(a:1 isnot 0):(1))
     return       "if !exists('s:_pluginloaded')\n"
                 \."    execute \"function s:Eval(expr)\\n"
                 \.              "    return eval(a:expr)\\n"
@@ -33,8 +32,7 @@ function frawor#Setup(version, dependencies, ...)
                 \."    let s:F={}\n"
                 \."    let s:_functions=['s:Eval']\n"
                 \."    call FraworRegister(".string(ver).", "
-                \.                               "s:_sid, s:_sfile, ".dstr.", "
-                \.                                oneload.", s:)\n"
+                \.                        "s:_sid, s:_sfile, ".dstr.", s:)\n"
                 \."elseif s:_pluginloaded\n"
                 \."    finish\n"
                 \."endif\n"
@@ -62,7 +60,7 @@ if !exists('*FraworRegister')
     runtime! plugin/frawor.vim
 endif
 call FraworRegister([0, 0], s:Eval('+matchstr(expand("<sfile>"), ''\d\+'')'),
-            \       expand('<sfile>:p'), {}, 1, s:)
+            \       expand('<sfile>:p'), {}, s:)
 "▶1
 call frawor#Lockvar(s:, '')
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80

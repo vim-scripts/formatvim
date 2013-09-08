@@ -1,35 +1,50 @@
 "▶1 Начало
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/resources': '0.0',
-            \                  '@/options': '0.0',
-            \                       '@/os': '0.0',
-            \                      '@/fwc': '0.0',
-            \          '@/fwc/constructor': '4.2',
-            \                '@/functions': '0.0',
-            \     '@/decorators/altervars': '0.0',
-            \                   '@/base64': '0.0',})
+execute frawor#Setup('2.0', {'@/options': '0.0',
+            \                     '@/os': '0.0',
+            \                    '@/fwc': '0.0',
+            \        '@/fwc/constructor': '4.2',
+            \              '@/functions': '0.0',
+            \                  '@/table': '0.1',
+            \   '@/decorators/altervars': '0.0',
+            \                 '@/base64': '0.0',})
 let s:formats={}
-let s:keylist=['begin', 'sbsdstart', 'sbsdsep', 'foldstart', 'linestart',
-            \  'foldcolumn', 'sign', 'clstart', 'linenr',
-            \  'tagstart', 'line', 'concealed', 'tagend',
-            \  'fold', 'difffiller', 'collapsedfiller',
-            \  'clend', 'lineend', 'foldend', 'sbsdend', 'end',
-            \  'style']
+let s:keylist=['begin',
+            \   'sbsdstart',
+            \    'sbsdsep',
+            \    'foldstart',
+            \     'linestart',
+            \      'foldcolumn', 'sign', 'linenr',
+            \      'tagstart',
+            \       'concealedstart',
+            \        'line',
+            \       'concealedend',
+            \      'tagend',
+            \      'fold', 'difffiller', 'collapsedfiller',
+            \     'lineend',
+            \    'foldend',
+            \   'sbsdend',
+            \  'end', 'style']
+" Used solely to not let vim delete functions which were profiled
+let s:profiled=[]
 "▶1
 if !has('syntax')
     call s:_f.warn('synnsup')
 endif
 "▶1 Options
-let s:checkreg='(#nomagicchg not match /\\[vVmM]/ #^ |=("\\V".@.@) isreg)'
+" Debugging options:
+"   Debugging: Disabled by default, enables other Debugging_* options.
+"   Debugging_FuncF: If not zero, writes the resulting compiled function to the given file
+"   Debugging_MinFu: If true, minimizes compiled function code
 let s:_options={
             \   'DefaultFormat': {'default': 'html',
             \                     'checker': 'key s:formats',},
-            \  'KeepColorCache': {'default':  1,  'filter': 'bool',},
             \    'IgnoreCursor': {'default':  1,  'filter': 'bool'},
             \     'IgnoreFolds': {'default':  0,  'filter': 'bool'},
             \      'IgnoreList': {'default':  0,  'filter': 'bool'},
             \        'AllFolds': {'default':  0,  'filter': 'bool'},
             \     'IgnoreSigns': {'default':  0,  'filter': 'bool'},
+            \      'IgnoreDiff': {'default':  0,  'filter': 'bool'},
             \      'IgnoreTags': {'default':  1, 'checker': 'range  0  2' },
             \    'ShowProgress': {'default':  0, 'checker': 'range  0  2' },
             \   'CollapsFiller': {'default':  0, 'checker': 'range  0 inf'},
@@ -38,13 +53,29 @@ let s:_options={
             \      'FoldColumn': {'default': -1, 'checker': 'range -1 inf'},
             \      'MaxDupTags': {'default':  5, 'checker': 'range  0 inf'},
             \ 'FormatConcealed': {'default':  1, 'checker': 'range  0  2' },
-            \     'StartTagReg': {'default':  0, 'checker': s:checkreg    },
-            \       'EndTagReg': {'default':  0, 'checker': s:checkreg    },
+            \      'MinColumns': {'default': 40, 'checker': 'range  0 inf'},
+            \   'FormatMatches': {'default': -1,
+            \                     'checker': 'in [none search matches all]'},
+            \     'StartTagReg': {'default':  0, 'checker': 'isreg'},
+            \       'EndTagReg': {'default':  0, 'checker': 'isreg'},
             \       'ColorFile': {'default':  0,
             \                      'scopes': 'g',
             \                     'checker': 'either (is=(0) path)'},
             \'AddTagCmdEscapes': {'default': '[]*.~',
             \                     'checker': 'type string'},
+            \
+            \       'Debugging': {'default': 0, 'filter': 'bool'},
+            \ 'Debugging_FuncF': {'default': 0,
+            \                     'checker': 'either (is=(0) path)'},
+            \ 'Debugging_MinFu': {'default': 0, 'filter': 'bool'},
+            \   'UseStyleNames': {'default': 0, 'filter': 'bool'},
+            \
+            \'HTMLAnchorFileNameExpr': {'default': 'a:tag._tfname.".html"',
+            \                           'checker': 'type string'},
+            \'HTMLUseTagNameInAnchor': {'default': 0, 'filter': 'bool'},
+            \'HTMLAddLinkAtTagLine':   {'default': 1, 'filter': 'bool'},
+            \'HTMLTitleExpr':          {'default': 'expand(''%:p:~'')',
+            \                           'checker': 'type string'},
         \}
 "▶1 Выводимые сообщения
 let s:_messages={
@@ -52,14 +83,21 @@ let s:_messages={
             \   'synnsup': 'I wonder, why do you need this plugin: '.
             \              'this vim is compiled without syntax support',
             \   'misscol': 'File with colors list not found, '.
-            \              'see format-opt-ColorFile',
+            \              'see :h format-o-ColorFile',
             \    'exists': 'Format already exists',
             \   'upcspec': 'Undefined %%. sequence: %%%s',
             \'nomagicchg': 'Changing magic state is not allowed',
             \   'nofloat': 'You must either use terminal vim or vim compiled '.
             \              'with +float feature',
+            \'toolongpat': 'Pattern is too long. This may be caused by '.
+            \              'too long StartTagReg or EndTagReg options or by '.
+            \              'too long single tag.',
+            \    'atnstr': 'The result of evaluating @<@{expr}@>@ is not a string',
+            \   'nelines': 'Internal error: formatted buffer does not contain '.
+            \              'enough lines. If you can reproduce this error please '.
+            \              'post a bug report',
         \}
-"▶1 *strlen
+"▶1 *strlen, html*
 let s:F.stuf={}
 "▶2 stuf.strlen
 if exists('*strchars')
@@ -69,6 +107,13 @@ else
         return len(split(a:str, '\v.@='))
     endfunction
 endif
+"▶2 stuf.bbstrlen
+function s:F.stuf.bbstrlen(str)
+    let str=a:str
+    let str=substitute(str, '\m\[.\{-}\]', '', 'g')
+    let str=substitute(str, '\m&[^;]\+;\|.', '.', 'g')
+    return len(str)
+endfunction
 "▶2 stuf.htmlstrlen
 function s:F.stuf.htmlstrlen(str)
     let str=a:str
@@ -76,12 +121,49 @@ function s:F.stuf.htmlstrlen(str)
     let str=substitute(str, '\m&[^;]\+;\|.', '.', 'g')
     return len(str)
 endfunction
-"▶2 stuf.bbstrlen
-function s:F.stuf.bbstrlen(str)
-    let str=a:str
-    let str=substitute(str, '\m\[.\{-}\]', '', 'g')
-    let str=substitute(str, '\m&[^;]\+;\|.', '.', 'g')
-    return len(str)
+"▶2 stuf.htmlanchorescape
+" wiki-style .XX escapes
+function s:F.stuf.htmlanchorescape(char)
+    let nr=char2nr(a:char)
+    let nrchar=nr2char(nr)
+    let r=''
+    while nr
+        let r .= printf('.%02x', nr%0x100)
+        let nr = nr/0x100
+    endwhile
+    " Caught character with diacritics
+    if nrchar isnot# a:char && len(nrchar)<len(a:char)
+        let r.=s:F.stuf.htmlanchorescape(a:char[len(nrchar):])
+    endif
+    return r
+endfunction
+"▶2 stuf.htmltagproc
+function s:F.stuf.htmltagproc(opts, tag)
+    " http://www.w3.org/TR/html4/types.html#type-name:
+    " > ID and NAME tokens must begin with a letter ([A-Za-z]) and may be followed by any number of
+    " > letters, digits ([0-9]), hyphens ("-"), underscores ("_"), colons (":"), and periods (".").
+    let a:tag.__ename=substitute(a:tag.name, '[^a-zA-Z0-9_:\-]',
+                \               '\=s:F.stuf.htmlanchorescape(submatch(0))', 'g')
+    if a:opts.__usetagname
+        let a:tag.__href='#'.a:tag.__ename
+    else
+        let a:tag.__href='#line'.a:tag._linenr.'-0'
+    endif
+    if !a:tag._incurf
+        let fname=eval(substitute(s:formats.html.strescape,'@@@','\=a:opts.__anchorfnameexpr',''))
+        let a:tag.__href=fname.a:tag.__href
+    endif
+    let a:tag.__anchor='<a href="'.a:tag.__href.'">'
+    return a:tag
+endfunction
+"▶2 stuf.htmladdopts
+function s:F.stuf.htmladdopts()
+    return {
+                \      'usetagname': s:_f.getoption('HTMLUseTagNameInAnchor'),
+                \ 'anchorfnameexpr': s:_f.getoption('HTMLAnchorFileNameExpr'),
+                \'addlinkattagline': s:_f.getoption('HTMLAddLinkAtTagLine'),
+                \       'titleexpr': s:_f.getoption('HTMLTitleExpr')
+            \}
 endfunction
 "▶1 squote
 function s:F.squote(str)
@@ -118,8 +200,10 @@ function s:F.getcolorfile()
                         \                     'formatvim',
                         \                     'colors-default.yaml')
         endif
-    elseif stridx(r, '/')==-1 && stridx(r, s:_r.os.sep)
-        let r=s:_r.os.path.join(s:_frawor.runtimepath, 'config', 'formatvim', r)
+    elseif stridx(r, '/')==-1 && stridx(r, s:_r.os.sep)==-1
+        let r=s:_r.os.path.join(s:_frawor.runtimepath, 'config', 'formatvim', r.'.yaml')
+    else
+        return r
     endif
     return r
 endfunction
@@ -139,8 +223,8 @@ endif
 let s:fmtexpressions={
             \ 'f': '@fgcolor@',
             \ 'b': '@bgcolor@',
-            \ 'S': '@styleid@',
-            \'.S': '@&styleid@',
+            \ 'S': '@S@',
+            \'.S': '@.S@',
             \ 'N': '@-@',
             \ 'C': '@.@',
             \ ':': '@:@',
@@ -153,24 +237,33 @@ let s:fmtexpressions={
             \ '|': '@_vertseparator@',
         \}
 "▶2 s:fcompexpressions
+let s:spacesexpr="''repeat(''.s:F.squote(@_leadingspace@).'',''.@_linenumlen@.''-len(@@@))''"
 let s:fcompexpressions={
-            \ '#': "'((@_donr@ || @_dornr@)?".
-            \        "(repeat('.s:F.squote(a:opts.leadingspace).', ".
-            \                "@_linenumlen@-len(@@@)).@@@):".
-            \        "(''''))'",
-            \ '+': "'repeat('.s:F.squote(a:opts.leadingspace).', (".
-            \              "(@_columns@)-(@=@)))'",
-            \ '_': "'((@_donr@ || @_dornr@)?".
-            \        "(repeat('.s:F.squote(a:opts.leadingspace).', ".
-            \                "@_linenumlen@)):".
-            \        "(''''))'",
+            \ '#': "'@<@(@_dosomenr@?".
+            \               "((@_donr@ && @_dornr@)?".
+            \                   "(''((@-@==''.@_cline@.'')?".
+            \                       "(@@@.''.".s:spacesexpr.".''):".
+            \                       "(''.".s:spacesexpr.".''.@@@))''):".
+            \                   "(".s:spacesexpr.".''.@@@'')):".
+            \               "(''\"\"''))@>@'",
+            \ '+': "'repeat('.s:F.squote(a:opts.leadingspace).', ('".
+            \              "a:opts.columns.'-(@=@)))'",
+            \ '_': "'@<@".
+            \           "(@_dosomenr@?".
+            \               "(''repeat(''.s:F.squote(@_leadingspace@).'',''.@_linenumlen@.'')''):".
+            \               "(''\"\"'')".
+            \           ")".
+            \       "@>@'",
             \ ' ': "s:F.squote(a:opts.leadingspace)",
-            \ '^': "'((a:opts.donr || a:opts.dornr)?('.".
-            \       "s:F.squote(a:opts.leadingspace).'):".
-            \       "(''''))'",
+            \ '^': "'@<@".
+            \           "(@_dosomenr@?".
+            \               "(s:F.squote(@_leadingspace@)):".
+            \               "(''\"\"'')".
+            \           ")".
+            \       "@>@'",
             \ 's': "a:opts.strescape",
-            \'.s': "substitute(a:opts.strescape, '\\V@@@', '@?@', 'g')",
         \}
+unlet s:spacesexpr
 "▲2
 function s:F.getexpr(str, opts)
     let fkey=matchstr(a:str, '\v\.?.')
@@ -208,15 +301,14 @@ endfunction
 "▶1 getats
 let s:atargs={
             \'@': ['str', "''", 'begin', 'end', 'sbsdstart', 'sbsdsep',
-            \      'sbsdend', 'clstart', 'clend'],
+            \      'sbsdend'],
             \'-': ['line', 0, 'begin', 'style'],
             \'.': ['char', 0, 'linestart', 'linenr', 'fold',
-            \      'collapsedfiller', 'begin', 'end', 'sbsdstart', 'style',
-            \      'clstart', 'clend'],
-            \'?': ['concealed', "''"]+filter(copy(s:keylist),
-            \                                'v:val isnot# "concealed"'),
+            \      'collapsedfiller', 'begin', 'end', 'sbsdstart', 'style'],
         \}
-let s:constopts=['leadingspace', 'strescape']
+let s:atexpratargs={
+            \'opts': 'a:opts',
+        \}
 function s:F.getats(str, opts, req, key, atargs)
     let r=''
     let str=a:str
@@ -230,7 +322,50 @@ function s:F.getats(str, opts, req, key, atargs)
         endif
         let str=str[(atidx+1):]
         let atv=str[0]
-        if has_key(s:atargs, atv) && str[1] is# '@'
+        if atv is# '<'
+            let idx=stridx(str, '@>@')
+            if idx!=-1
+                let expr=str[2:(idx-1)]
+                try
+                    let expr=s:F.getats(expr, a:opts, 0, 0, s:atexpratargs)
+                    let result=eval(expr)
+                endtry
+                if type(result)!=type('')
+                    call s:_f.throw('atnstr')
+                endif
+                let arg=''
+                let r.=s:F.getats(result, a:opts, a:req, a:key, a:atargs)
+                let str=str[(idx+3):]
+            endif
+        elseif atv is# '_' && str[1] is# '_'
+            let arg=matchstr(str, '\v^_\w+\@@=', 1)
+            if empty(arg)
+                unlet arg
+            else
+                let str=str[len(arg)+2:]
+                if a:req isnot 0
+                    call s:F.inqreq(a:req, 'a:opts')
+                endif
+                let arg=(a:atargs.opts).'.'.arg
+            endif
+        elseif atv is# '_'
+            let arg=matchstr(str, '\v^\l+\@@=', 1)
+            if empty(arg)
+                unlet arg
+            else
+                let str=str[len(arg)+2:]
+                if type(a:opts[arg])==type('') || type(a:opts[arg])==type(0)
+                    let arg=string(a:opts[arg])
+                else
+                    if a:req isnot 0
+                        call s:F.inqreq(a:req, 'a:opts')
+                    endif
+                    let arg=(a:atargs.opts).'.'.arg
+                endif
+            endif
+        elseif a:key is 0
+            " Do nothing
+        elseif has_key(s:atargs, atv) && str[1] is# '@'
             if index(s:atargs[atv], a:key, 2)==-1
                 let arg=a:atargs[s:atargs[atv][0]]
             else
@@ -246,6 +381,14 @@ function s:F.getats(str, opts, req, key, atargs)
                 call s:F.inqreq(a:req, 'a:spec')
                 let arg=a:atargs.spec.'[0].'.arg
             endif
+        elseif atv is# 'S' && str[1] is# '@'
+            call s:F.inqreq(a:req, 'a:spec')
+            let arg=a:atargs.spec.'[0].'.(a:opts.usestylenames?('name'):('styleid'))
+            let str=str[2:]
+        elseif atv is# '.' && str[1:2] is# 'S@'
+            call s:F.inqreq(a:req, 'a:cspec')
+            let arg=a:atargs.cspec.'[0].'.(a:opts.usestylenames?('name'):('styleid'))
+            let str=str[3:]
         elseif atv is# '=' && str[1] is# '@'
             call s:F.inqreq(a:req, '=')
             call s:F.inqreq(a:req, 'a:cur')
@@ -256,31 +399,7 @@ function s:F.getats(str, opts, req, key, atargs)
                         \                   '.strlen('.a:atargs.cur.'.str)', '')
             let arg=''
             let str=str[2:]
-        elseif atv is# '_' && str[1] is# '_'
-            let arg=matchstr(str, '\v^_\w+\@@=', 1)
-            if empty(arg)
-                unlet arg
-            else
-                let str=str[len(arg)+2:]
-                call s:F.inqreq(a:req, 'a:opts')
-                let arg=(a:atargs.opts).'.'.arg
-            endif
-        elseif atv is# '_'
-            let arg=matchstr(str, '\v^\l+\@@=', 1)
-            if empty(arg)
-                unlet arg
-            else
-                let str=str[len(arg)+2:]
-                if (a:req is 0 && (type(a:opts[arg])==type('') ||
-                            \      type(a:opts[arg])==type(0)))
-                            \  || index(s:constopts, arg)!=-1
-                    let arg=string(a:opts[arg])
-                else
-                    call s:F.inqreq(a:req, 'a:opts')
-                    let arg=(a:atargs.opts).'.'.arg
-                endif
-            endif
-        elseif atv is# '~' || (atv is# '^' && a:key isnot# 'concealed')
+        elseif atv is# '~'
             let arg=a:atargs.spec.'[0]'
             call s:F.inqreq(a:req, 'a:spec')
             let str=str[2:]
@@ -288,8 +407,7 @@ function s:F.getats(str, opts, req, key, atargs)
             let arg=a:atargs.cspec.'[0]'
             call s:F.inqreq(a:req, 'a:cspec')
             let str=str[2:]
-        elseif atv is# ':' || (atv is# '&' && a:key isnot# 'concealed' &&
-                    \          str[1] is# '@')
+        elseif atv is# ':'
             if a:key is# 'begin' || a:key is# 'end'
                 let arg=a:atargs.style
             else
@@ -301,17 +419,6 @@ function s:F.getats(str, opts, req, key, atargs)
             let arg=a:atargs.cspec.'[1]'
             call s:F.inqreq(a:req, 'a:cspec')
             let str=str[2:]
-        elseif atv is# '&'
-            let arg=matchstr(str, '\v^\l+%(\@)@=', 1)
-            if empty(arg)
-                unlet arg
-            else
-                let spec=a:atargs[((a:key is# 'concealed')?('cspec'):('spec'))].
-                            \'[0]'
-                let str=str[len(arg)+2:]
-                call s:F.inqreq(a:req, spec)
-                let arg=spec.'.'.arg
-            endif
         endif
         if exists('arg')
             if arg[0] is# 'a'
@@ -326,7 +433,7 @@ function s:F.getats(str, opts, req, key, atargs)
     return r
 endfunction
 "▶1 procpc
-function s:F.procpc(str, opts, key, req, atargs)
+function s:F.procpc(str, opts, key, req, atargs, escpc)
     let str=a:str
     "▶2 Process %*
     let chunks=[]
@@ -340,6 +447,9 @@ function s:F.procpc(str, opts, key, req, atargs)
         endif
         let str=str[(pidx+1):]
         let [shift, chunk]=s:F.getexpr(str, a:opts)
+        if a:escpc
+            let chunk=substitute(chunk, '%', '%%', 'g')
+        endif
         call add(chunks, s:F.getats(chunk, a:opts, a:req, a:key, a:atargs))
         let str=str[(shift):]
     endwhile
@@ -368,15 +478,12 @@ function s:F.procpc(str, opts, key, req, atargs)
 endfunction
 "▶1 ftmcompile
 "▶2 Create list of arguments
-let s:keyargslist=['str', 'spec', 'line', 'char', 'cur', 'opts', 'style',
-            \      'concealed', 'cspec']
+let s:keyargslist=['str', 'spec', 'line', 'char', 'cur', 'opts', 'style']
 let s:keynoargs={'str': s:atargs['@'][2:],
             \   'line': s:atargs['-'][2:],
             \   'char': s:atargs['.'][2:],
-            \  'cspec': s:atargs['?'][2:],
             \  'style': filter(copy(s:keylist), 'v:val isnot# "begin" && '.
             \                                   'v:val isnot# "end"')}
-let s:keynoargs.concealed=s:keynoargs.cspec
 let s:keyargs={}
 for s:key in s:keylist
     let s:keyargs[s:key]=[]
@@ -391,7 +498,7 @@ let s:defatargs={}
 call map(s:keyargslist, 'extend(s:defatargs, {v:val : "a:".v:val})')
 unlet s:key s:arg s:keyargslist s:keynoargs
 "▲2
-function s:F.fmtcompile(str, opts, key)
+function s:F.fmtcompileone(str, opts, key)
     let r={'req': {}, 'isexpr': 1, 'str': a:str}
     let str=a:str
     "▶2 %!
@@ -407,7 +514,7 @@ function s:F.fmtcompile(str, opts, key)
     if exists('cmd')
         let funstr.=cmd."\n    "
     endif
-    let expr=s:F.procpc(str, a:opts, a:key, r.req, s:defatargs)."\n"
+    let expr=s:F.procpc(str, a:opts, a:key, r.req, s:defatargs, 0)."\n"
     let r.isconst=empty(filter(keys(r.req), 'v:val[0:5] isnot# "a:opts"'))
     if has_key(r.req, '=')
         let funstr.='let str='.expr."\n    return str"
@@ -420,9 +527,11 @@ function s:F.fmtcompile(str, opts, key)
     return r
 endfunction
 "▶1 fmtprepare
-function s:F.fmtprepare(format)
+function s:F.fmtprepare(type, options, slnr, elnr, sbsd)
+    let format=s:formats[a:type]
     "▶2 s:F.getcolor
     if !has_key(s:F, 'getcolor')
+        unlockvar 1 s:F
         if s:whatterm is# 'gui'
             function s:F.getcolor(color)
                 return a:color
@@ -435,16 +544,14 @@ function s:F.fmtprepare(format)
                 return get(s:colors, a:color, '')
             endfunction
         endif
+        lockvar s:F
     endif
     "▶2 opts
     let opts={}
-    let opts.strlen=get(a:format, 'strlen', s:F.stuf.strlen)
-    let opts.strescape=get(a:format, 'strescape', '@@@')
+    let opts.strlen=get(format, 'strlen', s:F.stuf.strlen)
+    let opts.strescape=get(format, 'strescape', '@@@')
     let opts.leadingspace=eval(substitute(opts.strescape, '@@@', '" "', 'g'))
-    for [o, v] in items(get(a:format, 'addopts', {}))
-        let opts['_'.o]=deepcopy(v)
-        unlet v
-    endfor
+    call map(copy(get(format, 'addopts', {})), 'extend(opts, {"_".v:key : deepcopy(v:val)})')
     let id=hlID('Normal')
     let opts.fgcolor=s:F.getcolor(synIDattr(id, 'fg#', s:whatterm))
     let opts.bgcolor=s:F.getcolor(synIDattr(id, 'bg#', s:whatterm))
@@ -454,34 +561,21 @@ function s:F.fmtprepare(format)
     if opts.bgcolor==''
         let opts.bgcolor=((&background is# 'dark')?('#000000'):('#ffffff'))
     endif
-    "▶2 «Компиляция» некоторых ключей
-    let cformat={}
-    for key in s:keylist
-        if has_key(a:format, key)
-            let cformat[key]=s:F.fmtcompile(a:format[key], opts, key)
-            lockvar! cformat[key]
-        endif
-    endfor
+    call s:F.initopts(opts, a:slnr, a:elnr, a:options, format, a:sbsd)
+    lockvar! opts
     "▲2
-    let cformat.opts=opts
-    " Здесь содержится список определённых стилей
-    let cformat.cache={}
-    " Строка, в которой содержатся сами стили
-    let cformat.stylestr=''
-    "▶2 Блокировки
-    lockvar! cformat.opts
-    "▲2
-    return cformat
+    return s:cf.new(format, opts)
 endfunction
 "▶1 s:formats
 "▶2 HTML
-let s:escapehtml="substitute(".
-            \     "substitute(".
-            \      "substitute(".
-            \        "substitute(@@@, '\\V&', '\\&amp;', 'g'), ".
-            \       "'\"', '\\&#34;', 'g'), ".
-            \      "'<', '\\&lt;', 'g'), ".
-            \     "'>', '\\&gt;', 'g')"
+let s:htmlreplaces={
+            \'&': '&amp;',
+            \'"': '&#34;',
+            \'<': '&lt;',
+            \'>': '&gt;',
+        \}
+let s:escapehtml='substitute(@@@,''['.join(keys(s:htmlreplaces),'').']'','.
+            \              '''\=s:htmlreplaces[submatch(0)]'',''g'')'
 let s:htmlstylestr='((@inverse@)?'.
             \             '("color: ".'.
             \              '((@bgcolor@!=#"")?'.
@@ -510,10 +604,10 @@ let s:htmlinput='<input class="s%%S %s" type="xxxinvalid" '.
             \          'onselect="this.blur(); return false;" '.
             \          'onmousedown="this.blur(); return false;" '.
             \          'onclick="this.blur(); return false;" '.
-            \          'size="%s" value="%s" />'
+            \          'size="%s" value="%s" %s/>'
 let s:formats.html={
-            \'style':        '%>((@styleid@!=#"")?'.
-            \                   '(".s".@styleid@." {".'.
+            \'style':        '%>((@S@!=#"")?'.
+            \                   '(".s".@S@." {".'.
             \                     s:htmlstylestr.
             \                   '."} "):'.
             \                   '(""))',
@@ -546,6 +640,9 @@ let s:formats.html={
             \                '.closed-fold:hover > .toggle-filler '.
             \                                              '{display: none;}'.
             \                '.Sign { width: 2.5ex; } '.
+            \                '.SignImage { background-size: contain; '.
+            \                             'background-repeat: no-repeat; '.
+            \                             'background-position: center; }'.
             \                'span.Sign { display: inline-block; } '.
             \                '.Sign > image { max-width: 100%%; }'.
             \                '.Present { display: none; }'.
@@ -559,8 +656,11 @@ let s:formats.html={
             \                        'pointer-events: none; '.
             \                        'height: 100%%; }'.
             \                '.Line { min-height: 1em; } '.
-            \                '.Line:hover .Shown { display: none; }'.
+            \                '.Line:hover .Shown   { display: none; }'.
             \                '.Line:hover .Present { display: inline; }'.
+            \                '            .TagLink { margin-left: 1em; }'.
+            \                '            .TagLink { display: none; }'.
+            \                '.Line:hover .TagLink { display: inline; }'.
             \                '.s%''hlID("Conceal")''% { font-weight: normal; '.
             \                                          'font-style: normal; '.
             \                                          'text-decoration: none;'.
@@ -571,14 +671,11 @@ let s:formats.html={
             \                   '((@_sbsd@)?'.
             \                    '("table, tr, td { margin: 0; '.
             \                                      'padding: 0; '.
-            \                                      'border: 0; } '.
-            \                     '.SbSDSep { color: ".@_bgcolor@."; '.
-            \                                'background-color:".@_fgcolor@.";'.
-            \                               '} "):'.
+            \                                      'border: 0; } "):'.
             \                    '(""))''%'.
             \                '%:</style>'.
             \                '<title>%'''.substitute(s:escapehtml, '\V@@@',
-            \                                        'expand("%:p:\~%")', '').
+            \                                        'eval(@___titleexpr@)', '').
             \                '''%</title>'.
             \                '%''((@_allfolds@)?('''.
             \                   '<script type="text/javascript">'.
@@ -595,50 +692,49 @@ let s:formats.html={
             \                       'cellspacing=\"0\">"):(""))''%',
             \'end':          '%''((@_sbsd@)?("</table>"):(""))''%'.
             \                '</body></html>',
-            \'linestart':    '%!let ide=substitute(@_strescape@, "@\\{3}", '.
-            \                                     '"v:val.name", "")!%'.
-            \                '<p class="s%S %''@__stylelist@[@@@]''%"'.
-            \                  '%''((@@@<=1)?'.
+            \'linestart':    '<p class="s%S %''@__stylelist@[@@@]''%"'.
+            \                  '%''(@@@<=1?'.
             \                       '(" id=\"".'.
-            \                        '((@@@==0)?'.
-            \                            '("line"):'.
-            \                            '("fold")).'.
+            \                        '(@@@==0?'.
+            \                            '"line":'.
+            \                            '"fold").'.
             \                        '@-@."-".@_sbsd@."\""):'.
-            \                       '(""))''%>'.
-            \                '%''join(map(copy(get(@_curtags@, @-@, [])), '.
-            \                            '"''<span id=\"''.".ide.".''\">''"), '.
-            \                        '"")''%',
-            \'clstart':      '<span class="s%S">',
+            \                       '"")''%>'.
+            \                '%''(@@@==0?join(map(copy('.
+            \                       'get(@_curtags@,@-@,[])),'.
+            \                   '"''<span id=\"''.v:val.__ename.''\">''"),'.
+            \                  '""):"")''%',
             \'linenr':       printf(s:htmlinput, 'LineNR',
-            \                       '%''(@_linenumlen@+!!@_foldcolumn@+1)''%',
-            \                       '%''((@_foldcolumn@)?'.
-            \                                    '(@_leadingspace@):'.
-            \                                    '(""))''%%#% '),
-            \'line':         '<span class="s%S">%s</span>',
-            \'concealed':    '<span class="Concealed">'.
-            \                   '<span class="s%S Shown">%s</span>'.
-            \                   '<span class="s%.S Present">%.s</span>'.
-            \                '</span>',
-            \'clend':        '</span>',
-            \'lineend':      '%''repeat("</span>", '.
-            \                          'len(get(@_curtags@, @-@, [])))''%</p>',
-            \'tagstart':     '%!let tag=get(get(get(@_tags@, @@@, []), 0, '.
-            \                                  '[]), 0, "")!%'.
-            \                '<a href="%''('.
-            \                   '(type(tag)=='.type('').')?(""):'.
-            \                       '(((type(tag)=='.type([]).')?'.
-            \                           '(substitute('.
-            \                               substitute(s:escapehtml,
-            \                                          '\V@@@', 'tag[0]', '').
-            \                            ', "\"", "&#34;", "").'.
-            \                            '"#line".tag[1]):'.
-            \                           '("#line".tag))."-0"))'.
-            \                '''%">',
+            \                       '%''(@_linenumlen@+1)''%',
+            \                       '%#% ', ''),
+            \'line':         '%>empty(@S@)'.
+            \                   '?'.s:escapehtml.
+            \                   ':''<span class="s''.@S@.''">''.'.
+            \                           s:escapehtml.
+            \                   '.''</span>''',
+            \'concealedstart': '<span class="Concealed">'.
+            \                       '<span class="s%S Shown">%s</span>'.
+            \                       '<span class="Present">',
+            \'concealedend': '</span></span>',
+            \'lineend':      '%''repeat("</span>",'.
+            \                          'len(get(@_curtags@,@-@,[]))*(@@@==0)).'.
+            \                 '('.'@___addlinkattagline@'.
+            \                  '&&!empty(get(@_curtags@,@-@))'.
+            \                  '&&@@@==0'.
+            \                   '?"<span class=\"TagLink\">'.
+            \                       '<a href=\"#".@_curtags@[@-@][0].__ename."\">'.
+            \                         'LINK'.
+            \                       '</a>'.
+            \                     '</span>"'.
+            \                   ':"")''%</p>',
+            \'tagproc':      s:F.stuf.htmltagproc,
+            \'tagstart':     '%''get(get(@_tags@,@@@,[]),0,'.
+            \                            '[{"__anchor":"<a>"}])[-1].__anchor''%',
             \'tagend':       '</a>',
             \'foldcolumn':   printf(s:htmlinput, 'FoldColumn',
             \                       '%''@_foldcolumn@''%',
-            \                       '%''substitute(@@@, "\\V>", "\\&gt;", '.
-            \                                     '"g")''%'),
+            \                       '%''substitute(@@@,"\\V>","\\&gt;",'.
+            \                                     '"g")''%', ''),
             \'fold':         '<span class="s%S Text">%s</span>'.
             \                '<span class="FoldFiller">% %.-</span>',
             \'difffiller':   '<span class="s%S DiffFiller">%-</span>',
@@ -656,14 +752,14 @@ let s:formats.html={
             \'strescape':    s:escapehtml,
             \'sbsdstart':    '<tr class="SbSDLine" id="sbsd%N">'.
             \                '<td class="SbSD1">',
-            \'sbsdsep':      '</td><td class="SbSDSep SbSDSep%C">%|</td>'.
+            \'sbsdsep':      '</td><td class="SbSDSep SbSDSep%C s%S">%|</td>'.
             \                '<td class="SbSD%C">',
             \'sbsdend':      '</td></tr>',
-            \'sign':         printf(s:htmlinput, 'Sign', 2, '%s'),
+            \'sign':         printf(s:htmlinput, 'Sign', 2, '%s', ''),
             \'addopts': {'stylelist': ['Line', 'Fold', 'DiffFiller',
-            \                          'CollapsedFiller']},
+            \                          'CollapsedFiller', 'TrailLine']},
+            \'addoptsfun': s:F.stuf.htmladdopts,
         \}
-unlet s:htmlinput
 if s:whatterm is# 'gui'
     function s:F.readfile(fname)
         if !filereadable(a:fname)
@@ -685,13 +781,15 @@ if s:whatterm is# 'gui'
         endif
         return 'data:'.mime.';base64,'.b64
     endfunction
+    let s:formats.html.addopts.readfile=s:F.readfile
     let s:formats.html.sign="%=((@.@==2)?".
-                \"(''=%<span class=\"Sign\">".
-                \       "<img src=\"%=s:F.readfile(@@@)=%\" alt=\"%s\" />".
-                \     "</span>%=''):".
+                \"(''=%".printf(s:htmlinput, 'Sign SignImage', 2, '  ',
+                \               'style="background-image:url(%'''.
+                \                   '@__readfile@(@@@)''%)"')."%=''):".
                 \"(''=%".s:formats.html.sign."%=''))=%"
 endif
-let s:styleattr='%''((@styleid@!=#"")?'.
+unlet s:htmlinput
+let s:styleattr='%''((!empty(@styleid@))?'.
             \            '(" style=\"".'.s:htmlstylestr.'."\""):'.
             \            '(""))''%'
 let s:formats['html-vimwiki']={
@@ -700,12 +798,10 @@ let s:formats['html-vimwiki']={
             \                           s:htmlstylestr.'''%">',
             \'end':             '</div>',
             \'linestart':       '<div%:>',
-            \'clstart':         '<span%:>',
             \'linenr':          '<span%:>%#% </span>',
             \'foldcolumn':      '<span%:>%'''.
             \                       'substitute(@@@, "\\V>","\\\\&gt;","g")''%'.
             \                   '</span>',
-            \'clend':           '</span>',
             \'lineend':         '</div>',
             \'fold':            '<span%:>%s% %.-</span>',
             \'difffiller':      '<span%:>%-</span>',
@@ -752,7 +848,6 @@ let s:formats["bbcode-unixforum"]={
             \                '."%s".'.s:bbufostyleend,
             \'sbsdsep':      '%+%|',
             \'difffiller':   '%-',
-            \'columns':      -1,
         \}
 unlet s:bbufostylestart s:bbufostyleend s:bbufoescape
 "▶2 LaTeX (xcolor)
@@ -877,13 +972,13 @@ let s:formats.tokens={
             \'foldstart':       "['fs', %:, %s, %C]",
             \'foldend':         "['fe', %:, %s, %C]",
             \'linestart':       "['%'@__linetypes@[@@@]'%', %:, ",
-            \'clstart':         "['cl', %:], ",
             \'foldcolumn':      "['fc', %s, %:], ",
             \'sign':            "['sc', %s, %:, %C], ",
             \'linenr':          "['ln', %s, %:], ",
             \'tagstart':        "['ts', %s    ], ",
             \'line':            "['l' , %s, %:], ",
-            \'concealed':       "%'string(['c', @@@, @~@, @?@, @^@])'%, ",
+            \'concealedstart':  "['cs', %s, %:], ",
+            \'concealedend':    "['ce', %s, %:], ",
             \'tagend':          "['te', %s    ], ",
             \'fold':            "['f' , %s, %:], ",
             \'difffiller':      "['df', '', %:], ",
@@ -897,48 +992,46 @@ let s:formats.tokens={
             \'addopts':         {'linetypes': ['lr', 'lf', 'ld', 'lc']},
         \}
 "▶1 getspecdict
-function s:F.getspecdict(id, ...)
-    if type(a:id)==type([])
-        let r=s:F.getspecdict(a:id[0])
-        for id in a:id[1:]
+function s:F.getspecdict(hlname, ...)
+    if type(a:hlname)==type([])
+        let r=s:F.getspecdict(a:hlname[0])
+        for hlname in a:hlname[1:]
             let r=call(s:F.mergespecdicts,
-                        \[r, s:F.getspecdict(id)]+a:000, {})
+                        \[r, s:F.getspecdict(hlname)]+a:000, {})
         endfor
         return r
     endif
+    let id=synIDtrans(hlID(a:hlname))
     return {
-    \            'styleid': a:id,
+    \            'name':    a:hlname,
+    \            'styleid': id,
     \            'fgcolor': s:F.getcolor(
-    \                           synIDattr(a:id, 'fg#', s:whatterm)),
+    \                           synIDattr(id, 'fg#', s:whatterm)),
     \            'bgcolor': s:F.getcolor(
-    \                           synIDattr(a:id, 'bg#', s:whatterm)),
-    \            'bold':        synIDattr(a:id, 'bold'),
-    \            'italic':      synIDattr(a:id, 'italic'),
-    \            'underline':   synIDattr(a:id, 'underline'),
-    \            'inverse':     synIDattr(a:id, 'inverse'),
+    \                           synIDattr(id, 'bg#', s:whatterm)),
+    \            'bold':        synIDattr(id, 'bold'),
+    \            'italic':      synIDattr(id, 'italic'),
+    \            'underline':   synIDattr(id, 'underline'),
+    \            'inverse':     synIDattr(id, 'inverse'),
     \}
 endfunction
 "▶1 mergespecdicts
-let s:mergeactions={
-            \'styleid':   'a:oldspecdict.styleid."_".a:newspecdict.styleid',
-            \'fgcolor':   '((a:newspecdict.fgcolor!=#"" && a:000==[])?'.
-            \                 '(a:newspecdict.fgcolor):'.
-            \                 '(a:oldspecdict.fgcolor))',
-            \'bgcolor':   '((a:newspecdict.bgcolor!=#"")?'.
-            \                 '(a:newspecdict.bgcolor):'.
-            \                 '(a:oldspecdict.bgcolor))',
-            \'bold':      'a:oldspecdict.bold      || a:newspecdict.bold',
-            \'italic':    'a:oldspecdict.italic    || a:newspecdict.italic',
-            \'underline': 'a:oldspecdict.underline || a:newspecdict.underline',
-            \'inverse':   'a:oldspecdict.inverse   || a:newspecdict.inverse',
-        \}
-lockvar! s:mergeactions
 function s:F.mergespecdicts(oldspecdict, newspecdict, ...)
-    let r={}
-    for [key, expr] in items(s:mergeactions)
-        let r[key]=eval(expr)
-    endfor
-    return r
+    return {
+                \'name':    a:oldspecdict.name.   '_'.a:newspecdict.name,
+                \'styleid': a:oldspecdict.styleid.'_'.a:newspecdict.styleid,
+                \'fgcolor': ((empty(a:newspecdict.fgcolor) && !a:0)
+                \                 ?(a:oldspecdict.fgcolor)
+                \                 :(a:newspecdict.fgcolor)),
+                \'bgcolor':   ((empty(a:newspecdict.bgcolor))
+                \                 ?(a:oldspecdict.bgcolor)
+                \                 :(a:newspecdict.bgcolor)),
+                \'bold':      a:oldspecdict.bold      || a:newspecdict.bold,
+                \'italic':    a:oldspecdict.italic    || a:newspecdict.italic,
+                \'underline': a:oldspecdict.underline || a:newspecdict.underline,
+                \'inverse':   a:oldspecdict.inverse   || a:newspecdict.inverse,
+            \}
+                " \'cleared':   a:newspecdict.styleid == hlID('Normal'),
 endfunction
 "▶1 redrawprogress
 function s:F.redrawprogress()
@@ -963,111 +1056,481 @@ function s:F.redrawprogress()
                 \repeat(' ', 3-len(s:progress.progress)).
                 \(s:progress.progress).'%%'
 endfunction
+"▶1 cmppos
+function s:F.cmppos(pos1, pos2)
+    return ((a:pos1[0]<a:pos2[0])
+                \?(-1)
+                \:((a:pos1[0]>a:pos2[0])
+                \  ?(1)
+                \  :((a:pos1[1]<a:pos2[1])
+                \    ?(-1)
+                \    :((a:pos1[1]>a:pos2[1])
+                \      ?(1)
+                \      :(0)))))
+endfunction
+"▶1 matchestoevents
+function s:F.matchestoevents(matches)
+    let lineevents={}
+    for mtch in a:matches
+        if mtch.startpos ==# mtch.endpos
+            continue
+        endif
+        let lineevents[mtch.startpos[0]]=
+                    \extend(get(lineevents, mtch.startpos[0], {}),
+                    \       {
+                    \           mtch.startpos[1]:
+                    \               add(get(get(lineevents, mtch.startpos[0], {}),
+                    \                                       mtch.startpos[1], []),
+                    \                   ['push', mtch]),
+                    \       })
+        let lineevents[mtch.endpos[0]]=
+                    \extend(get(lineevents, mtch.endpos[0], {}),
+                    \       {
+                    \           mtch.endpos[1]:
+                    \               add(get(get(lineevents, mtch.endpos[0], {}),
+                    \                                       mtch.endpos[1], []),
+                    \                   ['pop', mtch]),
+                    \       })
+    endfor
+    return lineevents
+endfunction
+"▶1 ItemsNrSort
+function s:ItemsNrSort(i1, i2)
+    return a:i1[0]>a:i2[0]?1:-1
+endfunction
+let s:_functions+=[function('s:ItemsNrSort')]
+"▶1 nritems
+function s:F.nritems(dct)
+    return map(items(a:dct), '[+v:val[0], v:val[1]]')
+endfunction
+"▶1 eventstosplcolumns
+function s:F.eventstosplcolumns(lineevents)
+    let splcolumns={}
+    let stack=[]
+    let emptymtch={}
+    let oldmtch=emptymtch
+    for [lnr, columnevents] in sort(s:F.nritems(a:lineevents), function('s:ItemsNrSort'))
+        let splcolumns[lnr]={}
+        for [col, cevents] in sort(s:F.nritems(columnevents), function('s:ItemsNrSort'))
+            for [type, mtch] in cevents
+                if type is# 'pop'
+                    let i=-1
+                    while stack[i] isnot mtch
+                        let i-=1
+                    endwhile
+                    call remove(stack, i)
+                elseif type is# 'push'
+                    call add(stack, mtch)
+                endif
+                if empty(stack)
+                    let mmtch=emptymtch
+                else
+                    let mmtch=stack[0]
+                    for cmtch in stack[1:]
+                        if s:CmpMatches(mmtch, cmtch)==-1
+                            let mmtch=cmtch
+                        endif
+                    endfor
+                endif
+                if mmtch isnot oldmtch
+                    let splcolumns[lnr][col]=[['matchborder', mmtch is emptymtch ? 0 : mmtch.group]]
+                    let oldmtch=mmtch
+                endif
+            endfor
+        endfor
+    endfor
+    call filter(splcolumns, '!empty(v:val)')
+    return splcolumns
+endfunction
+"▶1 CmpMatches
+function s:CmpMatches(m1, m2)
+    " Note: sorting must be stable
+    " Note2: It is impossible for two dictionaries to have equal .num keys. Thus if a:m1.num is not 
+    "        greater then a:m2.num then it is definitely lesser.
+    return a:m1.priority>a:m2.priority
+                \?1
+                \:(a:m1.num>a:m2.num
+                \   ?1
+                \   :-1)
+endfunction
+let s:_functions+=[function('s:CmpMatches')]
+"▶1 formatmatches
+function s:F.formatmatches(opts, slnr, elnr)
+    let toformat=[]
+    if a:opts.formatmatches
+        " According to the help &ignorecase option has no effect on matches
+        call extend(toformat, map(getmatches(),
+                    \'extend(v:val, {"pattern": '.
+                    \                'substitute(v:val.pattern,''^\(\\%#=\d\)\?'',''\1\\C'',"")})'))
+    endif
+    " Search must have the highest .num key because it always wins over other matches with the same 
+    " priority. If two non-search matches match at the same position match defined later wins. Match 
+    " defined later appears later in the getmatches() output. Thus search must appear the last one 
+    " in toformat list.
+    if a:opts.formatsearch
+        call add(toformat, {'group': 'Search', 'pattern': @/, 'priority': 0})
+    endif
+    if empty(toformat)
+        return {}
+    endif
+    " Escape unescaped `/'.
+    call map(toformat, 'extend(v:val, {"pattern": substitute(v:val.pattern, '.
+                \'''\v%(\\@<!%(\\\\)*\\)@<!\/'', ''\\/'', "g"), "num": v:key})')
+    call sort(toformat, function('s:CmpMatches'))
+    let d={'recordmlmatch': s:F.recordmlmatchmatch, 'matches': [], 'pasteol': {}}
+    let [fstmtch; othmtches]=toformat
+    " FIXME Will not format match that starts before a:slnr, but ends at or after this line
+    let d.priority=fstmtch.priority
+    let d.group=fstmtch.group
+    let d.num=fstmtch.num
+    call s:F.collectmultilinematches(a:slnr, a:elnr, fstmtch.pattern, d)
+    for mtch in othmtches
+        let d.priority=mtch.priority
+        let d.group=mtch.group
+        let d.pointer=0
+        let d.matcheslen=len(d.matches)
+        let d.num=mtch.num
+        call s:F.collectmultilinematches(a:slnr, a:elnr, mtch.pattern, d)
+    endfor
+    let splcolumns=s:F.eventstosplcolumns(s:F.matchestoevents(d.matches))
+    return [splcolumns, d.pasteol]
+endfunction
+"▶1 recordspecialmatch
+function s:F.recordspecialmatch(lnr, col, char) dict
+    call extend(self.splcolumns,
+                \{a:lnr :
+                \   extend(get(self.splcolumns, a:lnr, {}),
+                \       {a:col             : [['special', a:char]]})})
+endfunction
+"▶1 formatspecialchars
+function s:F.formatspecialchars(opts, slnr, elnr)
+    let d={'recordmatch': s:F.recordspecialmatch, 'splcolumns': {}}
+    call s:F.collectonelinematches(a:slnr, a:elnr, a:opts.npregex, d)
+    return d.splcolumns
+endfunction
+"▲1
+"▶1 recordmlmatchmatch
+function s:F.recordmlmatchmatch(slnr, scol, match)
+    let matchdct={
+                \   'startpos': [a:slnr, a:scol],
+                \     'endpos': [a:slnr+len(a:match)-1,
+                \                ((len(a:match)==1)
+                \                       ?(a:scol+(empty(a:match[0])
+                \                           ?len(matchstr(getline('.'),'^.',a:scol-1))
+                \                           :len(a:match[0])))
+                \                       :(1+len(a:match[-1])))],
+                \       'group': self.group,
+                \    'priority': self.priority,
+                \       'match': a:match,
+                \         'num': self.num,
+                \}
+    call map(a:match[:-1-(len(a:match)>1||(col('$')!=1&&a:scol!=col('$')))],
+                \'empty(v:val)'.
+                \   '?extend(self.pasteol, {'.
+                \       a:slnr.'+v:key : matchdct.group'.
+                \    '})'.
+                \   ':0')
+    if has_key(self, 'pointer')
+        while self.pointer<self.matcheslen &&
+                    \s:F.cmppos(self.matches[self.pointer].startpos, matchdct.startpos)==-1
+            let self.pointer+=1
+        endwhile
+        call insert(self.matches, matchdct, self.pointer)
+        let self.pointer+=1
+        let self.matcheslen+=1
+    else
+        call add(self.matches, matchdct)
+    endif
+endfunction
+"▶1 recordtagmatch
+function s:F.recordtagmatch(lnr, col, tname) dict
+    call extend(self.splcolumns,
+                \{a:lnr :
+                \   extend(get(self.splcolumns, a:lnr, {}),
+                \       {a:col             : [['tagstart', a:tname]],
+                \        a:col+len(a:tname): [['tagend',   a:tname]]})})
+    let self.foundtnames[a:tname]=1
+endfunction
+"▶1 Collect matches
+if v:version>703 || (v:version==703 && has('patch627')) "▶2
+    function s:F.collectmatches(slnr, elnr, regex, d)
+        let save_history=&history
+        if save_history
+            let &history+=1
+            let lasthistitem=histget('/', -1)
+        endif
+        let save_atslash=@/
+        try
+            execute 'lockmarks keepmarks keepjumps silent '.a:slnr.','.a:elnr
+                        \ 's/'.a:regex.'/\=a:d.recordmatch(line("."), col("."), submatch(0))/gne'
+        " Too long pattern error
+        catch /\m^Vim(substitute):E339:/
+            throw 'TOO LONG REGEX'
+        finally
+            if save_history
+                let &history=save_history
+                if histget('/', -1) isnot# lasthistitem
+                    call histdel('/', -1)
+                endif
+            endif
+            let @/=save_atslash
+        endtry
+    endfunction
+    let s:F.collectonelinematches=s:F.collectmatches
+    function s:F.multilinewrapper(lnr, col, match) dict
+        let lines=split(a:match, "\n", 1)
+        if len(lines)==1
+            return self.recordmlmatch(a:lnr, a:col, lines)
+        endif
+        let lnr=a:lnr
+        let realmatch=[]
+        let idx=a:col-1
+        while !empty(lines)
+            let line=getline(lnr)
+            let chunk=remove(lines, 0)
+            if empty(lines)
+                call add(realmatch, chunk)
+                break
+            else
+                " If we did not hit NUL chunk represents match from starting column (first column in 
+                " case of non-starting line) to the end of line.
+                if line[(idx):] is# chunk
+                    call add(realmatch, chunk)
+                else
+                    " If we did match was split at NUL (as it is represented as newline). We need to 
+                    " determine how many NULs were there. Alternative and, probably, better approach 
+                    " would be comparing len(chunk) to len(line)-idx in the same cycle. Note that 
+                    " match may be actually one line match, but contain NULs.
+                    let chunk.="\n".remove(lines, 0)
+                    while line[(idx):] isnot# chunk && !empty(lines)
+                        let chunk.="\n".remove(lines, 0)
+                    endwhile
+                    call add(realmatch, chunk)
+                endif
+                " In non-starting line match starts in first column
+                let idx=0
+            endif
+            let lnr+=1
+        endwhile
+        call self.recordmlmatch(a:lnr, a:col, realmatch)
+    endfunction
+    function s:F.collectmultilinematches(slnr, elnr, regex, d)
+        let a:d.recordmatch=s:F.multilinewrapper
+        call s:F.collectmatches(a:slnr, a:elnr, a:regex, a:d)
+    endfunction
+else "▶2
+    function s:F.collectonelinematches(slnr, elnr, regex, d)
+        let winview=winsaveview()
+        try
+            let lnr=a:slnr
+            while lnr
+                call cursor(lnr, 0)
+                let lnr=search(a:regex, 'nWc', a:elnr)
+                if lnr
+                    let line=getline(lnr)
+                    let notinlinestr="\n\n"
+                    while stridx(line, notinlinestr)!=-1
+                        let notinlinestr.="\n"
+                    endwhile
+                    let matches=[]
+                    let chunks=split(substitute(line,
+                                \               a:regex,
+                                \              '\=[notinlinestr, add(matches, submatch(0))][0]',
+                                \              'g'), notinlinestr, 1)
+                    let col=1
+                    for m in matches
+                        let col+=len(remove(chunks, 0))
+                        call a:d.recordmatch(lnr, col, m)
+                        let col+=len(m)
+                    endfor
+                    let lnr+=1
+                endif
+            endwhile
+        catch /\m^Vim(let):E339:/
+            throw 'TOO LONG REGEX'
+        finally
+            call winrestview(winview)
+        endtry
+    endfunction
+endif
+"▶1 collecttags
+function s:F.collecttags(slnr, elnr, tags, tagregexpref, tagregexsuf, d)
+    let tagregex=join(map(map(copy(a:tags), 'v:val.name'), 'escape(v:val, "\\")'), '\|')
+    let tagregex=escape(a:tagregexpref.tagregex.a:tagregexsuf, '/')
+    try
+        call s:F.collectonelinematches(a:slnr, a:elnr, tagregex, a:d)
+    catch /\m\c^TOO LONG REGEX$/
+        let tlen=len(a:tags)
+        if tlen==1
+            call s:_f.warn('toolongpat')
+        else
+            call s:F.collecttags(a:slnr, a:elnr, a:tags[:(tlen/2)], a:tagregexpref, a:tagregexsuf,
+                        \        a:d)
+            call s:F.collecttags(a:slnr, a:elnr, a:tags[(tlen/2+1):], a:tagregexpref, a:tagregexsuf,
+                        \        a:d)
+        endif
+    endtry
+endfunction
 "▶1 formattags
-function s:F.formattags(ignoretags, starttagreg, endtagreg)
+function s:F.formattags(opts, slnr, elnr, starttagreg, endtagreg)
     "▶2 Объявление переменных
-    if a:ignoretags==2
+    if a:opts.ignoretags==2
         return []
     endif
     let fname=expand('%:.') " Имя обрабатываемого файла
     let tags=taglist('.')   " Список тёгов
+    if empty(tags)
+        return [{}, {}, {}, []]
+    endif
     let tag2flmap={}        " Словарь: имя тёга — список местонахождений
     let fcontents={}        " Кэш содержимого файлов
     " Список символов, которых надо дополнительно экранировать
     let addescapes=s:_f.getoption('AddTagCmdEscapes')
-    let ignoredtags={}
     let curfl2tagsmap={}    " Словарь: номер линии (в этом файле) — список тёгов
-    "▶2 Обработка тёгов (основной цикл)
-    for tag in tags
-        "▶3 Объявление переменных
-        " Имя файла, содержащего определение
-        let tfname=fnamemodify(tag.filename, ':.')
-        " Перепенная, определяющая, не совпадает ли файл с тёгом с данным
-        let incurf=(tfname is# fname)
-        if a:ignoretags && !incurf
-            continue
-        elseif has_key(ignoredtags, tag.name)
-            continue
-        elseif !search('\V\k\@<!'.a:starttagreg.escape(tag.name, '\').
-                    \  a:endtagreg.'\k\@!', 'nwc')
-            let ignoredtags[tag.name]=1
-            continue
+    let filetags={}         " Dictionary mapping file names to list of 
+                            " tags contained there and commands to find them
+    let splcolumns={}       " Dictionary mapping lines to specialcolumns dictionary that maps 
+                            " columns to name of tags that start or stop at given position
+    let winview=winsaveview()
+    "▶2 Process tags in the current file
+    try
+        "▶3 Init some tag keys and filter tags
+        call map(tags, 'extend(v:val, {"_incurf":('.
+                    \       'extend(v:val, {"_tfname": fnamemodify(v:val.filename, ":.")})'.
+                    \                 '._tfname is# fname)})')
+        if a:opts.ignoretags
+            call filter(tags, '!v:val._incurf')
         endif
-        if !has_key(tag2flmap, tag.name)
-            let tag2flmap[tag.name]=[]
+        "▶3 Generate prefix and suffix of the regular expression
+        let tagregexpref='\C\V'
+        if !empty(a:starttagreg)
+            let tagregexpref.=a:starttagreg.'\zs'
         endif
-        call add(tag2flmap[tag.name], [tag])
-        "▶3 Тёг находится в текущем файле
-        if incurf
-            if tag.cmd[0] is# '/'
-                try
-                    let linenr=search(
-                                \escape(
-                                \   substitute(tag.cmd, '\m^/\|/$', '', 'g'),
-                                \   addescapes), 'nw')
-                catch
-                endtry
-            else
-                let linenr=(+matchstr(tag.cmd, '\v^\d+'))
-            endif
-            if linenr
-                call insert(tag2flmap[tag.name][-1], linenr)
-                let curfl2tagsmap[linenr]=get(curfl2tagsmap, linenr, [])+[tag]
-            endif
-            if len(tag2flmap[tag.name][-1])==2
-                if len(tag2flmap[tag.name])>1
-                    call insert(tag2flmap[tag.name],
-                                \remove(tag2flmap[tag.name], -1))
+        let tagregexpref.='\k\@<!'
+        if !(empty(a:starttagreg) && empty(a:endtagreg))
+            let tagregexpref.='\%('
+        endif
+        let tagregexsuf=''
+        if !(empty(a:starttagreg) && empty(a:endtagreg))
+            let tagregexsuf.='\)'
+        endif
+        let tagregexsuf.='\V\k\@!'
+        if !empty(a:endtagreg)
+            let tagregexsuf.='\ze'.a:endtagreg
+        endif
+        "▶3 Collect tags
+        let foundtnames={}
+        let d={'recordmatch': s:F.recordtagmatch,
+                    \'splcolumns': splcolumns, 'foundtnames': foundtnames, 'tags': tags}
+        call s:F.collecttags(a:slnr, a:elnr, tags, tagregexpref, tagregexsuf, d)
+        call cursor(a:slnr, 0)
+        " !empty(extend(, non-empty-dict)) always results in 1
+        call filter(tags, 'has_key(foundtnames, v:val.name) '.
+                    \       '? !empty(extend(v:val, {"_found": 1}))'.
+                    \       ': (v:val._incurf '.
+                    \           '? !empty(extend(v:val, {"_found": 0}))'.
+                    \           ': 0)')
+        let usedtags=copy(tags)
+        "▶3 Obtain line numbers for found tags
+        " TODO Check whether checking this lazily (when tag is encountered) adds more overhead 
+        " compared to current solution.
+        for tag in tags
+            "▶3 Initialize tag2flmap if needed
+            if tag._found
+                if !has_key(tag2flmap, tag.name)
+                    let tag2flmap[tag.name]=[]
                 endif
-            else
-                call remove(tag2flmap[tag.name], -1)
+                call add(tag2flmap[tag.name], [tag])
             endif
-        "▶3 Тёг находится в другом файле
-        elseif filereadable(tfname)
-            let linenr=0
-            if tag.cmd[0] is# '/'
-                if !has_key(fcontents, tfname)
-                    let fcontents[tfname]=readfile(tfname, 'b')
+            "▶3 Тёг находится в текущем файле
+            if tag._incurf
+                if tag.cmd[0] is# '/'
+                    try
+                        " Note: lines that do not fall into the formatted range are ignored
+                        let linenr=search(
+                                    \escape(
+                                    \   substitute(tag.cmd, '\m^/\|/$', '', 'g'),
+                                    \   addescapes), 'nwc')
+                    catch
+                    endtry
+                else
+                    let linenr=(+matchstr(tag.cmd, '\v^\d+'))
                 endif
-                let fc=fcontents[tfname]
-                let pattern=escape(substitute(tag.cmd, '\m^/\|/$', '', 'g'),
-                            \      addescapes)
-                let linenr=1
-                let found=0
-                try
-                    for line in fc
-                        if line=~#'\m'.pattern
-                            let found=1
-                            break
+                if linenr>a:elnr || linenr<a:slnr
+                    let tag._incurf=0
+                endif
+                if linenr
+                    let tag._linenr=linenr
+                    if tag._found
+                        call insert(tag2flmap[tag.name][-1], linenr)
+                    endif
+                    let curfl2tagsmap[linenr]=get(curfl2tagsmap, linenr, [])+[tag]
+                endif
+                if tag._found
+                    if len(tag2flmap[tag.name][-1])==2
+                        if len(tag2flmap[tag.name])>1
+                            call insert(tag2flmap[tag.name],
+                                        \remove(tag2flmap[tag.name], -1))
                         endif
-                        let linenr+=1
-                    endfor
-                catch
-                    let found=0
-                endtry
-                if !found
-                    let linenr=0
+                    else
+                        call remove(tag2flmap[tag.name], -1)
+                    endif
                 endif
-            else
-                let linenr=(+matchstr(tag.cmd, '\v^\d+'))
-            endif
-            if linenr
-                call insert(tag2flmap[tag.name][-1], [tfname, linenr])
+            "▶3 Тёг находится в другом файле
+            elseif filereadable(tag._tfname)
+                let tfname=tag._tfname
+                if tag.cmd[0] is# '/'
+                    let filetags[tfname]=add(get(filetags, tfname, []),
+                                \            [tag, tag2flmap[tag.name], len(tag2flmap[tag.name])-1,
+                                \             tag2flmap[tag.name][-1]])
+                else
+                    let linenr=(+matchstr(tag.cmd, '\v^\d+'))
+                    if linenr
+                        call insert(tag2flmap[tag.name][-1], [tfname, linenr])
+                        let tag._linenr=linenr
+                    else
+                        call remove(tag2flmap[tag.name], -1)
+                    endif
+                endif
+            "▶3 Файл, в котором должен находится тёг, не существует
             else
                 call remove(tag2flmap[tag.name], -1)
             endif
-        "▶3 Файл, в котором должен находится тёг, не существует
-        else
-            call remove(tag2flmap[tag.name], -1)
-        endif
+        endfor
+    finally
+        call winrestview(winview)
+    endtry
+    "▶2 Tags in the files that should be searched for
+    " WARNING: tags list below is modified
+    for [tfname, tags] in items(filetags)
+        let fc=readfile(tfname, 'b')
+        call map(tags, 'add(v:val, '.
+                    \'"\\m".escape(substitute(v:val[0].cmd, ''\m^/\|/$'', "", "g"), addescapes))')
+        let linenr=1
+        for line in fc
+            try
+                if empty(filter(tags,
+                            \'line=~#v:val[-1]'
+                            \   .'? empty(insert(v:val[-2], [tfname, linenr]))'
+                            \   .': !empty(extend(v:val[0], {"_linenr": linenr}))'))
+                    break
+                endif
+            catch
+            endtry
+            let linenr+=1
+        endfor
+        call map(reverse(tags), 'remove(v:val[1], v:val[2])')
     endfor
+    unlet filetags tags
     "▶2 Удаление лишних записей
+    call filter(usedtags, 'has_key(v:val, "_linenr")')
+    call map(tag2flmap, 'filter(v:val, "has_key(v:val[-1], \"_linenr\")")')
     call filter(tag2flmap, '!empty(v:val)')
     let maxduptags=s:_f.getoption('MaxDupTags')
     if maxduptags
         call filter(tag2flmap, 'type(get(v:val, '.maxduptags.', 0))=='.type(0))
     endif
-    return [tag2flmap, curfl2tagsmap]
+    return [tag2flmap, curfl2tagsmap, splcolumns, usedtags]
 endfunction
 "▶1 getsigns
 function s:F.getsigns(buf)
@@ -1099,19 +1562,50 @@ function s:F.getsigns(buf)
     endfor
     return [defined, placed]
 endfunction
-"▶1 cf.new
+"▶1 cf
 let s:cf={}
-function s:cf.new(cformat)
-    return extend(copy(self), {'cformat': a:cformat,
-                \              'opts':    a:cformat.opts,
-                \              'vars':    {},
-                \              'nextvar': 'a',})
+"▶2 cf.new
+function s:cf.new(format, opts)
+    let cf=extend(copy(self), {'format':   a:format,
+                \              'opts':     a:opts,
+                \              'vars':     {},
+                \              'nextvar':  'a',
+                \              'cache':    {},
+                \              'stylestr': ''})
+    if !a:opts.minimizefunc
+        call map(copy(s:cf), 'v:key[-6:] is# "_nomin" && empty(extend(cf, {v:key[:-7]: v:val}))')
+    endif
+    call cf.compile()
+    return cf
 endfunction
-"▶1 cf.has
+"▶2 cf.compile
+function s:cf.compile()
+    let cformat={}
+    let self.cformat=cformat
+    for key in s:keylist
+        if has_key(self.format, key)
+            let cformat[key]=s:F.fmtcompileone(self.format[key], self.opts, key)
+            lockvar! cformat[key]
+            if self.opts.profiling || self.opts.debugging
+                call add(s:profiled, cformat[key].f)
+            endif
+        endif
+    endfor
+    for key in ['haslf', 'nolf']
+        let cformat[key]=get(self.format, key, 0)
+        lockvar cformat[key]
+    endfor
+    let cformat.compiledspec=s:F.compilespecfunc(self)
+    lockvar! cformat
+    if self.opts.profiling || self.opts.debugging
+        call add(s:profiled, cformat.compiledspec)
+    endif
+endfunction
+"▶2 cf.has
 function s:cf.has(key)
     return has_key(self.cformat, a:key)
 endfunction
-"▶1 cf.newvar
+"▶2 cf.newvar
 function s:F.inc(next)
     if empty(a:next)
         return add(a:next, 'a')
@@ -1145,10 +1639,12 @@ function s:cf.newvar(var)
     endif
     return self.vars[a:var]
 endfunction
-"▶1 cf.getvar
+function s:cf.newvar_nomin(var)
+    return a:var
+endfunction
+"▶2 cf.getvar
 function s:cf.getvar(var)
     let v=matchstr(a:var, '\v^(\a\:)@!\w+')
-    let tail=a:var[len(v):]
     if empty(v)
         return a:var
     elseif !has_key(self.vars, v)
@@ -1156,15 +1652,29 @@ function s:cf.getvar(var)
     endif
     return self.vars[v]
 endfunction
-"▶1 cf.expr
-function s:cf.expr(expr)
+"▶2 cf.getvar_nomin
+function s:cf.getvar_nomin(var)
+    return a:var
+endfunction
+"▶2 cf.expr
+function s:cf.expr(expr, ...)
     return substitute(a:expr, '\v\%(\%|\-?\d+|\a\w*)',
                 \     '\=submatch(1) is# "%"   ? '.
                 \           '"%" : '.
-                \           'self.getvar(submatch(1))',
+                \           (a:0&&a:1
+                \               ? 'self.newvar(submatch(1))'
+                \               : 'self.getvar(submatch(1))'),
                 \     'g')
 endfunction
-"▶1 cf.get
+"▶2 cf.specstr
+function s:cf.specstr(list)
+    if type(a:list)==type('')
+        return 'call(%cformat.compiledspec,[%cf]+'.a:list.',{})'
+    else
+        return '%cformat.compiledspec(%cf,'.join(a:list,',').')'
+    endif
+endfunction
+"▶2 cf.get
 function s:cf.get(key, ...)
     if self.cformat[a:key].isconst
         return s:F.squote(call(self.cformat[a:key].f, a:000+[self.opts], {}))
@@ -1172,35 +1682,25 @@ function s:cf.get(key, ...)
         let atargs=copy(s:defatargs)
         call map(s:keyargs[a:key][:-2], 'extend(atargs,{v:val : a:000[v:key]})')
         let atargs.opts='%opts'
-        return s:F.procpc(self.cformat[a:key].str, self.opts, a:key, 0, atargs)
+        return s:F.procpc(self.cformat[a:key].str, self.opts, a:key, 0, atargs, 1)
     endif
     return '%cformat.'.a:key.'.f('.join(a:000, ',').',%opts'.')'
 endfunction
-"▶1 cf.getspecstr
-function s:cf.getspecstr(...)
-    let args='%cformat,'.join(a:000, ',')
-    if self.opts.docline
-        let condition='%iscline'
-        if self.opts.dosigns
-            let condition.='&&!(has_key(%opts.placedsigns,%clnr) && '.
-                        \     'has_key(%opts.placedsigns[%clnr][1],''linehl''))'
-        endif
-        return 'call(s:F.compiledspec,['.args.']+'.
-                \               '(('.condition.')?([''CursorLine'']):([])),{})'
-    else
-        return 's:F.compiledspec('.args.')'
-    endif
-endfunction
-"▶1 cf.getnrstr
+"▶2 cf.getnrstr
 function s:cf.getnrstr(nrvarstr)
-    return ((self.opts.dornr)?('abs('.a:nrvarstr.'-'.self.opts.cline.')'):
-                \             (a:nrvarstr))
+    return ((self.opts.dornr)?
+                \   ((self.opts.donr)?
+                \       ('(('.a:nrvarstr.'=='.self.opts.cline.')?'.
+                \           self.opts.cline.' : '.
+                \           ('abs('.a:nrvarstr.'-'.self.opts.cline.')').')'):
+                \       ('abs('.a:nrvarstr.'-'.self.opts.cline.')')):
+                \   (a:nrvarstr))
 endfunction
-"▶1 cf.escape
+"▶2 cf.escape
 function s:cf.escape(str)
     return eval(substitute(self.opts.strescape, '@@@', 'a:str', 'g'))
 endfunction
-"▶1 cf.hasreq
+"▶2 cf.hasreq
 function s:cf.hasreq(key, reqs)
     let reqs=self.cformat[a:key].req
     for req in a:reqs
@@ -1218,7 +1718,7 @@ function s:F.gettagreg(options, st)
     if tagreg is 0
         let tagreg=''
     else
-        let tagreg='\%('.tagreg.'\)'
+        let tagreg='\m\%('.tagreg.'\)\V'
     endif
     return tagreg
 endfunction
@@ -1231,31 +1731,22 @@ function s:ffcomp.c(cmd, arg)
                 \((a:arg =~# '\v^[a-zA-Z0-9_@!]')?(' '):('')).a:arg
 endfunction
 "▶2 ff.expr
-function s:ff.expr(expr)
-    return self.__cf.expr(a:expr)
+function s:ff.expr(...)
+    return call(self.__cf.expr, a:000, self.__cf)
 endfunction
 "▶2 ff.__let
 function s:ff.__let(var, type, expr)
-    return self._out()._deeper('let',self.expr(a:var),a:type,self.expr(a:expr))
+    return self._out()._deeper('let',self.expr(a:var, 1),a:type,self.expr(a:expr))
                 \._out()
 endfunction
 "▶2 ff.let
 function s:ff.let(var, expr)
-    if a:var =~# '\v^\%\a\w*$'
-        let var=self.__cf.newvar(a:var[1:])
-    else
-        let var=a:var
-    endif
-    return self.__let(var, '', a:expr)
+    return self.__let(a:var, '', a:expr)
 endfunction
 "▶2 ff.__leta
 function s:ff.__leta(var, type, expr)
-    if a:var =~# '\v^\%\a\w*$'
-        let var=self.__cf.newvar(a:var[1:])
-    else
-        let var=self.expr(a:var)
-    endif
     if !empty(self._l) && self._l[-1][0] is# 'let' && self._l[-1][2] is# a:type
+        let var=self.expr(a:var, 1)
         let expr=self.expr(a:expr)
         let lblock=self._l[-1]
         if lblock[1][0] is# '['
@@ -1267,14 +1758,16 @@ function s:ff.__leta(var, type, expr)
         endif
         return self
     else
-        return call(self.__let, [var, a:type, a:expr], self)
+        return call(self.__let, [a:var, a:type, a:expr], self)
     endif
 endfunction
 "▶2 ff.leta
+" TODO: Automatically determine validity of concatenating lets by recording variables used by right 
+" expression
 function s:ff.leta(var, expr)
     return self.__leta(a:var, '', a:expr)
 endfunction
-"▶2 ff.letabrk
+"▶2 ff.letabreak
 function s:ffcomp.letabreak(...)
     " Do nothing
 endfunction
@@ -1283,10 +1776,7 @@ function s:ff.letabreak()
 endfunction
 "▶2 ff.letspec
 function s:ff.letspec(spname, ...)
-    return self.leta('%'.a:spname.'spec',
-                \    's:F.compiledspec(%cformat,'.
-                \                   join(map(copy(a:000),'"''".v:val."''"'),',').
-                \                    ')')
+    return self.leta('%'.a:spname.'spec', self.__cf.specstr(map(copy(a:000),'"''".v:val."''"')))
 endfunction
 "▶2 ff.letcf
 function s:ff.letcf(var, ...)
@@ -1321,8 +1811,13 @@ function s:ff.appendc(...)
         return call(self.append,   [self.__curvar, a:1],  self)
     endif
 endfunction
-"▶2 ff.call, .for, .while, .if, .elseif, .addif
-for s:f in ['call', 'for', 'while', 'if', 'elseif', 'addif', 'strappend']
+"▶2 ff.for
+function s:ff.for(var, expr)
+    return call(self.__orig.for, [self.expr(a:var, 1), self.expr(a:expr)], self)
+endfunction
+"▶2 ff.call, .while, .if, .elseif, .addif, .strappend, .echo, .echomsg, .echon, .unlet
+for s:f in ['call', 'while', 'if', 'elseif', 'addif', 'strappend', 'echo', 'echomsg', 'echon',
+            \'unlet']
     execute      'function s:ff.'.s:f."(...)\n".
                 \'    return call(self.__orig.'.s:f.', '.
                 \                'map(copy(a:000), "self.expr(v:val)"), '.
@@ -1346,6 +1841,9 @@ function s:F.newff(cf)
     call extend(r._comp, s:ffcomp)
     let r.append=r.strappend
     let r.__cf=a:cf
+    if !a:cf.opts.minimizefunc
+        let r.__leta=r.__let
+    endif
     return r
 endfunction
 "▶1 s:NRSort :: Integer, Integer → -1|1
@@ -1354,44 +1852,35 @@ function s:NRSort(a, b)
     return a:a>a:b ? 1 : -1
 endfunction
 let s:_functions+=['s:NRSort']
-"▶1 getcompfmt
-let s:compiledfmts={}
-function s:F.getcompfmt(type)
-    if !has_key(s:compiledfmts, a:type)
-        let s:compiledfmts[a:type]=s:F.fmtprepare(s:formats[a:type])
-    endif
-    return s:compiledfmts[a:type]
+"▶1 mergesplcolumns
+function s:F.mergesplcolumns(splcolumns1, splcolumns2)
+    let splcolumns=deepcopy(a:splcolumns1)
+    call map(copy(a:splcolumns2),
+                \'has_key(splcolumns, v:key)'.
+                \   '?map(copy(v:val), '.
+                \       '"has_key(splcolumns[".v:key."], v:key)'.
+                \           '?extend(splcolumns[".v:key."][v:key], v:val)'.
+                \           ':extend(splcolumns[".v:key."], {v:key : v:val})")'.
+                \   ':extend(splcolumns, {v:key : v:val})')
+    return splcolumns
 endfunction
-"▶1 initopts
-function s:F.initopts(type, slnr, elnr, options, cf, sbsd)
-    let opts=a:cf.opts
-    unlockvar opts
+"▶1 initfileopts
+function s:F.initfileopts(opts, slnr, elnr, options, format, sbsd)
+    let opts=a:opts
     " TODO Control it with a:options?
-    let opts.linenumlen=max([len(a:elnr), &numberwidth])
     let opts.sbsd=a:sbsd
     "▶2 Intended display width
     let columns=0+(((a:options.columns)+0)?
                 \       (a:options.columns):
-                \       (get(s:formats[a:type], 'columns', winwidth(0))))
+                \       (-1))
     if columns==-1
-        let columns=max(map(range(1, line('$')), 'virtcol([v:val, "$"])-1'))
+        let columns=max(map(range(1, line('$')), 'virtcol([v:val,''$''])-1')
+                    \   +[s:_f.getoption('MinColumns')])
     endif
     let opts.columns=columns
-    "▶2 Folds
-    " Ignore folds if IgnoreFolds is set, there is no “fold” key or vim does not 
-    " support folding.
-    let ignorefolds=((a:options.folds==-1)?
-                \       (s:_f.getoption('IgnoreFolds')):
-                \       (!a:options.folds)) ||
-                \!has('folding')
-    let allfolds=!(ignorefolds || a:sbsd) &&
-                \((a:options.allfolds==-1)?
-                \       (s:_f.getoption('AllFolds')):
-                \       (a:options.allfolds)) &&
-                \(a:cf.has('foldstart') ||
-                \ a:cf.has('foldend'))
+    "▶2 foldcolumn
     let foldcolumn=0
-    if !ignorefolds && a:cf.has('foldcolumn')
+    if !opts.ignorefolds && has_key(a:format, 'foldcolumn')
         " TODO Support for formatting foldcolumn using .line
         let foldcolumn=((a:options.foldcolumn==-2)?
                 \           (s:_f.getoption('FoldColumn')):
@@ -1400,9 +1889,6 @@ function s:F.initopts(type, slnr, elnr, options, cf, sbsd)
             let foldcolumn=&foldcolumn
         endif
     endif
-    let ignorefolds=ignorefolds || !a:cf.has('fold')
-    let opts.ignorefolds = ignorefolds
-    let opts.allfolds    = allfolds
     let opts.foldcolumn  = foldcolumn
     let opts.columns    += foldcolumn
     "▶2 Concealed characters
@@ -1418,35 +1904,28 @@ function s:F.initopts(type, slnr, elnr, options, cf, sbsd)
             let formatconcealed=a:options.concealed
         endif
     endif
-    if formatconcealed==2 && !a:cf.has('concealed')
+    if formatconcealed==2
+                \&& !(has_key(a:format, 'concealedstart') || has_key(a:format, 'concealedend'))
         let formatconcealed=1
     endif
     let opts.formatconcealed=formatconcealed
-    "▶2 Signs
-    let dosigns=0
-    if a:cf.has('sign')
-        " TODO Support for formatting signs column using .line
-        let dosigns=((a:options.signs==-1)?
-                    \   (!s:_f.getoption('IgnoreSigns')):
-                    \   (a:options.signs))
-        if dosigns
-            let gsr=s:F.getsigns(bufnr('%'))
-            let opts.signdefinitions=gsr[0]
-            let opts.placedsigns=gsr[1]
-            if empty(opts.placedsigns)
-                let dosigns=0
-            endif
-            let opts.columns+=2
-        endif
-    endif
-    let opts.dosigns=dosigns
+    let opts.conceallevel=&conceallevel
     "▶2 Cursor
-    let opts.ignorecursor=s:_f.getoption('IgnoreCursor')
+    let opts.ignorecursor=(a:options.cursor==-1?
+                \               s:_f.getoption('IgnoreCursor'):
+                \               !a:options.cursor)
     let opts.cline=line('.')
-    let opts.docline=(!opts.ignorecursor && &cursorline &&
-                \     a:slnr<=opts.cline && opts.cline<=a:elnr)
+    let hascline=(a:slnr<=opts.cline && opts.cline<=a:elnr)
+    let opts.docline=(!opts.ignorecursor && &cursorline && hascline)
+    let opts.hascline=(!opts.ignorecursor && hascline)
+    if formatconcealed && !opts.ignorecursor
+        let opts.formatconcealedcursor=stridx(&concealcursor, 'n')==-1
+    else
+        let opts.formatconcealedcursor=0
+    endif
+    let opts.checkcline=opts.docline || opts.formatconcealedcursor
     "▶2 Line numbers
-    if a:cf.has('linenr')
+    if has_key(a:format, 'linenr')
         let opts.donr=((a:options.number==-1)?
                     \       (s:_f.getoption('NoLineNR')):
                     \       (!a:options.number))
@@ -1463,37 +1942,157 @@ function s:F.initopts(type, slnr, elnr, options, cf, sbsd)
                 let opts.dornr=0
             endif
         endif
-        if !opts.dornr && opts.donr==-1
+        if opts.donr==-1
             let opts.donr=&number
-        endif
-        if opts.dornr
-            let opts.donr=0
         endif
         let opts.dosomenr=(opts.donr || opts.dornr)
         if opts.dosomenr
+            if opts.donr
+                let opts.linenumlen=max([len(a:elnr), &numberwidth-1])
+            elseif opts.dornr
+                let opts.linenumlen=max([len(a:elnr-a:slnr), &numberwidth-1])
+            endif
             let opts.columns+=1+opts.linenumlen
+        else
+            let opts.linenumlen = 0
         endif
     else
         " TODO Add support for formatting line numbers using .line
-        let opts.donr     = 0
-        let opts.dornr    = 0
-        let opts.dosomenr = 0
+        let opts.donr       = 0
+        let opts.dornr      = 0
+        let opts.dosomenr   = 0
+        let opts.linenumlen = 0
     endif
+    "▶2 Structures with tags
+    if opts.ignoretags!=2
+        let starttagreg=s:F.gettagreg(a:options, 'start')
+        let endtagreg=s:F.gettagreg(a:options, 'end')
+        let [opts.tags, opts.curtags, opts.tagssplcolumns, usedtags]=
+                    \s:F.formattags(opts, a:slnr, a:elnr, starttagreg, endtagreg)
+        if has_key(a:format, 'tagproc')
+            call map(usedtags, 'a:format.tagproc(opts, v:val)')
+        endif
+        let opts.dotags=(opts.ignoretags!=2 && !empty(opts.tagssplcolumns))
+    else
+        let opts.tags={}
+        let opts.curtags={}
+        let usedtags=0
+        let opts.dotags=0
+    endif
+    "▶2 Structures with matches
+    if opts.formatsomematch
+        let [opts.matchessplcolumns, opts.matchespasteol]=s:F.formatmatches(opts, a:slnr, a:elnr)
+        let opts.domatches=!empty(opts.matchessplcolumns)
+    else
+        let opts.domatches=0
+        let opts.matchespasteol=0
+    endif
+    "▶2 'listchars'
+    let listchars={}
+    let npregex='\v\t|\p@!.'
+    if &list && !((a:options.list)?
+                \   (s:_f.getoption('IgnoreList')):
+                \   (!a:options.list))
+        let opts.list=1
+        call map(map(split(&listchars,
+                    \'\v\,%(%(eol|tab|trail|extends|precedes|nbsp|conceal)\:)@='),
+                    \'matchlist(v:val,''\v^(\w+)\:(.*)$'')[1:2]'),
+                    \'extend(listchars, {v:val[0]: substitute(v:val[-1],''\\\(.\)'',''\1'',"g")})')
+        if has_key(listchars, 'nbsp')
+            let npregex='\v\t| |\p@!.'
+        endif
+    else
+        let opts.list=0
+        let listchars.tab='  '
+    endif
+    let opts.npregex=npregex
+    let opts.listchars=listchars
+    let opts.spsplcolumns=s:F.formatspecialchars(a:opts, a:slnr, a:elnr)
+    "▶2 special columns
+    if !empty(get(opts, 'matchessplcolumns')) && empty(get(opts, 'tagssplcolumns'))
+        let opts.splcolumns=s:F.mergesplcolumns(opts.matchessplcolumns, opts.spsplcolumns)
+    elseif !empty(get(opts, 'tagssplcolumns')) && empty(get(opts, 'matchessplcolumns'))
+        let opts.splcolumns=s:F.mergesplcolumns(opts.tagssplcolumns, opts.spsplcolumns)
+    elseif !empty(get(opts, 'tagssplcolumns')) && !empty(get(opts, 'matchessplcolumns'))
+        let opts.splcolumns=s:F.mergesplcolumns(
+                    \s:F.mergesplcolumns(opts.tagssplcolumns, opts.matchessplcolumns),
+                    \opts.spsplcolumns)
+    else
+        let opts.splcolumns=opts.spsplcolumns
+    endif
+    "▶2 Signs
+    let dosigns=0
+    if has_key(a:format, 'sign')
+        " TODO Support for formatting signs column using .line
+        let dosigns=((a:options.signs==-1)?
+                    \   (!s:_f.getoption('IgnoreSigns')):
+                    \   (a:options.signs))
+        if dosigns
+            let gsr=s:F.getsigns(bufnr('%'))
+            let opts.signdefinitions=gsr[0]
+            let opts.placedsigns=gsr[1]
+            if empty(opts.placedsigns)
+                let dosigns=0
+            endif
+            let opts.columns+=2
+        endif
+    endif
+    let opts.dosigns=dosigns
+    "▲2
+    let opts.dolinemergehl=(opts.dodiff || opts.docline || opts.dosigns)
+    let opts.domergehl=(opts.dolinemergehl || opts.domatches)
+    return opts
+endfunction
+"▶1 initopts
+function s:F.initopts(opts, slnr, elnr, options, format, sbsd)
+    let opts=a:opts
+    call filter(opts, 'v:key[:1] isnot# "__"')
+    let opts.highlight=s:F.gethighlight()
+    let opts.dodiff=(s:_f.getoption('IgnoreDiff') || !get(a:options, 'diff', 1))
+                \       ?0
+                \       :&diff
+    let opts.usestylenames=s:_f.getoption('UseStyleNames')
+    "▶2 Debugging/profiling
+    let opts.profiling=v:profiling
+    let opts.debugging=s:_f.getoption('Debugging')
+    if opts.debugging
+        let opts.funcfile=s:_f.getoption('Debugging_FuncF')
+        let opts.minimizefunc=s:_f.getoption('Debugging_MinFu')
+    else
+        let opts.funcfile=0
+        let opts.minimizefunc=1
+    endif
+    "▶2 Folds
+    " Ignore folds if IgnoreFolds is set, there is no “fold” key or vim does not 
+    " support folding.
+    let ignorefolds=((a:options.folds==-1)?
+                \       (s:_f.getoption('IgnoreFolds')):
+                \       (!a:options.folds)) ||
+                \!has('folding')
+    let allfolds=!(ignorefolds || a:sbsd) &&
+                \((a:options.allfolds==-1)?
+                \       (s:_f.getoption('AllFolds')):
+                \       (a:options.allfolds)) &&
+                \(has_key(a:format, 'foldstart') ||
+                \ has_key(a:format, 'foldend'))
+    let ignorefolds=ignorefolds || !has_key(a:format, 'fold')
+    let opts.ignorefolds = ignorefolds
+    let opts.allfolds    = allfolds
     "▶2 fillchars
     let fillchars={}
-    if has('windows') && has('folding') && (!ignorefolds || &diff || a:sbsd==1)
+    if has('windows') && has('folding') && (!ignorefolds || opts.dodiff || a:sbsd==1)
         let fcs=split(&fillchars, '\v\,%(%(stl%(nc)?|vert|fold|diff)\:)@=')
         for fc in fcs
             let [o, v]=matchlist(fc, '\v^(\w*)\:(.*)$')[1:2]
             let fillchars[o]=v
         endfor
     endif
-    let opts.difffillchar  = a:cf.escape(get(fillchars, 'diff', '-'))
-    let opts.foldfillchar  = a:cf.escape(get(fillchars, 'fold', '-'))
-    let opts.vertseparator = a:cf.escape(get(fillchars, 'vert', '|'))
+    let opts.difffillchar  = eval(substitute(opts.strescape, '@@@', 'get(fillchars,"diff","-")',''))
+    let opts.foldfillchar  = eval(substitute(opts.strescape, '@@@', 'get(fillchars,"fold","-")',''))
+    let opts.vertseparator = eval(substitute(opts.strescape, '@@@', 'get(fillchars,"vert","|")',''))
     "▶2 Tags
     let opts.ignoretags=2
-    if a:cf.has('tagstart') || a:cf.has('tagend')
+    if has_key(a:format, 'tagstart') || has_key(a:format, 'tagend')
         if a:options.tags is -1
             let opts.ignoretags=s:_f.getoption('IgnoreTags')
         elseif a:options.tags is# 'all'
@@ -1501,22 +2100,87 @@ function s:F.initopts(type, slnr, elnr, options, cf, sbsd)
         elseif a:options.tags is# 'local'
             let opts.ignoretags=1
         else
-            let opts.ignoretags=(2-a:options.ignoretags)
+            let opts.ignoretags=(2-a:options.tags)
         endif
     endif
-    "▶2 Structures with tags
-    if opts.ignoretags!=2
-        let starttagreg=s:F.gettagreg(a:options, 'start')
-        let endtagreg=s:F.gettagreg(a:options, 'end')
-        let [opts.tags, opts.curtags]=
-                    \s:F.formattags(opts.ignoretags, starttagreg, endtagreg)
+    "▶2 Matches
+    let matches=((a:options.matches == -1)?
+                \   (s:_f.getoption('FormatMatches')):
+                \   (a:options.matches))
+    if matches is -1
+        if has('extra_search') && &hlsearch
+            let matches='all'
+        else
+            let matches='matches'
+        endif
+    endif
+    let opts.formatsearch  = (matches is# 'all' || matches is# 'search')  && !empty(@/)
+    let opts.formatmatches = (matches is# 'all' || matches is# 'matches') && !empty(getmatches())
+    let opts.formatsomematch = opts.formatsearch || opts.formatmatches
+    "▶2 collapsafter
+    if a:sbsd
+        let opts.collapsafter=0
     else
-        let opts.tags={}
-        let opts.curtags={}
+        let opts.collapsafter=((a:options.collapsfiller==-1)?
+                    \               (s:_f.getoption('CollapsFiller')):
+                    \               (a:options.collapsfiller))
+        if !has_key(a:format, 'difffiller') && has_key(a:format, 'collapsedfiller')
+            let opts.collapsafter=1
+        elseif !has_key(a:format, 'collapsedfiller')
+            let opts.collapsafter=0
+        endif
     endif
     "▲2
-    lockvar! opts
+    "▶2 addoptsfun
+    if has_key(a:format, 'addoptsfun')
+        call map(copy(a:format.addoptsfun()), 'extend(opts, {"__".v:key : deepcopy(v:val)})')
+    endif
+    "▲2
+    let opts=s:F.initfileopts(opts, a:slnr, a:elnr, a:options, a:format, a:sbsd)
     return opts
+endfunction
+"▶1 highlight
+function s:F.gethighlight()
+    let highlight={}
+    call map(split(&highlight, ','), 'extend(highlight, {v:val[0]: v:val[2:]})')
+    " FIXME 'highlight' option does not necessary hold C:HiGroup pairs
+    return map({
+                \'SpecialKey':   '8',
+                \'NonText':      '@',
+                \'Directory':    'd',
+                \'ErrorMsg':     'e',
+                \'IncSearch':    'i',
+                \'Search':       'l',
+                \'MoreMsg':      'm',
+                \'ModeMsg':      'M',
+                \'LineNr':       'n',
+                \'CursorLineNr': 'N',
+                \'Question':     'r',
+                \'StatusLine':   's',
+                \'StatusLineNC': 'S',
+                \'Title':        't',
+                \'VertSplit':    'c',
+                \'Visual':       'v',
+                \'VisualNOS':    'V',
+                \'WarningMsg':   'w',
+                \'WildMenu':     'W',
+                \'Folded':       'f',
+                \'FoldColumn':   'F',
+                \'DiffAdd':      'A',
+                \'DiffChange':   'C',
+                \'DiffDelete':   'D',
+                \'DiffText':     'T',
+                \'SignColumn':   '>',
+                \'SpellBad':     'B',
+                \'SpellCap':     'P',
+                \'SpellRare':    'R',
+                \'SpellLocal':   'L',
+                \'Conceal':      '-',
+                \'Pmenu':        '+',
+                \'PmenuSel':     '=',
+                \'PmenuSbar':    'x',
+                \'PmenuThumb':   'X',
+            \}, 'get(highlight, v:val, v:key)')
 endfunction
 "▶1 initspecs
 function s:F.initspecs(ff, opts)
@@ -1531,155 +2195,122 @@ function s:F.initspecs(ff, opts)
     "cspec       — Cursor format
     "conspec     — Concealed characters format
     "scspec      — Sign column format
-    "▶2 Get highlight
-    let highlight={}
-    call map(split(&highlight, ','), 'extend(highlight, {v:val[0]: v:val[2:]})')
-    for [k, def] in [
-                \['8', 'SpecialKey'  ],
-                \['@', 'NonText'     ],
-                \['d', 'Directory'   ],
-                \['e', 'ErrorMsg'    ],
-                \['i', 'IncSearch'   ],
-                \['l', 'Search'      ],
-                \['m', 'MoreMsg'     ],
-                \['M', 'ModeMsg'     ],
-                \['n', 'LineNr'      ],
-                \['N', 'CursorLineNr'],
-                \['r', 'Question'    ],
-                \['s', 'StatusLine'  ],
-                \['S', 'StatusLineNC'],
-                \['t', 'Title'       ],
-                \['c', 'VertSplit'   ],
-                \['v', 'Visual'      ],
-                \['V', 'VisualNOS'   ],
-                \['w', 'WarningMsg'  ],
-                \['W', 'WildMenu'    ],
-                \['f', 'Folded'      ],
-                \['F', 'FoldColumn'  ],
-                \['A', 'DiffAdd'     ],
-                \['C', 'DiffChange'  ],
-                \['D', 'DiffDelete'  ],
-                \['T', 'DiffText'    ],
-                \['>', 'SignColumn'  ],
-                \['B', 'SpellBad'    ],
-                \['P', 'SpellCap'    ],
-                \['R', 'SpellRare'   ],
-                \['L', 'SpellLocal'  ],
-                \['-', 'Conceal'     ],
-                \['+', 'Pmenu'       ],
-                \['=', 'PmenuSel'    ],
-                \['x', 'PmenuSbar'   ],
-                \['X', 'PmenuThumb'  ],
-                \]
-        if has_key(highlight, k)
-            let highlight[def]=remove(highlight, k)
-        else
-            let highlight[def]=def
-        endif
-    endfor
-    "▲2
     call a:ff.letspec('normal',  'Normal')
-    call a:ff.letspec('special', highlight.SpecialKey)
-    call a:ff.letspec('nt',      highlight.NonText)
-    let spspecstr='%specialspec'
-    let ntspecstr='%ntspec'
-    if a:opts.formatconcealed==2
-        call a:ff.letspec('con', highlight.Conceal)
+    if a:opts.formatconcealed
+        call a:ff.letspec('con', a:opts.highlight.Conceal)
     endif
     if a:opts.dosigns
-        call a:ff.letspec('sc',  highlight.SignColumn)
-        let spspecstr='((has_key(%opts.placedsigns,%clnr)&&'.
-                    \   'has_key(%opts.placedsigns[%clnr][1],''linehl''))?'.
-                    \       '(s:F.compiledspec(%cformat,'.
-                    \                  ''''.highlight.SpecialKey."',".
-                    \                  '%opts.placedsigns[%clnr][1].linehl)):'.
-                    \       '('.spspecstr.'))'
-        let ntspecstr='((has_key(%opts.placedsigns,%clnr)&&'.
-                    \   'has_key(%opts.placedsigns[%clnr][1], ''linehl''))?'.
-                    \       '(s:F.compiledspec(%cformat,'.
-                    \                  "'".highlight.NonText."',".
-                    \                  '%opts.placedsigns[%clnr][1].linehl)):'.
-                    \       '('.ntspecstr.'))'
-    endif
-    "▶2 Cursor
-    if a:opts.docline
-        call a:ff.letspec('cl', 'Normal', 'CursorLine')
-        call a:ff.letspec('clsp', highlight.SpecialKey, 'CursorLine')
-        call a:ff.letspec('clnt', highlight.NonText,    'CursorLine')
-        let spspecstr='((%iscline)?(%clspspec):('.spspecstr.'))'
-        let ntspecstr='((%iscline)?(%clntspec):('.ntspecstr.'))'
+        call a:ff.letspec('sc',  a:opts.highlight.SignColumn)
     endif
     "▶2 Folds
     if a:opts.foldcolumn
-        call a:ff.letspec('fc',   highlight.FoldColumn)
+        call a:ff.letspec('fc',   a:opts.highlight.FoldColumn)
     endif
     if !a:opts.ignorefolds || a:opts.allfolds
-        call a:ff.letspec('fold', highlight.Folded)
+        call a:ff.letspec('fold', a:opts.highlight.Folded)
     endif
     "▲2
-    if &diff
-        call a:ff.letspec('fill', highlight.DiffDelete)
+    if a:opts.dodiff
+        call a:ff.letspec('fill', a:opts.highlight.DiffDelete)
     endif
     "▶2 Line numbers
     if a:opts.dosomenr
-        call a:ff.letspec('nr',   highlight.LineNr)
-        if a:opts.docline
-            call a:ff.letspec('nrcl', highlight.CursorLineNr)
+        call a:ff.letspec('nr',   a:opts.highlight.LineNr)
+        if a:opts.hascline
+            if v:version>703 || (v:version==703 && has('patch479'))
+                call a:ff.letspec('nrcl', a:opts.highlight.CursorLineNr)
+            else
+                call a:ff.letspec('nrcl', a:opts.highlight.LineNr, 'CursorLine')
+            endif
         endif
     endif
     "▲2
-    return [spspecstr, ntspecstr, highlight]
 endfunction
-"▶1 compilefmtfunc
-function s:F.compilefmtfunc(cf)
+"▶1 compilespecfunc
+function s:F.compilespecfunc(cf)
     let opts=a:cf.opts
     let cformat=a:cf.cformat
-    let specfunction=[
-\'function s:F.compiledspec(cformat, hlname'.
-\                               ((&diff || opts.docline)?(', ...'):('')).')',
-    \'let id=hlID(a:hlname)',]
-    if &diff || opts.docline
-        call extend(specfunction, [
-        \'if a:0',
-        \'    let addids=map(copy(a:000), "hlID(v:val)")',
-        \'    let tmpid=[id]+addids',
-        \'    unlet id',
-        \'    let id=tmpid',
-        \'    let name=join(id, "_")',
-        \'else',
-        \'    let name=id',
-        \'endif',
-        \])
-    else
-        call add(specfunction, 'let name=id')
+    let d={}
+    let hlnamearg='a:hlname'
+    if opts.domergehl
+        let hlnamearg='a:0?([a:hlname]+a:000):a:hlname'
     endif
-    call extend(specfunction, [
-    \'if has_key(a:cformat.cache, name)',
-    \'    return a:cformat.cache[name]',
-    \'endif',
+    let specfunction=[
+\'function d.compiledspec(cf, hlname'.((opts.domergehl)?(', ...'):('')).')',
+    \   (opts.domergehl
+    \       ?('let key=a:0?join([a:hlname]+a:000,''+''):(empty(a:hlname)?''-'':a:hlname)')
+    \       :('let key=empty(a:hlname)?''-'':a:hlname')),
+    \'if has_key(a:cf.cache,key)',
+    \    'retu a:cf.cache[key]',
+    \'en',
     \((opts.docline)?
-    \   ('let r=[call(s:F.getspecdict, '.
-    \           '[id]+((a:hlname is# "LineNR")?([0]):([])), {}), ""]'):
-    \   ('let r=[s:F.getspecdict(id), ""]')),
-    \])
-    if has_key(cformat, 'style')
+    \   ('let r=[call(s:F.getspecdict,'.
+    \           '['.hlnamearg.']+'.
+    \            '((a:hlname is#'.string(opts.highlight.LineNr).')?([0]):([])),{}),'''']'):
+    \   ('let r=[s:F.getspecdict('.hlnamearg.'),'''']')),
+    \]
+    if a:cf.has('style')
         call add(specfunction,
-        \'let r[1]=a:cformat.style.f(id, r, "", a:cformat.opts)')
+        \'let r[1]=a:cf.cformat.style.f(key,r,'''',a:cf.opts)')
         if (a:cf.has('begin') && a:cf.hasreq('begin', ['a:style'])) ||
                     \(a:cf.has('end') && a:cf.hasreq('end', ['a:style']))
-            call add(specfunction, 'let a:cformat.stylestr.=r[1]')
+            call add(specfunction, 'let a:cf.stylestr.=r[1]')
         endif
     endif
     call extend(specfunction, [
-    \'let a:cformat.cache[name]=r',
-    \'return r',
+    \'let a:cf.cache[key]=r',
+    \'retu r',
 \'endfunction'])
     execute join(specfunction, "\n")
+    return d.compiledspec
+endfunction
+"▶1 gentrailinglines
+function s:F.gentrailinglines(ldiff, slnr, cf)
+    let cformat=a:cf.cformat
+    let opts=a:cf.opts
+    let ldiff=a:ldiff
+    let clnr=a:slnr+1
+    let ntspec=cformat.compiledspec(a:cf, 'NonText')
+    if !opts.ignorefolds
+        let fcspec=cformat.compiledspec(a:cf, 'FoldColumn')
+    endif
+    if opts.dosigns
+        let scspec=cformat.compiledspec(a:cf, 'SignColumn')
+    endif
+    let r=[]
+    while ldiff
+        let curstr=''
+        if a:cf.has('linestart')
+            let curstr.=cformat.linestart.f(4, ntspec, clnr, curstr, opts)
+        endif
+        if opts.foldcolumn
+            let curstr.=cformat.foldcolumn.f(repeat(' ', opts.foldcolumn), fcspec, clnr,
+                        \                    0, curstr, opts)
+        endif
+        if opts.dosigns
+            let curstr.=cformat.sign.f('  ', scspec, clnr, 0, curstr, opts)
+        endif
+        if opts.dosomenr
+            " XXX
+            " Do nothing: line numbers are not displayed in this case, neither any space 
+            " is skipped
+        endif
+        let curstr.=cformat.line.f('~', ntspec, clnr, 0, curstr, opts)
+        if a:cf.has('lineend')
+            let curstr.=cformat.lineend.f(4, ntspec, clnr, 1, curstr, opts)
+        endif
+        call add(r, curstr)
+        let clnr+=1
+        let ldiff-=1
+    endwhile
+    return r
 endfunction
 "▶1 Run side-by-side diff
 function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
     let opts=a:cf.opts
     let cformat=a:cf.cformat
+    let normalspec=cformat.compiledspec(a:cf, 'Normal')
+    let vsspec=cformat.compiledspec(a:cf, opts.highlight.VertSplit)
     "▶2 Используемые буфера
     let lastwin=winnr('$')
     let curwin=winnr()
@@ -1724,8 +2355,6 @@ function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
     let r=[]
     let i=2
     let width=0
-    let d={}
-    let d.Curcompiledspec=s:F.compiledspec
     for dwinnr in dwinnrs
         "▶2 Получение номеров линий в другом буфере
         execute dwinnr.'wincmd w'
@@ -1735,6 +2364,7 @@ function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
         let dslnr=0
         let dstartinfiller=0
         let delnr=0
+        let notenoughlines=0
         while clnr<=maxline+1
             let filler=diff_filler(clnr)
             let virtclnr+=filler
@@ -1749,21 +2379,21 @@ function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
             let virtclnr+=1
             let clnr+=1
         endwhile
+        if !delnr
+            let delnr=line('$')
+            let notenoughlines=1
+        endif
         "▶2 Получение отформатированных текстов
-        let a:options.allfolds=0
-        let a:options.collapsfiller=0
-        let s:F.compiledspec=d.Curcompiledspec
-        let normalspec=s:F.compiledspec(cformat, 'Normal')
-        unlet s:F.compiledspec
         if !opts.ignorefolds
             normal! zM
         endif
-        let r2=s:F.format(a:type, dslnr, delnr, a:options, i)
+        let r2=s:F.format(a:type, dslnr, delnr, a:options, i, a:cf)
         "▶2 Добавление sbsdstart или sbsdsep
         let oldcolumns=opts.columns
-        unlockvar opts
+        unlockvar opts.columns
         let opts.columns=width
         let width+=oldcolumns+1
+        unlockvar opts.sbsd
         let opts.sbsd=a:sbsd
         lockvar! opts
         if empty(r)
@@ -1774,18 +2404,25 @@ function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
             endif
         else
             let r2=r2[(dstartinfiller):(len(r)-1+dstartinfiller)]
+            if len(r2)<len(r)
+                if !notenoughlines
+                    call s:_f.warn('nelines')
+                endif
+                let r2+=s:F.gentrailinglines(len(r)-len(r2), delnr, a:cf)
+            endif
             if a:cf.has('sbsdsep')
                 call map(r, 'v:val.'.
-                            \'cformat.sbsdsep.f(normalspec, v:key, i-1, '.
+                            \'cformat.sbsdsep.f(vsspec, v:key, i-1, '.
                             \                  'v:val, opts).r2[v:key]')
             endif
         endif
         let i+=1
     endfor
     "▶2 Добавление sbsdend
-    unlockvar opts
+    unlockvar opts.columns
     let opts.columns=width-1
     execute curwin.'wincmd w'
+    unlockvar opts.sbsd
     let opts.sbsd=a:sbsd
     lockvar! opts
     if a:cf.has('sbsdend')
@@ -1795,16 +2432,16 @@ function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
     endif
     "▶2 Начало и конец представления
     if a:cf.has('begin')
-        call insert(r, cformat.begin.f(normalspec, '', opts, cformat.stylestr))
+        call insert(r, cformat.begin.f(normalspec, '', opts, a:cf.stylestr))
     endif
     if a:cf.has('end')
-        call add(r, cformat.end.f(normalspec, a:elnr, '',opts,cformat.stylestr))
+        call add(r, cformat.end.f(normalspec, a:elnr, '',opts,a:cf.stylestr))
     endif
     "▶2 nolf/haslf
-    if a:cf.has('nolf') && cformat.nolf
+    if cformat.nolf
         let r=[join(r, '')]
     endif
-    if a:cf.has('haslf') && cformat.haslf
+    if cformat.haslf
         let oldr=r
         let r=[]
         for item in oldr
@@ -1814,27 +2451,38 @@ function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
     "▲2
     return r
 endfunction
+"▶1 getlcsspecstr
+function s:F.getlcsspecstr(specstr, opts)
+    let lcsspecstr=a:opts.dodiff
+                \     ?('(%diffattr'.
+                \         '?%ddspec '.
+                \         ':'.a:specstr.')')
+                \     :a:specstr
+    if a:opts.domatches
+        let lcsspecstr='(%matchhlname is 0'.
+                    \       '?'.lcsspecstr.' '.
+                    \       ':%matchhlname)'
+    endif
+    return lcsspecstr
+endfunction
 "▶1 format
 let s:progress={}
 function s:F.format(type, slnr, elnr, options, ...)
     "▶2 Initialize variables
     let [slnr, elnr]=sort([a:slnr, a:elnr], 's:NRSort')
-    let cformat=s:F.getcompfmt(a:type)
-    "▶3 Getting sure previous formatting was successful
-    "   If not, dropping cache
     let sbsd=((empty(a:000))?(0):(a:000[0]))
-    if sbsd<=1 && has_key(cformat, 'frunning')
-        unlet cformat.frunning
-        call extend(cformat, {'cache': {}, 'stylestr': ''})
-        if has_key(s:F, 'compiledspec')
-            unlet s:F.compiledspec
-        endif
+    if sbsd>1
+        let cf=a:2
+        unlockvar cf.opts
+        call s:F.initfileopts(cf.opts, a:slnr, a:elnr, a:options, cf.format, sbsd)
+        lockvar! cf.opts
+        call cf.compile()
+    else
+        let cf=s:F.fmtprepare(a:type, a:options, slnr, elnr, sbsd)
     endif
-    let cformat.frunning=1
-    "▲3
-    let cf=s:cf.new(cformat)
-    let opts=s:F.initopts(a:type, slnr, elnr, a:options, cf, sbsd)
-    call s:F.compilefmtfunc(cf)
+    let cformat=cf.cformat
+    let opts=cf.opts
+    call s:F.compilespecfunc(cf)
     "▶2 side-by-side diff
     if sbsd==1
         return s:F.sbsdrun(a:type, slnr, elnr, a:options, cf, sbsd)
@@ -1842,59 +2490,38 @@ function s:F.format(type, slnr, elnr, options, ...)
     "▲2
     let ff=s:F.newff(cf)
     "▶2 Initialize ff variables
-    call ff.leta('%cformat', s:F.addsubs('s:compiledfmts', a:type))
-    call ff.leta('%opts', s:F.addsubs('s:compiledfmts', a:type, 'opts'))
+    call ff.leta('%cf', 'a:cf')
+    call ff.leta('%cformat', 'a:cformat')
+    call ff.leta('%opts', 'a:opts')
     call ff.leta('%r', '[]')    " List with formatted output
     call ff.leta('%clnr', slnr) " Line being processed
+    call ff.leta('%matchhlname', 0)
+    call ff.leta('%oldmatchhlname', 0)
+    call ff.leta('%name2sptypemap', ff.expr(substitute(string({
+                \'special':     '%specialchar',
+                \'tagstart':    '%startedtag',
+                \'tagend':      '%endedtag',
+                \'matchborder': '%matchhlname',
+                \'trail':       '%dummy',
+            \}), ' ', '', 'g'), 1))
+    call ff.leta('%id', 0)
+    call ff.leta('%spcol', '[]')
+    call ff.leta('%concealinfo', '[0]')
+    call ff.leta('%nocbreak', 0)
+    call ff.leta('%concealedbreak', 0)
     call ff.letabreak()
-    let [spspecstr, ntspecstr, highlight]=s:F.initspecs(ff, opts)
+    call s:F.initspecs(ff, opts)
     call ff.letabreak()
-    "▲2
-    let specialcolumns={}
-    "▶2 Tag helper variables
-    if opts.ignoretags!=2
-        if empty(opts.tags)
-            let tagregex=''
-        else
-            let starttagreg=s:F.gettagreg(a:options, 'start')
-            let endtagreg=s:F.gettagreg(a:options, 'end')
-            let tagregex='\V'
-            if !empty(starttagreg)
-                let tagregex.=starttagreg
-            endif
-            if !(empty(starttagreg) && empty(endtagreg))
-                let tagregex.='\%('
-            endif
-            let tagregex.=join(map(reverse(sort(keys(opts.tags))),
-                        \          'escape(v:val, "\\")'), '\|')
-            if !(empty(starttagreg) && empty(endtagreg))
-                let tagregex.='\)'
-            endif
-            if !empty(endtagreg)
-                let tagregex.=endtagreg
-            endif
-            let tagregex.='\v'
-        endif
-    else
-        let tagregex=''
-    endif
     "▶2 Precreation of deleted line if possible, here
-    if &diff
+    if opts.dodiff
         let persistentfiller=0
-        let collapsafter=((a:options.collapsfiller==-1)?
-                    \               (s:_f.getoption('CollapsFiller')):
-                    \               (a:options.collapsfiller))
-        if !cf.has('difffiller') && cf.has('collapsedfiller')
-            let collapsafter=1
-        endif
-        if collapsafter && cf.has('collapsedfiller')
+        if opts.collapsafter && cf.has('collapsedfiller')
             let persistentfiller=0
         elseif cf.has('difffiller')
-            let collapsafter=0
             let persistentfiller=!cf.hasreq('difffiller',
                         \                   ['a:line', 'a:char', '='])
             if persistentfiller
-                let fillspec=s:F.compiledspec(cformat, 'DiffDelete')
+                let fillspec=cformat.compiledspec(cf, 'DiffDelete')
                 let fillerstr=cformat.difffiller.f(opts.difffillchar,
                             \                            fillspec, 0, 0,
                             \                            '', opts)
@@ -1958,16 +2585,14 @@ function s:F.format(type, slnr, elnr, options, ...)
         if persistentsc
             call ff.letcf('%nosignsc', 'sign', '"  "', '%scspec', 0, 0)
             call ff.leta('%scols', '{}')
-            call cf.newvar('sname')
-            call cf.newvar('sign')
             call ff.for('[%sname,%sign]', 'items(%opts.signdefinitions)')
             call    ff.if('has_key(%sign,''texthl'')')
-            call        ff.leta('%spec','s:F.compiledspec(%cformat,%sign.texthl)')
+            call        ff.leta('%spec', cf.specstr(['%sign.texthl']))
             call    ff.else()
             call        ff.leta('%spec', '%scspec')
             call    ff.endif()
             if s:whatterm is# 'gui'
-                call ff.if('has_key(sign,''icon'')')
+                call ff.if('has_key(%sign,''icon'')')
                 call    ff.letcf('%scols[%sname]', 'sign', '%sign.icon', '%spec',
                             \    0, 2)
                 call ff.else()
@@ -2180,14 +2805,14 @@ function s:F.format(type, slnr, elnr, options, ...)
         call ff.endwhile()
     endif
     "▶2 Main cycle: processing lines
-    call ff.while('%clnr<='.(elnr+((&diff)?(1):(0))))
+    call ff.while('%clnr<='.(elnr+((opts.dodiff)?(1):(0))))
     call     ff.letc('%curstr', "''")
-    if opts.docline
+    if opts.checkcline
         call ff.leta('%iscline', '%clnr=='.opts.cline)
     endif
     "▶3 Fold column support
     if opts.foldcolumn
-      if &diff
+      if opts.dodiff
         call ff.leta('%fillfoldlevel', '%foldlevel')
       endif
       call   ff.if('has_key(%foldlevels, %clnr)')
@@ -2248,12 +2873,12 @@ function s:F.format(type, slnr, elnr, options, ...)
       endif
     endif
     "▶3 Processing deleted lines
-    if &diff
+    if opts.dodiff
       call   ff.leta('%filler', 'diff_filler(%clnr)')
       call   ff.if('%filler>0')
       call      ff.letcf('%curstrstart', 'linestart', 2.
-                  \                     ((collapsafter)?
-                  \                       '+(%filler>='.collapsafter.')':
+                  \                     ((opts.collapsafter)?
+                  \                       '+(%filler>='.opts.collapsafter.')':
                   \                       ''), '%fillspec', '%clnr')
       "▶4 Leading columns (fold, sign, number)
       if opts.foldcolumn
@@ -2276,8 +2901,8 @@ function s:F.format(type, slnr, elnr, options, ...)
       endif
       "▶4 Filler
       if !persistentfiller
-        if collapsafter
-          call  ff.if('%filler<'.collapsafter)
+        if opts.collapsafter
+          call  ff.if('%filler<'.opts.collapsafter)
         endif
         call        ff.let('%curfil', '%filler')
         call        ff.while('%curfil')
@@ -2288,7 +2913,7 @@ function s:F.format(type, slnr, elnr, options, ...)
         call            ff.call('add(%r,%curstr)')
         call            ff.decrement('%curfil')
         call        ff.endwhile()
-        if collapsafter
+        if opts.collapsafter
           call  ff.else()
           call      ff.let('%curstr', '%curstrstart')
           call      ff.appendc('collapsedfiller', '%filler', '%fillspec', '%clnr')
@@ -2325,7 +2950,7 @@ function s:F.format(type, slnr, elnr, options, ...)
       call      ff.call('add(%r,%curstr)')
       call      ff.let('%clnr', 'foldclosedend(%clnr)+1')
       call      ff.continue()
-      call      ff.else()
+      call   ff.else()
     elseif opts.allfolds || opts.foldcolumn "▶4
       if opts.allfolds
         call ff.if('has_key(%possiblefolds,%clnr)')
@@ -2358,60 +2983,68 @@ function s:F.format(type, slnr, elnr, options, ...)
     "▶4 Initializing variables
     call        ff.let('%linestr',  'getline(%clnr)')
     call        ff.let('%linelen',  'len(%linestr)')
-    call        ff.leta('%curcol',   1)
     " Indicates that this line differs
-    call        ff.leta('%diffattr', ((&diff)?('diff_hlID(%clnr,1)'):(0)))
-    let hasspcol=0
-    if !empty(tagregex) && cf.has('tagend')
-        let hasspcol=1
-        " Contains tag ends
-        call    ff.leta('%specialcolumns', string(specialcolumns))
+    call        ff.leta('%diffattr', ((opts.dodiff)?('diff_hlID(%clnr,1)'):(0)))
+    if opts.formatconcealed
+        call    ff.leta('%concealdiff', 0)
     endif
-    if &diff "▶5
+    let hasspcol=!empty(get(opts, 'splcolumns'))
+    call        ff.leta('%specialcolumns', 'deepcopy(get(%opts.splcolumns,%clnr,{}))')
+    if opts.dodiff "▶5
         " XXX diffid is taken from beyond the end of line because inside the 
         "     line there may be differences in highlighting: overall line is 
         "     highlighted in one color and parts that differ in the other
         call    ff.if('%diffattr')
         call        ff.let('%diffid', 'diff_hlID(%clnr,%linelen+1)')
-        call        ff.let('%diffhlname', 'synIDattr(synIDtrans(%diffid),''name'','.
-                    \                              ''''.s:whatterm.''')')
-        call        ff.let('%dspec', 's:F.compiledspec(%cformat,''Normal'','.
-                    \                                 '%diffhlname)')
+        call        ff.let('%diffhlname', 'synIDattr(%diffid,''name'')')
+        call        ff.let('%dspec', cf.specstr(['''Normal''','%diffhlname']))
+        call    ff.else()
+        call        ff.let('%diffid', 0)
         call    ff.endif()
+    endif "▲5
+    let listchars=opts.listchars
+    if has_key(listchars, 'trail')
+      call      ff.leta('%trail', 'match(%linestr,''\v\s*$'')')
+      call      ff.let('%specialcolumns[%trail+1]',
+                  \    'add(get(%specialcolumns,%trail+1,[]),[''trail'',0])')
     endif
-    "▶5 Care about 'lcs' option
-    let npregex='\v\t|\p@!.'
-    let listchars={}
-    if &list && !((a:options.list)?
-                \   (s:_f.getoption('IgnoreList')):
-                \   (!a:options.list))
-        let lcs=split(&listchars,
-                    \'\v\,%(%(eol|tab|trail|extends|precedes|nbsp)\:)@=')
-        for lc in lcs
-            let [o, v]=matchlist(lc, '\v^(\w*)\:(.*)$')[1:2]
-            let listchars[o]=v
-            if o is# 'nbsp'
-                let npregex='\v\t| |\p@!.'
-            endif
-        endfor
-    endif
-    let npregex=s:F.squote(npregex)
-    "▲5
-    if has_key(listchars, 'trail') "▶5
-      call      ff.leta('%trail', 'len(matchstr(%linestr,''\v\s+$''))')
-      call      ff.if('%trail')
-      call          ff.decrement('%linelen', '%trail')
-      call          ff.let('%linestr', '%linestr[:%linelen-1].'.
-                  \                   'substitute(%linestr[%linelen :], " ", '.
-                  \                        s:F.squote(escape(listchars.trail,
-                  \                                          '&~\')).',''g'')')
-      call      ff.endif()
-    endif                          "▲5
     "▶4 Line start
-    call        ff.appendc('linestart', 0,
-                \          ((&diff)?
-                \              ('(%diffattr?%dspec :%normalspec)'):
-                \              ('%normalspec')), '%clnr')
+    "▶5 Find sign
+    if opts.dosigns
+      call   ff.leta('%sign', 'get(get(%opts.placedsigns,%clnr,[]),1,{})')
+    endif
+    "▶5 Determine line spec
+    " Full rules are listed later. Rules used here:
+    "   diff > cursorline > signs > normal
+    " Anything but normal is cancelled by highlighting with higher priority.
+    let linehlnamestrbase='[''Normal'']'
+    let linehlnamestr=linehlnamestrbase
+    if opts.dosigns
+      let linehlnamestr='(has_key(%sign,''linehl'')'.
+                  \         '?['.linehlnamestrbase[1:-2].',%sign.linehl]'.
+                  \         ':'.linehlnamestr.')'
+    endif
+    if opts.docline
+      " XXX CursorLine highlight group is NOT controlled by &highlight option
+      let linehlnamestr='(%iscline'.
+                  \         '?['.linehlnamestrbase[1:-2].',''CursorLine'']'.
+                  \         ':'.linehlnamestr.')'
+    endif
+    if opts.dodiff
+      let linehlnamestr='(%diffattr'.
+                  \         '?['.linehlnamestrbase[1:-2].',%diffhlname]'.
+                  \         ':'.linehlnamestr.')'
+    endif
+    let linehlnamestrorig=linehlnamestr
+    call        ff.let('%linehlname', linehlnamestr)
+    let linehlnamestr='%linehlname'
+    if linehlnamestrorig is# linehlnamestrbase
+      call      ff.leta('%linespec', '%normalspec')
+    else
+      call      ff.let( '%linespec', cf.specstr(linehlnamestr))
+    endif
+    "▲5
+    call        ff.appendc('linestart', 0, '%linespec', '%clnr')
     if opts.foldcolumn "▶5
       if persistentfdc
         call    ff.appendc('%foldcolumns[%foldlevel][2-%fdchange]')
@@ -2425,14 +3058,13 @@ function s:F.format(type, slnr, elnr, options, ...)
       endif
     endif
     if opts.dosigns "▶5
-      call      ff.if('has_key(%opts.placedsigns,%clnr)')
+      call      ff.if('!empty(%sign)')
       if persistentsc
         call        ff.appendc('%scols[%opts.placedsigns[%clnr][1].id]')
       else
         call        ff.let('%sign', '%opts.placedsigns[%clnr][1]')
         call        ff.let('%sspec', 'has_key(%sign,''texthl'')?'.
-                    \                  's:F.compiledspec(%cformat,%sign.texthl):'.
-                    \                  '%scspec')
+                    \                  cf.specstr(['%sign.texthl']).':%scspec')
         if s:whatterm is# 'gui'
           call      ff.addif('has_key(%sign,''icon'')')
           call          ff.appendc('sign', '%sign.icon', '%sspec', '%clnr', 2)
@@ -2452,319 +3084,498 @@ function s:F.format(type, slnr, elnr, options, ...)
       endif
       call      ff.endif()
     endif
-    if opts.docline && cf.has('clstart') "▶5
-      call      ff.if('%iscline')
-      call          ff.appendc('clstart', '%clspec', '%clnr')
-      call      ff.endif()
-    endif
     if opts.dosomenr "▶5
       call      ff.appendc('linenr', cf.getnrstr('%clnr'),
-                       \   ((opts.docline)?
+                       \   ((opts.hascline)?
                        \      ('(%iscline?'.
                        \          '%nrclspec :'.
                        \          '%nrspec)'):
                        \      ('%nrspec')), '%clnr')
     endif
     "▶4 Processing line text
-    if !empty(tagregex)
-      call      ff.let('%ignoretag', 0)
+    "▶5 Initialize variables
+    call        ff.leta('%cstartcol', 0)
+    call        ff.leta('%oldid', hlID('Normal'))
+    if opts.dodiff
+      call      ff.leta('%olddiffid', '%diffid')
     endif
-    call        ff.leta('%id', 0)
-    call        ff.while('%curcol<=%linelen')
-    call            ff.let('%startcol', '%curcol')
     if opts.formatconcealed
-      call          ff.leta('%concealed', 0)
+      call      ff.leta('%oldconcealinfo', '[0]')
+      if opts.formatconcealed==1
+        call    ff.leta('%concealed', 0)
+      endif
     endif
-    "▶5 Getting length of zone with same highlighting
-    "▶6 Tags
-    if empty(tagregex)
-      let whcalls=[['increment', ['%curcol']]]
-    else
-      let whcalls= [['if', ['!%ignoretag']],
-                  \ [   'let', ['tag', 'matchstr(%linestr,'.
-                  \                               '''\v\k@<!%''.'.
-                  \                                 '%curcol.''c%('.
-                  \                                  s:F.squote(tagregex)[1:-2].
-                  \                                 ')\k@!'')']],
-                  \ [   'if', ['!empty(%tag)']],
-                  \ [       'let', ['%ignoretag', 1]],
-                  \ [       'break', []],
-                  \ [   'endif', []],
-                  \ ['endif', []],
-                  \ ['increment', ['%curcol']]]
-      call          ff.leta('%tag', '%ignoretag?'.
-                  \                     ''''':'.
-                  \                     'matchstr(%linestr,'.
-                  \                               '''\v\k@<!%''.'.
-                  \                                 '%curcol.''c%('.
-                  \                                  s:F.squote(tagregex)[1:-2].
-                  \                                 ')\k@!'')')
-      call          ff.if('!empty(%tag)')
-      call              ff.let('%ignoretag', 1)
-      call          ff.else()
-      call              ff.let('%ignoretag', 'index(values(%specialcolumns),'.
-                  \                                       '''tag'')!=-1')
+    call        ff.leta('%curcol',   1)
+    if opts.dosigns
+      call      ff.leta('%hlnamebase', 'has_key(%sign,''linehl'')?[%sign.linehl]:[]')
+    endif
+    call        ff.leta('%startcol', '1')
+    "▲5
+    "▶5 Initialize lists
+    " XXX Concealed list MUST be initialized in one loop as otherwise synconcealed()[-1] will report 
+    "     different values on each loop run
+    if opts.formatconcealed
+      let synconcealedstr='map(range(1,%linelen),''synconcealed(''.%clnr.'',v:val)'')'
+      if opts.formatconcealedcursor
+        let synconcealedstr='%iscline?repeat([[0]],%linelen):'.synconcealedstr
+      endif
+      call      ff.leta('%synconcealed', synconcealedstr)
+    endif
+    "▲5
+    call        ff.while('%curcol<=%linelen')
+    "▶5 Initialize variables
+    "▶6 idstr
+    " Note: collecting all IDs and concealinfo at once with map(range()) appears to be much slower.
+    let idstr='synID(%clnr,%curcol,1)'
+    if has_key(listchars, 'trail')
+      let idstr='%curcol>%trail'.(opts.dolinemergehl?
+                  \                     '&&len(%linehlname)==1':
+                  \                     '').
+                  \      '?'.hlID(opts.highlight.SpecialKey).
+                  \      ':'.idstr
+    endif
+    "▶6 Concealed characters break condition, with hack
+    if opts.formatconcealed
+      let concealedbreakstr='(%concealinfo[0]||%oldconcealinfo[0])&&%concealinfo!=#%oldconcealinfo'
+      if opts.conceallevel==2
+        " XXX This is a hack to make the following work as displayed:
+        " :syntax match Group  /alpha/ conceal cchar=a
+        " :syntax match Group1   /p/   contained containedin=Group
+        " With the above syntax code text `alpha` is matched as below:
+        "     alpha
+        "     ^^^^^ Group
+        "       ^   Group1
+        " It is displayed as "a" (*single* a) when cole=2 (and "a-a" when cole=1 thus no hack needed 
+        " for that level).
+        " %nocbreak variable is used later to omit updating %oldconcealinfo
+        let nocbreakstr='%concealinfo[0]'.
+                    \ '&&%oldconcealinfo[0]'.
+                    \ '&&!empty(%oldconcealinfo[1])'.
+                    \ '&&empty(%concealinfo[1])'
+        let concealedbreakstr='!%nocbreak&&('.concealedbreakstr.')'
+      endif
     endif
     "▲6
-    call                ff.leta('%id', 'synID(%clnr,%curcol,1)')
-    "▶6 Concealed characters
-    if opts.formatconcealed
-      let nocconceal=(opts.docline && (stridx(&concealcursor, 'n')!=-1))
-      if nocconceal
-        call            ff.if('!%iscline')
-      endif
-      call                  ff.let('%concealinfo', 'synconcealed(%clnr,%curcol)')
-      call                  ff.let('%concealed',   '%concealinfo[0]')
-      if nocconceal
+    let whilecond='%curcol<=%linelen&&!empty(extend(l:,{''%id'':'.idstr.
+                \(opts.dodiff
+                \   ? ',''%diffid'':diff_hlID(%clnr,%curcol)'
+                \   : '').
+                \(opts.formatconcealed
+                \   ? ',''%concealinfo'':%synconcealed[%curcol-1]'
+                \   : '').
+                \',''%spcol'':get(%specialcolumns,%curcol,[])}))'.
+                \(opts.formatconcealed && opts.conceallevel==2
+                \   ? '&&!empty(extend(l:,{''%nocbreak'':'.nocbreakstr.'}))'
+                \   : '').
+                \(opts.formatconcealed
+                \   ? '&&!empty(extend(l:,{''%concealedbreak'':'.concealedbreakstr.'}))'
+                \   : '').
+                \'&&%id==%oldid'.
+                \'&&empty(%spcol)'.
+                \(opts.dodiff
+                \   ? '&&%diffid==%olddiffid'
+                \   : '').
+                \(opts.formatconcealed
+                \   ? '&&!%concealedbreak'
+                \   : '').
+                \'&&!empty(extend(l:,{''%curcol'':%curcol+1}))'
+    call            ff.while(whilecond)
+    call            ff.endwhile()
+    "▶5 Process breaks
+    "▶6 Process special columns
+    call            ff.call('map(%spcol,''extend(l:,{%name2sptypemap[v:val[0]]:v:val[1]})'')')
+    "▲6
+    "▶6 Highlighting breaks in any case
+    call            ff.if('%startcol<%curcol'.(opts.formatconcealed==1?'&&!%concealed': ''))
+    call                ff.leta('%cstr', '%linestr[%startcol-1:%curcol-2]')
+    let hlnamestr='[synIDattr(%oldid,''name'')]'
+    let hlnamestradd='[]'
+    if opts.dosigns
+      let hlnamestradd='%hlnamebase'
+    endif
+    if opts.docline
+      " XXX CursorLine highlight group is NOT controlled by &highlight option
+      let hlnamestradd='(%iscline'.
+                  \         '?[''CursorLine'']'.
+                  \         ':'.hlnamestradd.')'
+    endif
+    if opts.dodiff
+      let hlnamestradd='(%diffattr'.
+                  \         '?[synIDattr(%olddiffid,''name'')]'.
+                  \         ':'.hlnamestradd.')'
+    endif
+    if opts.domatches
+      let hlnamestradd='(%oldmatchhlname is 0'.
+                  \         '?'.hlnamestradd.
+                  \        ' :[%oldmatchhlname])'
+    endif
+    if hlnamestradd isnot# '[]'
+      let hlnamestr.='+'.hlnamestradd
+    endif
+    if has_key(listchars, 'trail')
+      call              ff.if('%startcol-1>=%trail')
+      call                  ff.let('%cstr', 'substitute(%cstr,'' '','.
+                  \                             escape(s:F.squote(listchars.trail),'\&~').',''g'')')
+      if opts.domatches
+        let trailhlnamestr='(%oldmatchhlname is 0?('.hlnamestr.'):[%oldmatchhlname])'
+        call                ff.leta('%curspec', cf.specstr(trailhlnamestr))
+        call            ff.else()
+      else
         call            ff.endif()
       endif
-      call              ff.addif('%concealed')
-      call                  ff.increment('%curcol')
-      call                  ff.while('%concealinfo is#synconcealed(%clnr,%curcol)')
-      call                      map(copy(whcalls),
-                  \                 'call(ff[v:val[0]],v:val[1],ff)')
-      call                  ff.endwhile()
-      if &conceallevel==1
-        call                ff.if('empty(%concealinfo[1])')
-        call                    ff.let('%concealinfo[1]',
-                    \                  s:F.squote(get(listchars,'conceal',' ')))
-        call                ff.endif()
-      elseif &conceallevel==3
-        call                ff.let('%concealinfo[1]', "''")
-      endif
-      call              ff._up()
     endif
-    "▶6 Line with differences
-    if &diff
-      call              ff.addif('%diffattr')
-      call                  ff.let('%diffid', 'diff_hlID(%clnr,%curcol)')
-      call                  ff.increment('%curcol')
-      call                  ff.while('%id==synID(%clnr,%curcol,1)&&'.
-                  \                  '%diffid==diff_hlID(%clnr,%curcol)&&'.
-                  \                  ((hasspcol)?
-                  \                       ('!has_key(%specialcolumns,'.
-                  \                                 '%curcol)&&'):('')).
-                  \                  '%curcol<=%linelen')
-      call                      map(copy(whcalls),
-                  \                 'call(ff[v:val[0]],v:val[1],ff)')
-      call                  ff.endwhile()
-      call              ff._up()
-    endif
-    call                ff.addelse()
-    call                    ff.increment('%curcol')
-    call                    ff.while('%id==synID(%clnr,%curcol,1)&&'.
-                \                    ((hasspcol)?
-                \                         ('!has_key(%specialcolumns,'.
-                \                                   '%curcol)&&'):('')).
-                \                    '%curcol<=%linelen')
-    call                        map(copy(whcalls),
-                \                   'call(ff[v:val[0]],v:val[1],ff)')
-    call                    ff.endwhile()
-    "▶6 Close some if’s
-    if opts.formatconcealed || &diff
+    call                    ff.leta('%curspec', cf.specstr(hlnamestr))
+    if has_key(listchars, 'trail') && opts.domatches
       call              ff.endif()
     endif
-    if !empty(tagregex)
+    call                ff.appendc('line', '%cstr', '%curspec', '%clnr', '%startcol')
+    call            ff.endif()
+    "▲6
+    "▶6 Update oldid and startcol
+    call            ff.leta('%oldid', '%id')
+    call            ff.leta('%startcol', '%curcol')
+    "▲6
+    "▶6 Tag breaks
+    if opts.dotags && cf.has('tagend')
+      call          ff.if('exists(''%endedtag'')')
+      call              ff.appendc('tagend', '%endedtag', '0', '%clnr', '%curcol')
+      call              ff.unlet('%endedtag')
       call          ff.endif()
     endif
-    "▶5 Formatting line
-    "▶6 Getting text to be formatted
-    if opts.formatconcealed==1
-      call          ff.if('%concealed')
-      call              ff.let('%cstr', '%concealinfo[1]')
-      call          ff.else()
-    endif
-    call                ff.let('%cstr', 'strpart(%linestr,%startcol-1,'.
-                \                                        '%curcol-%startcol)')
-    if opts.formatconcealed==1
+    if opts.dotags && cf.has('tagstart')
+      call          ff.if('exists(''%startedtag'')')
+      call              ff.appendc('tagstart', '%startedtag', '0', '%clnr', '%curcol')
+      call              ff.unlet('%startedtag')
       call          ff.endif()
     endif
-    "▶6 Getting specification according to which text will be formatted
+    "▲6
+    "▶6 Concealed character breaks
     if opts.formatconcealed
-      call          ff.addif('%concealed')
-      if opts.formatconcealed==2
-        call            ff.let('%hlname', 'synIDattr(synIDtrans(%id),''name'','.
-                    \                              ''''.s:whatterm.''')')
-      else
-        call            ff.let('%hlname', string(highlight.Conceal))
+      call          ff.addif('%concealedbreak')
+      let ccstrstr='%oldconcealinfo[1]'
+      let ccstrlendiffstr='-!empty(%ccstr)'
+      if opts.conceallevel==1
+        let ccstrstr='empty('.ccstrstr.')'.
+                    \     '?'.s:F.squote(get(listchars,'conceal',' ')).
+                    \     ':('.ccstrstr.')'
+        let ccstrlendiffstr='-1'
+      elseif opts.conceallevel==3
+        let ccstrlendiffstr=''
       endif
-      call          ff._up()
+      let concealdiffstr='s:_r.strdisplaywidth(%linestr[%cstartcol-1:%curcol-2],'.
+                  \                        '%cstartcol==1'.
+                  \                            '?0'.
+                  \                            ':s:_r.strdisplaywidth(%linestr[:%cstartcol-2]))'.
+                  \                             ccstrlendiffstr
+      if opts.formatconcealed==1
+        call            ff.if('%oldconcealinfo[0]')
+        call                ff.let('%concealed', 0)
+        if opts.conceallevel!=3
+          call              ff.leta('%ccstr', ccstrstr)
+          if opts.conceallevel==2
+            call            ff.if('!empty(%ccstr)')
+          endif
+          call                  ff.appendc('line', '%ccstr', '%conspec', '%clnr', '%cstartcol')
+          if opts.conceallevel==2
+            call            ff.endif()
+          endif
+        endif
+        call                ff.increment('%concealdiff', concealdiffstr)
+        call            ff.endif()
+        call            ff.if('%concealinfo[0]')
+        call                ff.let('%concealed', 1)
+        call                ff.leta('%cstartcol', '%curcol')
+        call            ff.endif()
+        " TODO
+      elseif opts.formatconcealed==2
+        if cf.has('concealedend')
+          call          ff.if('%oldconcealinfo[0]')
+          call              ff.let('%ccstr', ccstrstr)
+          call              ff.appendc('concealedend', '%ccstr', '%conspec', '%clnr', '%curcol')
+          call              ff.increment('%concealdiff', concealdiffstr)
+          call          ff.endif()
+        endif
+        call            ff.if('%concealinfo[0]')
+        call                ff.let('%cstartcol', '%curcol')
+        if cf.has('concealedstart')
+          call              ff.appendc('concealedstart',
+                      \                    substitute(ccstrstr, 'old', '', 'g'),
+                      \                    '%conspec', '%clnr', '%curcol')
+        endif
+        call            ff.endif()
+      endif
+      call          ff.endif()
     endif
+    "▲6
+    "▶6 Special characters
+    call            ff.if('exists(''%specialchar'')'.
+                \             (opts.formatconcealed==1?'&&!%concealed': ''))
+    if has_key(listchars, 'tab')
+      call              ff.if("%specialchar is#'\t'")
+      call                  ff.let('%virtstartcol',
+                  \                    '%curcol==1?0:'.
+                  \                    's:_r.strdisplaywidth(%linestr[:(%curcol-2)])')
+      let ival=(&tabstop-1).'-%virtstartcol%%'.&tabstop
+      if opts.formatconcealed
+        let cival='%concealdiff+'.ival
+        if opts.formatconcealed==1
+          let ival=cival
+        endif
+      endif
+      let lcstabfirst=matchstr(listchars.tab, '\v^.')
+      let lcstabnext=listchars.tab[len(lcstabfirst):]
+      call                  ff.let('%cstr', s:F.squote(lcstabfirst).'.'.
+                  \                    'repeat('.s:F.squote(lcstabnext).','.
+                  \                            ival.')')
+      if opts.list
+        let tabhlnamestr='[''SpecialKey'']'
+        if opts.dolinemergehl
+          let tabhlnamestr='(len(%linehlname)>1?'.
+                      \         substitute(substitute(linehlnamestrorig,
+                      \             '''Normal''', 'synIDattr(%id,''name'')', 'g'),
+                      \             '%diffhlname', 'synIDattr(%diffid,''name'')', 'g').':'.
+                      \         tabhlnamestr.')'
+        endif
+        if opts.domatches
+            let tabhlnamestr='(%matchhlname is 0?'.tabhlnamestr.':[%matchhlname])'
+        endif
+        " FIXME Still not completely correct
+      else
+        let tabhlnamestr=substitute(hlnamestr, 'old', '', 'g')
+      endif
+      call                  ff.let('%tabspec', cf.specstr(tabhlnamestr))
+      if opts.formatconcealed==2
+        call                ff.let('%ccstr', s:F.squote(lcstabfirst).'.'.
+                    \                  'repeat('.s:F.squote(lcstabnext).','.
+                    \                          cival.')')
+        if cf.has('concealedstart')
+          call              ff.if('%ccstr isnot#%cstr')
+          call                  ff.appendc('concealedstart', '%ccstr', '%tabspec',
+                      \                        '%clnr', '%curcol')
+          call              ff.endif()
+        endif
+        " TODO Test narrowing down tabs when line is hovered
+      endif
+      call                  ff.appendc('line', '%cstr', '%tabspec', '%clnr', '%curcol')
+      if opts.formatconcealed==2
+        if cf.has('concealedend')
+          call              ff.if('%ccstr isnot#%cstr')
+          call                  ff.appendc('concealedend', '%ccstr', '%tabspec',
+                      \                        '%clnr', '%curcol')
+          call              ff.endif()
+        endif
+      endif
+      if opts.formatconcealed
+        call                ff.let('%concealdiff', 0)
+      endif
+      call              ff.else()
+    endif
+    let sphlnamestr=string(opts.highlight.NonText)
+    if has_key(listchars, 'nbsp')
+      let sphlnamestr='(%specialchar is#'' '''.
+                  \      '?'.string(opts.highlight.SpecialKey).
+                  \      ':'.sphlnamestr.')'
+    endif
+    if opts.dolinemergehl
+      let sphlnamestr='(len(%linehlname)>1?'.
+                  \         substitute(linehlnamestrorig,
+                  \                    '''Normal''', 'synIDattr(%id,''name'')', 'g').':'.
+                  \         sphlnamestr.')'
+    endif
+    if opts.domatches
+      let sphlnamestr='(%matchhlname is 0?'.sphlnamestr.':[%matchhlname])'
+    endif
+    let spcharstr='strtrans(%specialchar)'
+    if has_key(listchars, 'nbsp')
+      let spcharstr='(%specialchar is#'' '''.
+                  \   '?'.s:F.squote(listchars.nbsp).
+                  \   ':'.spcharstr.')'
+    endif
+    " FIXME Not completely correct, see rules
+    let sphlnamestr=substitute(substitute(hlnamestr,
+                \'old',                      '',         'g'),
+                \'\VsynIDattr(%id,''name'')', sphlnamestr, 'g')
+    call                    ff.let('%spspec', cf.specstr(sphlnamestr))
+    call                    ff.appendc('line', spcharstr, '%spspec', '%clnr', '%curcol')
+    if has_key(listchars, 'tab')
+      call              ff.endif()
+    endif
+    call                ff.leta('%oldid', '-1')
+    call                ff.leta('%startcol', '%curcol+len(%specialchar)')
+    call                ff.let('%curcol', '%startcol-1')
+    call                ff.unlet('%specialchar')
+    if opts.formatconcealed==1
+      call          ff.elseif('exists(''%specialchar'')')
+      call              ff.unlet('%specialchar')
+    endif
+    call            ff.endif()
+    "▲6
+    "▶6 Record new variable values
+    if opts.dodiff
+      call          ff.leta('%olddiffid', '%diffid')
+    endif
+    if opts.formatconcealed
+      if opts.conceallevel==2
+        call        ff.if('!%nocbreak')
+      endif
+      call              ff.leta('%oldconcealinfo', '%concealinfo')
+      if opts.conceallevel==2
+        call        ff.endif()
+      endif
+    endif
+    if opts.domatches
+      call          ff.leta('%oldmatchhlname', '%matchhlname')
+    endif
+    "▲6
+    "▲5
+    "▶5 Finish cycle
+    call            ff.increment('%curcol')
+    call        ff.endwhile()
+    "▲5
+    "▲4
+    "▶4 Line end
+    "▶5 Concealed characters: formatconcealed=1
+    if opts.formatconcealed==1
+      call      ff.if('%concealed')
+      call          ff.leta('%ccstr', ccstrstr)
+      if opts.conceallevel!=3
+        if opts.conceallevel==2
+          call      ff.if('!empty(%ccstr)')
+        endif
+        call            ff.appendc('line', '%ccstr', '%conspec', '%clnr', '%cstartcol')
+        if opts.conceallevel==2
+          call      ff.endif()
+        endif
+      endif
+      call      ff._up()
+    endif
+    "▲5
+    "▶5 Regural text
+    call        ff.addif('%startcol<=%linelen')
+    call            ff.leta('%cstr', '%linestr[%startcol-1:]')
     if has_key(listchars, 'trail')
-      call          ff.addif('%trail==-1')
-      call              ff.let('%hlname', string(highlight.SpecialKey))
-      call          ff._up()
-    endif
-    call            ff.addelse()
-    call                ff.let('%hlname', 'synIDattr(synIDtrans(%id),''name'','.
-                \                                  ''''.s:whatterm.''')')
-    if has_key(listchars, 'trail') || opts.formatconcealed
-      call          ff.endif()
-    endif
-    if &diff
-      call          ff.addif('%diffattr')
-      call              ff.let('%spec', cf.getspecstr('%hlname', '%diffhlname'))
-      call              ff.leta('%ddspec', cf.getspecstr("'Normal'", '%diffhlname'))
-      call          ff._up()
-    endif
-    if opts.dosigns
-      call          ff.addif('has_key(%opts.placedsigns,%clnr)&&'.
-                  \          'has_key(%opts.placedsigns[%clnr][1],''linehl'')')
-      call              ff.let('%spec', 's:F.compiledspec(%cformat,%hlname,'.
-                  \                         '%opts.placedsigns[%clnr][1].linehl)')
-      call          ff._up()
-    endif
-    call            ff.addelse()
-    call                ff.let('%spec', cf.getspecstr('%hlname'))
-    if &diff || opts.dosigns
-      call          ff.endif()
-    endif
-    "▶6 Processing tabs and unprintable symbols
-    if opts.formatconcealed
-      call          ff.if('!%concealed')
-    endif
-    call                ff.leta('%idx', 'match(%cstr,'.npregex.')')
-    call                ff.if('%idx!=-1')
-    call                    ff.let('%rstartcol',
-                \                  's:F.stuf.strlen(%linestr[:(%startcol-1)])')
-    call                    ff.while('%idx!=-1')
-    " Part of the current line up to next tabulation
-    call                        ff.let('%fcstr', '%idx?%cstr[:(%idx-1)]:""')
-    call                        ff.let('%ridx',  's:F.stuf.strlen(%fcstr)')
-    call                        ff.leta('%istab', '%cstr[%idx]is#"\t"')
-    "▶7 Formatting string up to tabulation
-    if !has_key(listchars, 'tab')
-      call                      ff.if('!%istab')
-    endif
-    call                            ff.if('!empty(%fcstr)')
-    call                                ff.appendc('line', '%fcstr',
-                \                                  ((&diff)?
-                \                                      ('(%diffattr?%ddspec :'.
-                \                                                  '%spec)'):
-                \                                      ('%spec')), '%clnr', '%idx')
-    call                            ff.endif()
-    if !has_key(listchars, 'tab')
-      call                      ff.endif()
-    endif
-    "▶7 Formatting tabulation
-    let longtab=((&list && has_key(listchars, 'tab')) || !&list)
-    if longtab
-      call                      ff.if('%istab')
-      let ival=&tabstop.'-'.'((%rstartcol+%ridx-1)%%'.&tabstop.')'
-      if has_key(listchars, 'tab')
-        let lcstabfirst=matchstr(listchars.tab, '\v^.')
-        let lcstabnext=listchars.tab[len(lcstabfirst):]
-        call                        ff.let('%tabstr',s:F.squote(lcstabfirst).'.'.
-                    \                      'repeat('.s:F.squote(lcstabnext).','.
-                    \                              ival.'-1)')
-        call                        ff.appendc('line', '%tabstr',
-                    \                          ((&diff)?
-                    \                              ('(%diffattr?%ddspec :'.
-                    \                                           spspecstr.')'):
-                    \                              (spspecstr)), '%clnr', '%idx')
-        call                        ff.let('%cstr', '%cstr[(%idx+1):]')
-      else
-        call                        ff.let('%tabstr', 'repeat('' '','.ival.')')
-        call                        ff.let('%cstr','%fcstr.%tabstr.%cstr[%idx+1:]')
-      endif
-      call                      ff.else()
-    endif
-    "▲7
-    call                            ff.leta('%cstr', '%cstr[len(%fcstr):]')
-    call                            ff.let('%char', 'matchstr(%cstr,"\\v^.")')
-    call                            ff.let('%cstr', '%cstr[len(%char):]')
-    "▶7 Formatting non-breaking spaces
-    if has_key(listchars, 'nbsp')
-      call                          ff.if('%char is#" "')
-      call                              ff.appendc('line',
-                  \                                s:F.squote(listchars.nbsp),
-                  \                                    (&diff)?
-                  \                                        ('(%diffattr?'.
-                  \                                              '%ddspec :'.
-                  \                                              spspecstr.')'):
-                  \                                        (spspecstr),
-                  \                                '%clnr', '%idx')
-      call                          ff.else()
-    endif
-    "▲7
-    call                                ff.appendc('line', 'strtrans(%char)',
-                \                                  (&diff)?
-                \                                      ('(%diffattr?'.
-                \                                                '%ddspec :'.
-                \                                                ntspecstr.')'):
-                \                                      (ntspecstr),
-                \                                  '%clnr', '%idx')
-    "▶7 Ending some if’s
-    if has_key(listchars, 'nbsp')
-      call                          ff.endif()
-    endif
-    if longtab
-      call                      ff.endif()
-    endif
-    "▲7
-    call                        ff.let('%idx', 'match(%cstr,'.npregex.')')
-    call                    ff.endwhile()
-    call                ff.endif()
-    "▶6 Concealed characters
-    if opts.formatconcealed
-      call          ff.endif()
-      if opts.formatconcealed==2
-        call        ff.if('%concealed')
-        call            ff.appendc('%cformat.concealed.f(%concealinfo[1],'.
-                    \                                   '%conspec,%clnr,%curcol,'.
-                    \                                   '%curstr,%opts,%cstr,%spec)')
+      call          ff.if('%startcol-1>=%trail')
+      call              ff.let('%cstr', 'substitute(%cstr,'' '','.
+                  \                             escape(s:F.squote(listchars.trail),'\&~').',''g'')')
+      if opts.domatches
+        call            ff.leta('%curspec', cf.specstr(trailhlnamestr))
         call        ff.else()
+      else
+        call        ff.endif()
       endif
     endif
-    "▶6 Reset trail
-    if has_key(listchars, 'trail')
-      call              ff.if('%trail>0&&%curcol>%linelen')
-      call                  ff.increment('%linelen', '%trail')
-      call                  ff.let('%trail', -1)
-      call              ff.endif()
-    endif
-    "▶6 Including formatted part
-    call                ff.if('!empty(%cstr)')
-    call                    ff.appendc('line', '%cstr', '%spec', '%clnr', '%curcol')
-    call                ff.endif()
-    "▶6 End if
-    if opts.formatconcealed==2
+    call                ff.leta('%curspec', cf.specstr(hlnamestr))
+    if has_key(listchars, 'trail') && opts.domatches
       call          ff.endif()
     endif
-    "▶5 Tags support
-    if hasspcol && cf.has('tagend')
-      call          ff.if('get(%specialcolumns,%curcol)is#''tag''')
-      call              ff.appendc('tagend', '%tag', '%spec', '%clnr', '%curcol')
-      call              ff.call('remove(%specialcolumns,%curcol)')
-      call              ff.let('%tag', "''")
-      call              ff.leta('%ignoretag', 0)
-      call          ff.endif()
+    call            ff.appendc('line', '%cstr', '%curspec', '%clnr', '%startcol')
+    call        ff.endif()
+    "▲5
+    "▶5 Concealed characters: formatconcealed=2
+    if opts.formatconcealed==2 && cf.has('concealedend')
+      call      ff.if('%oldconcealinfo[0]')
+      call          ff.appendc('concealedend', ccstrstr, '%conspec', '%clnr', '%curcol')
+      call      ff.endif()
     endif
-    if hasspcol && cf.has('tagstart')
-      call          ff.if('!empty(%tag)')
-      call              ff.appendc('tagstart', '%tag', '%spec', '%clnr', '%curcol')
-      if cf.has('tagstart')
-        call            ff.let('%specialcolumns[%curcol+len(%tag)]', "'tag'")
-      endif
+    "▲5
+    "▶5 Special columns
+    if opts.domatches || opts.dotags
+      call      ff.if('has_key(%specialcolumns,%linelen+1)')
+      call          ff.call('map(%specialcolumns[%linelen+1],'.
+                  \             '''extend(l:,{%name2sptypemap[v:val[0]]:v:val[1]})'')')
+      call          ff.let('%oldmatchhlname', '%matchhlname')
+      call      ff.endif()
+    endif
+    if opts.dotags && cf.has('tagstart')
+      call          ff.if('exists(''%startedtag'')')
+      call              ff.unlet('%startedtag')
       call          ff.endif()
     endif
     "▲5
-    call        ff.endwhile()
-    "▶4 Processing EOL
-    if has_key(listchars, 'eol') "▶5
-      call      ff.appendc('line', s:F.squote(listchars.eol),
-            \              (&diff)?
-            \                  ('(%diffattr?%dspec :'.ntspecstr.')'):
-            \                  (ntspecstr), '%clnr', '%curcol+1')
+    "▶5 Tags
+    if opts.dotags && cf.has('tagend')
+      call          ff.if('exists(''%endedtag'')')
+      call              ff.appendc('tagend', '%endedtag', '0', '%clnr', '%curcol')
+      call              ff.unlet('%endedtag')
+      call          ff.endif()
     endif
-    if opts.docline && cf.has('clend') "▶5
-      call      ff.if('%iscline')
-      call          ff.appendc('clend', '%clspec', '%clnr')
-      call      ff.endif()
+    if opts.dotags && cf.has('tagstart')
+      call          ff.if('exists(''%startedtag'')')
+      call              ff.unlet('%startedtag')
+      call          ff.endif()
     endif
-    if cf.has('lineend') "▶5
-      call      ff.appendc('lineend', 0, '%normalspec', '%clnr', '%curcol')
+    "▶5 Processing EOL
+    if has_key(listchars, 'eol') || !empty(opts.matchespasteol)
+      if !empty(opts.matchespasteol)
+        call    ff.if('has_key(%opts.matchespasteol,%clnr)')
+        call        ff.leta('%savedmatchhlname', '%matchhlname')
+        call        ff.leta('%matchhlname', '%opts.matchespasteol[%clnr]')
+        if has_key(listchars, 'eol')
+          call  ff.endif()
+        else
+          call  ff.letabreak()
+        endif
+      endif
+      let eolhlnamestr=linehlnamestrorig
+      let eolhlnamestr=substitute(eolhlnamestr,'''Normal''',string(opts.highlight.NonText),'g')
+      if opts.dolinemergehl
+        let eolhlnamestr='(len(%linehlname)>1?%linehlname :'.eolhlnamestr.')'
+      endif
+      if opts.domatches
+        let eolhlnamestr='(%matchhlname is 0?'.eolhlnamestr.':[''Normal'',%matchhlname])'
+      endif
+      call          ff.leta('%eolspec', cf.specstr(eolhlnamestr))
+      call          ff.appendc('line', s:F.squote(get(listchars, 'eol', ' ')),
+                  \                   '%eolspec', '%clnr', '%curcol+1')
+      if !empty(opts.matchespasteol)
+        if has_key(listchars, 'eol')
+          call  ff.if('exists(''%savedmatchhlname'')')
+        endif
+        call        ff.let('%matchhlname', '%savedmatchhlname')
+        call        ff.unlet('%savedmatchhlname')
+        call    ff.endif()
+      endif
     endif
+    call        ff.appendc('lineend', 0, '%linespec', '%clnr', '%curcol')
+    "▲4
+    "▶4 Rules
+    " Order: colorcolumn > matches > diff > cursorline > signs > special > syntax
+    " Rules:
+    " (colorcolumn = colorcolumn and cursorcolumn)
+    " (signs       = sign linehl)
+    " (matches     = matches themselves and search)
+    " (special     = highlighting of special characters defined by listchars (nbsp, tab, trail) and 
+    "                non-printable characters highlighting)
+    " (cancel      = fg, bg and other attributes are ignored)
+    " (cleared     = after “hi clear …” or “hi link … Normal”)
+    " - signs cancels special
+    " - cursorline cancels signs and special
+    " - matches cancel cursorline, signs and special
+    " - colorcolumn does NOT cancel ANY highlighting
+    " - If special is cancelled first character (applicable for tabs and non-printable characters, 
+    "   otherwise read “all characters”) is highligted using syntax (if special is not cancelled 
+    "   syntax is ignored)
+    " - cleared diff cancels signs and cursorline and enables special
+    " - cleared cursorline cancels signs and enables special
+    " - cleared signs does not affect highlighting
+    " - cleared matches does not affect highlighting
+    " - cleared colorcolumn does not affect highlighting
+    " - cleared diff makes match at the EOL extend past the EOL
+    " - cursorline makes 'showbreak' characters underlined, but does not alter their highlighting
+    "
+    " Possible vim bugs:
+    " - If special is cancelled first character (applicable for tabs and non-printable characters, 
+    "   otherwise read “all characters”) is highligted using syntax (if special is not cancelled 
+    "   syntax is ignored)
+    "   (bug candidate is “first character” part)
+    " - cleared diff makes match at the EOL extend past the EOL
+    "
+    " FIXME: When using search beware that Search linked to Normal group or with cleared 
+    "        highlighting does not affect highlighting, while Search group with defined or linked to 
+    "        a group with defined highlighting for one of fg/bg (but not both) merges with 
+    "        underlying group.
+    "        Search integration with other highlighting attributes needs more investigation.
+    "▲4
     "▲3
     if !opts.ignorefolds && !opts.allfolds && !opts.foldcolumn
       call   ff.endif()
@@ -2784,25 +3595,28 @@ function s:F.format(type, slnr, elnr, options, ...)
     if !sbsd
      if cf.has('begin')
       cal ff.call('insert(%r,%cformat.begin.f(%normalspec,'''',%opts,'.
-            \                                '%cformat.stylestr))')
+            \                                '%cf.stylestr))')
      endif
      if cf.has('end')
       cal ff.call('add(%r,%cformat.end.f(%normalspec,'.elnr.','''',%opts,'.
-            \                           '%cformat.stylestr))')
+            \                           '%cf.stylestr))')
      endif
     endif
     call ff.do('return '.cf.getvar('r'))
     "▲2
-    let f=['function d.compiledformat()']+ff._tolist(1)+['endfunction']
+    let f   =    ['function d.compiledformat(cf, cformat, opts)']
+                \   +ff._tolist(opts.minimizefunc)+
+                \['endfunction']
     let d={}
-    " " FIXME Remove debugging line
-    " call writefile(f, $HOME.'/tmp/cformat.vim')
+    if opts.debugging && opts.funcfile isnot 0
+        call writefile(f, opts.funcfile)
+    endif
     execute join(f, "\n")
-    " " FIXME Remove debugging line
-    " execute 'breakadd func' 1 string(d.compiledformat)[10:-3]
+    if opts.profiling || opts.debugging
+        call add(s:profiled, d.compiledformat)
+    endif
     "▶2 r
-    let r=d.compiledformat()
-    unlet s:F.compiledspec
+    let r=d.compiledformat(cf, cformat, opts)
     "▶2 s:progress
     if showprogress && canresize
         let s:progress.showprogress=0
@@ -2812,24 +3626,18 @@ function s:F.format(type, slnr, elnr, options, ...)
         return r
     endif
     "▶2 cformat.nolf
-    if cf.has('nolf') && cformat.nolf
+    if cformat.nolf
         let r=[join(r, '')]
     endif
     "▶2 cformat.haslf
-    if cf.has('haslf') && cformat.haslf
+    if cformat.haslf
         let oldr=r
         let r=[]
         for item in oldr
             let r+=split(item, "\n")
         endfor
     endif
-    "▶2 Удалить кэш, если это требуется
-    if !s:_f.getoption('KeepColorCache')
-        let cformat.cache={}
-        let cformat.stylestr=''
-    endif
     "▲2
-    unlet cformat.frunning
     return r
 endfunction
 "▶2 wrap function
@@ -2847,44 +3655,19 @@ endfunction
 function s:F.delformat(type)
     if has_key(s:formats, a:type)
         unlet s:formats[a:type]
-        if has_key(s:compiledfmts, a:type)
-            unlet s:compiledfmts[a:type]
-            return 2
-        endif
         return 1
     endif
     return 0
 endfunction
-"▶1 purgecolorcaches
-function s:F.purgecolorcaches()
-    let id=hlID('Normal')
-    for cformat in values(s:compiledfmts)
-        let cformat.cache={}
-        let cformat.stylestr=''
-        let cformat.opts.fgcolor=s:F.getcolor(synIDattr(id, 'fg#', s:whatterm))
-        let cformat.opts.bgcolor=s:F.getcolor(synIDattr(id, 'bg#', s:whatterm))
-        if empty(cformat.opts.fgcolor)
-            let cformat.opts.fgcolor=((&background is# 'dark')?('#ffffff'):
-                        \                                      ('#000000'))
-        endif
-        if empty(opts.bgcolor)
-            let cformat.opts.bgcolor=((&background is# 'dark')?('#000000'):
-                        \                                      ('#ffffff'))
-        endif
-    endfor
-endfunction
-augroup FormatPurgeColorCaches
-    autocmd ColorScheme * call s:F.purgecolorcaches()
-augroup END
-let s:_augroups+=['FormatPurgeColorCaches']
 "▶1 cmd
 let s:cmd={}
 "▶2 s:cmd.@FWC
 let s:filcomprefs=
             \              '           columns :=(-1)  |earg range -1 inf '.
             \              '?               to         path W '.
-            \              '?      starttagreg :=(0)   '.s:checkreg.
-            \              '?        endtagreg :=(0)   '.s:checkreg.
+            \              '?      starttagreg :=(0)   isreg'.
+            \              '?        endtagreg :=(0)   isreg'.
+            \              '!           cursor :=(-1) '.
             \              '!           number :=(-1) '.
             \              '!   relativenumber :=(-1) '.
             \              '!             list :=(-1) '.
@@ -2893,7 +3676,8 @@ let s:filcomprefs=
             \              '!            folds :=(-1) '.
             \              '!            signs :=(-1) '.
             \              '!+1      concealed :=(-1)  in [shown both] '.
-            \              '!+1       progress :=(-1)  in [percent lines] '
+            \              '!+1       progress :=(-1)  in [percent lines] '.
+            \              '!+1        matches :=(-1)  in [search matches all] '
 let s:filformats='[:*_f.getoption("DefaultFormat") key formats~start]'
 let s:cmd['@FWC']=[
             \'-onlystrings _ _ '.
@@ -2903,8 +3687,8 @@ let s:cmd['@FWC']=[
             \              '!         allfolds :=(-1) '.
             \             '}) '.
             \ '      list - '.
-            \ 'purgecolorcaches -'.
             \'>', 'filter']
+unlet s:filformats s:filcomprefs
 "▲2
 function s:cmd.function(slnr, elnr, action, ...)
     let action=a:action
@@ -2922,15 +3706,53 @@ function s:cmd.function(slnr, elnr, action, ...)
     elseif action is# 'list'
         echo join(keys(s:formats), "\n")
         return 1
-    elseif action is# 'purgecolorcaches'
-        call s:F.purgecolorcaches()
-        return 1
     endif
     "▲2
     return 0
 endfunction
-call s:_f.postresource('formatcmd', s:_f.wrapfunc(s:cmd))
+"▶1 cmd completion
+let s:cmpcomprefs=                      'columns  in ["-1" "80" =string(&co) '.
+            \                                        '=string(winwidth())] '.
+            \                '?               to  path W '.
+            \                '?      starttagreg _ '.
+            \                '?        endtagreg _ '.
+            \                '!           number '.
+            \                '!   relativenumber '.
+            \                '!             list '.
+            \((has('diff'))?
+            \               ('!             diff '                    ):('')).
+            \                '!+1           tags  in [local all] '.
+            \((has('folding'))?
+            \               ('!+1     foldcolumn  _ '.
+            \                '!            folds '                    ):('')).
+            \((has('signs'))?
+            \               ('!            signs'                     ):('')).
+            \((has('conceal'))?
+            \               ('!+1      concealed  in [shown both] '   ):('')).
+            \((has('statusline'))?
+            \               ('!+1       progress  in [percent lines] '):('')).
+            \                '!+1        matches  in [all matches '.
+            \                                        (has('extra_search')
+            \                                           ?('search')
+            \                                           :('')).']'
+let s:cmpformats='[key formats]'
+let s:cmdcomplete='<'.
+            \((has('diff'))?
+            \   ('diffformat ('.s:cmpformats.'{'.s:cmpcomprefs.'})'):
+            \   ('')).
+            \   '    format ('.s:cmpformats.'{'.s:cmpcomprefs.
+            \           ((has('diff'))?(   '!+1  collapsfiller  _ '):('')).
+            \           ((has('folding'))?('!         allfolds '   ):('')).'})'.
+            \   '      list - '.
+            \  '>'
+"▶1 cmd definition
+let s:_aufunctions.cmd=s:cmd
+let s:_aufunctions.comp={
+            \'function': s:_f.fwc.compile(s:cmdcomplete, 'complete')[0],
+        \}
 unlet s:cmd
+unlet s:cmpformats s:cmpcomprefs
+unlet s:cmdcomplete
 "▶1 format feature
 let s:format={}
 "▶2 format.add :: {f}, name, dict → _ + fdict, s:formats
@@ -2941,14 +3763,16 @@ function s:format.add(plugdict, fdict, name, dict)
 endfunction
 let s:format.add=s:_f.wrapfunc({'function': s:format.add,
             \'@FWC':['_ _ '.
-            \        '(#misscol not key formats) '.
+            \        '(#exists not key formats) '.
             \        '(haskey line '.
             \         'dict {?in keylist  type string '.
+            \                   'tagproc  isfunc 1 '.
             \                    'strlen  isfunc 1 '.
+            \                'addoptsfun  isfunc 1 '.
             \                 'strescape  type string '.
             \                     'haslf  bool '.
             \                      'nolf  bool '.
-            \                   'addopts  dict {/^\w\+$/ _}'.
+            \                   'addopts  dict {/^[a-zA-Z0-9]\w*$/ _}'.
             \              '})', 'check'],
             \})
 "▶2 formatunload :: {f} → + fdict, s:formats
@@ -2960,4 +3784,5 @@ call s:_f.newfeature('format', {'cons': s:format,
             \                 'unload': s:F.formatunload,})
 unlet s:format
 "▶1
+call frawor#Lockvar(s:, 'formats,progress,profiled')
 " vim: ft=vim:ts=8:fdm=marker:fenc=utf-8:fmr=▶,▲:tw=100

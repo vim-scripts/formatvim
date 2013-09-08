@@ -4,7 +4,7 @@ execute frawor#Setup('0.0', {'@/fwc/parser'       : '0.0',
             \                '@/fwc/constructor'  : '4.0',
             \                '@/fwc/intfuncs'     : '0.0',
             \                '@/fwc/topconstructs': '0.0',
-            \                '@/resources'        : '0.0'}, 1)
+            \                '@/resources'        : '0.0',})
 let s:compiler={}
 let s:cf='CHECKFAILED'
 let s:cfstr=string(s:cf)

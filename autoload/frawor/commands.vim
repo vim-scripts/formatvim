@@ -1,7 +1,7 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/autocommands': '0.0',
-            \                         '@/fwc': '0.0',}, 1)
+execute frawor#Setup('0.1', {'@/autocommands': '0.0',
+            \                         '@/fwc': '0.0',})
 "▶1 Define messages
 if v:lang=~?'ru'
     let s:_messages={
@@ -19,6 +19,8 @@ if v:lang=~?'ru'
                 \    'ciddef': 'команда уже определена дополнением %s',
                 \   'cidedef': 'команда уже определена',
                 \ 'coptsndct': 'второй аргумент не является словарём',
+                \'udcsfnbool': 'значение ключа «usedictcompsplitfunc» '.
+                \              'не является нулём или единицей',
                 \  'invrange': '«%s» не является правильным диапозоном',
                 \  'hascount': 'нельзя использовать «range» и «count» вместе',
                 \  'invcount': '«%s» не является числом',
@@ -51,6 +53,8 @@ else
                 \    'ciddef': 'command was already defined by plugin %s',
                 \   'cidedef': 'command was already defined',
                 \ 'coptsndct': 'second argument is not a Dictionary',
+                \'udcsfnbool': 'value of a key `usedictcompsplitfunc'' '.
+                \              'is neither 0 nor 1',
                 \  'invrange': '`%s'' is not a valid range',
                 \  'hascount': 'cannot use both `range'' and `count'' '.
                 \              'for one command',
@@ -85,7 +89,6 @@ endfunction
 function s:F.wrapfunc(cmd, fname, fdescr)
     if type(a:fdescr)==type({})
         let a:cmd.fs[a:fname[2:]]=call(a:cmd.wrapfunc, [a:fdescr], {})
-        let args='a:000'
     else
         let lcomp=len(a:fdescr)
         if lcomp==1
@@ -102,12 +105,16 @@ function s:F.wrapfunc(cmd, fname, fdescr)
         unlet a:cmd.g
         let [a:cmd.fs[a:fname[2:]], a:cmd.FWCid]=
                     \call(s:_f.fwc.compile, compargs, {})
+    endif
+    if a:cmd.usedictcompsplitfunc
         let args     = '[call(s:F.splitfunc, '.
                     \        'a:000'.
                     \        ((a:cmd.sp is 0)?
                     \           (', '):
                     \           ('+[s:commands.'.a:cmd.id.'.sp], ')).
                     \        '{}).curargs]'
+    else
+        let args='a:000'
     endif
     execute      'function '.a:fname."(...)\n"
                 \'    return call(s:commands.'.a:cmd.id.'.fs.'.a:fname[2:].', '.
@@ -193,17 +200,17 @@ let s:F.command={}
 let s:commands={}
 let s:bufcommands={}
 let s:fts={}
-"▶2 addfunc      :: cmd, fdescr → + cmd | :function
-function s:F.addfunc(cmd, plstatus, fdescr)
-    if a:plstatus!=2
+"▶2 addfunc      :: cmd, fdescr, now → + cmd | :function
+function s:F.addfunc(cmd, fdescr, now)
+    if a:now
+        call s:F.wrapfunc(a:cmd, a:cmd.compfname, a:fdescr)
+    else
         let fpattern='*'.(s:_sid).'_'.(a:cmd.compfname[2:])
         let augname=s:compaugprefix.(a:cmd.id)
         call s:_f.augroup.add(augname, [['FuncUndefined', fpattern, 0,
                     \                   [s:F.loadplugin, a:cmd]]])
         call add(a:cmd.augs, augname)
         call add(a:cmd.funs, [a:cmd.compfname, a:fdescr])
-    else
-        call s:F.wrapfunc(a:cmd, a:cmd.compfname, a:fdescr)
     endif
 endfunction
 "▶2 loadplugin   :: cmd → + FraworLoad(), :au!
@@ -250,7 +257,7 @@ function s:F.getspfunc(plid, cid, copts, spref)
     return a:copts[key]
 endfunction
 "▲3
-let s:cmddefaults={
+let s:cmddefaults=sort(items({
             \   'nargs': '0',
             \'complete':  0,
             \   'range':  0,
@@ -259,7 +266,7 @@ let s:cmddefaults={
             \     'bar':  1,
             \'register':  0,
             \  'buffer':  0,
-        \}
+        \}))
 let s:compaugprefix='LoadCompFunc_'
 function s:F.command.add(plugdict, fdict, cid, cstr, copts)
     "▶3 Checking arguments
@@ -273,6 +280,9 @@ function s:F.command.add(plugdict, fdict, cid, cstr, copts)
         call s:_f.throw('cidedef', a:cid, a:plugdict.id)
     elseif type(a:copts)!=type({})
         call s:_f.throw('coptsndct', a:cid, a:plugdict.id)
+    elseif has_key(a:copts, 'usedictcompsplitfunc') &&
+                \type(a:copts.usedictcompsplitfunc)!=type(0)
+        call s:_f.throw('udcsfnbool', a:cid, a:plugdict.id)
     endif
     "▲3
     let cmd   =   {'id': a:cid,
@@ -286,11 +296,13 @@ function s:F.command.add(plugdict, fdict, cid, cstr, copts)
     endif
     let cmdstring=''
     let addargs=[]
+    let cmd.usedictcompsplitfunc=get(a:copts, 'usedictcompsplitfunc',
+                \                    type(get(a:copts, 'complete'))==type([]))
     "▶3 Process *splitfunc
     let cmd.sp=s:F.getspfunc(a:plugdict.id, a:cid, a:copts, '')
     let cmd.rsp=s:F.getspfunc(a:plugdict.id, a:cid, a:copts, 'r')
     "▶3 Create :command -options
-    for [key, value] in sort(items(s:cmddefaults))
+    for [key, value] in s:cmddefaults
         if a:plugdict.isftplugin && key is# 'buffer'
             let value=1
         elseif has_key(a:copts, key)
@@ -319,12 +331,12 @@ function s:F.command.add(plugdict, fdict, cid, cstr, copts)
                         call s:_f.throw('nowrapfunc', a:cid, a:plugdict.id)
                     endif
                     let cmd.wrapfunc=a:plugdict.g._f.wrapfunc
-                    call s:F.addfunc(cmd, a:plugdict.status, d.complete)
+                    call s:F.addfunc(cmd, d.complete, 0)
                     let cmdstring.='-complete=customlist,'.(cmd.compfname).' '
                 "▶5 Use FWC string
                 elseif tcomplete==type([])
                     let cmd.g=a:plugdict.g
-                    call s:F.addfunc(cmd, a:plugdict.status, d.complete)
+                    call s:F.addfunc(cmd, d.complete, 1)
                     let cmdstring.='-complete=customlist,'.(cmd.compfname).' '
                 "▶5 Use something else
                 elseif tcomplete==type('')
@@ -333,7 +345,7 @@ function s:F.command.add(plugdict, fdict, cid, cstr, copts)
                 else
                     call s:_f.throw('ucomp', a:cid, a:plugdict.id)
                 endif
-            "▶4 Other options
+            "▶4 Command -* options
             else
                 unlet value
                 let value=a:copts[key]

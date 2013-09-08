@@ -1,12 +1,50 @@
-Add %?{condition}{if-true}{if-false} format key evaluated at compile time
-Split main formatting function
-Add per-launch cache for formats
-cursorcolumn and cursor support
-? Replace nested substitutes with \=
-Add new tests, disable some present ones
-Add spelling support
-Add support for CursorLineNr (added in 7.3.479)
-Add support for |cpo-n| if support for a view just like in vim will be added
-Make it support using line spec for line numbers, sign and fold columns
-Fix handling of `~' tag
-Fix :Format diffformat
+Main features:
+    - Add 'colorcolumn' support
+    - Add spelling support
+    - Add allfolds support in diffformat mode
+    - Add 'wrap' and related options support ('linebreak', 'listchars': 
+      extends/precedes, 'showbreak', 'wrapmargin')
+
+`:Format screenshot`:
+    - Add support for |cpo-n| if support for a view just like in vim will be 
+      added
+    - Add support for visual mode highlighting
+    - 'cursorcolumn' and cursor support
+
+Testing:
+    - Add new tests, disable some present ones
+    - Test @<@{expr}@>@
+    - Test diffformat better, it was known to have some bugs that I do not know 
+      whether they continue to exist
+    - Test how cursorcolumn, cursorline, cursor, colorcolumn, sign, diff, syntax 
+      and matches highlighting work alltogether
+    - Test IgnoreDiff option: with and without diffformat
+    - Test 'highlight'
+
+    - Test formats with and without persistent* conditions
+
+    - Test tag ending at EOL (regression: it used to skip tagend)
+
+    - Test non-full-file diffformat: check whether it may yield lists with 
+      different number of items.
+
+UI:
+    - When using tags add support for progress bar to formattags function
+    - Same for matches
+
+Customization:
+    - Make it support using line spec for line numbers, diff fillers (including 
+      collapsed), sign and fold columns
+
+Refactoring:
+    - Split main formatting function
+    - Move persistent* variables to opts
+
+Optimizations:
+
+Bugs:
+    - Fix handling of `!!' and `!' tags in help files
+    - Fix 'highlight' support: 'highlight' option may hold something other then 
+      list of C:HiGroup pairs.
+    - Fix sign columns highlighting near diff filler (see 
+      signs.yaml%icons-noPATH)

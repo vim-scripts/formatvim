@@ -32,6 +32,10 @@ Advantages
 
         call frawor#Reload('plugin/frawor')
 
+    or (shorter)
+
+        call frawor#Reload('@frawor')
+
     to reload all plugins (as they all depend on core frawor module).
 
 2. Frawor provides an easier way to mappings customization:

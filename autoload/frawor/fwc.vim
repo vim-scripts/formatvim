@@ -1,7 +1,7 @@
 "▶1 Header
 scriptencoding utf-8
 execute frawor#Setup('0.4', {'@/fwc/compiler': '0.0',
-            \                '@/decorators'  : '0.0'}, 1)
+            \                '@/decorators'  : '0.0'})
 "▶1 Define messages
 if v:lang=~?'ru'
     let s:_messages=map({

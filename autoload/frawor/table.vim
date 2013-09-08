@@ -1,11 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.1', {'@/resources': '0.0'}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.1', {'@/resources': '0.0'})
 "▶1 strdisplaywidth  :: String, column → UInt
 if exists('*strdisplaywidth')
     let s:F.strdisplaywidth=function('strdisplaywidth')

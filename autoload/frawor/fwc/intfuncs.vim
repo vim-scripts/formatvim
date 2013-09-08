@@ -2,7 +2,7 @@
 scriptencoding utf-8
 execute frawor#Setup('0.4', {'@/resources': '0.0',
             \                '@/os':        '0.0',
-            \                '@/signs':     '0.0',}, 1)
+            \                '@/signs':     '0.0',})
 let s:r={}
 let s:cf='CHECKFAILED'
 let s:cfstr=string(s:cf)

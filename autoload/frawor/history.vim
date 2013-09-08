@@ -1,7 +1,7 @@
 "▶1 Header
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@/resources': '0.0',
-            \     '@/decorators/altervars': '0.0',}, 1)
+            \     '@/decorators/altervars': '0.0',})
 let s:history={}
 "▶1 history.get :: htype + history → [String]
 function s:history.get(htype)

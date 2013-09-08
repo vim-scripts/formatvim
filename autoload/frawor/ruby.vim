@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'plugin/frawor/os': '0.0',}, 1)
+execute frawor#Setup('0.0', {'@/os': '0.0',})
 "▶1 Define messages
 if v:lang=~?'ru'
     let s:_messages={
@@ -52,8 +52,7 @@ function s:F.delrubydir(plugdict, fdict)
 endfunction
 "▶2 register feature
 call s:_f.newfeature('addrubypath', {'register': s:F.addrubydir,
-            \                       'unloadpre': s:F.delrubydir,
-            \                      'ignoredeps': 1,})
+            \                       'unloadpre': s:F.delrubydir,})
 "▶1
 call frawor#Lockvar(s:, 'addedpaths')
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80

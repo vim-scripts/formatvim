@@ -1,7 +1,7 @@
 "▶1 Header
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@/os': '0.0',
-            \         '@/resources': '0.0',}, 1)
+            \         '@/resources': '0.0',})
 let s:F.sign={}
 let s:signs={}
 let s:lastsgid=0
@@ -144,8 +144,7 @@ function s:F.delsigns(plugdict, fdict)
                 \'s:F.delsign(v:val)')
 endfunction
 call s:_f.newfeature('delsigns', {'unloadpre': s:F.delsigns,
-            \                      'register': s:F.add_signs,
-            \                    'ignoredeps': 1})
+            \                      'register': s:F.add_signs,})
 "▶1 sign.delete :: {f}[, sgid] → + :sign, s:signs
 function s:F.sign.delete(plugdict, fdict, ...)
     if a:0

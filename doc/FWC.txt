@@ -363,8 +363,8 @@ attached arguments description (or "-" for no arguments):
 ==============================================================================
 2. Internal functions                                          *FWC-functions*
 
-All standart internal functions are defined in plugin/frawor/fwc/intfuncs.vim 
-file and do not require specifying any additional dependencies.
+All standart internal functions are defined in @/fwc/intfuncs plugin and do 
+not require specifying any additional dependencies.
 
 Internal function calls are right associative: >
     tuple tuple isreg, isreg
@@ -677,9 +677,9 @@ any, _                                                   *FWC-c-any* *FWC-c-_*
 ==============================================================================
 3. @/fwc/constructor plugin                           *FWC-constructor-plugin*
 
-Plugin plugin/frawor/fwc/constructor is used to create function body by 
-creating syntax tree using a tree “object”. When using this plugin code 
-normally looks like this: >
+Plugin @/fwc/constructor is used to create function body by creating syntax 
+tree using a tree “object”. When using this plugin code normally looks like 
+this: >
     let t=s:_r.new_constructor()
     call t.if('!exists("g:var")')
     call   t.let('g:var', '"Foo"')
@@ -759,7 +759,8 @@ _toblock :: blocktype -> + self._l, self._stack              *FWC-cf-_toblock*
     Removes items from |FWC-ck-_stack| until it finds block with given type.
 _tolist :: [ min] -> [ String ]                               *FWC-cf-_tolist*
     Constructs and returns a list of VimL commands. If {min} optional argument 
-    is present and true, then it removes indent and minimizes vim commands.
+    is not present or is true, then it removes indent and minimizes vim 
+    commands.
 break :: () -> self                                          *FWC-cf-break*
 continue :: () -> self                                       *FWC-cf-continue*
     Adds |FWC-cb-do| with argument equal to function name and goes up one 

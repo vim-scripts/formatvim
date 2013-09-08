@@ -1,7 +1,7 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/decorators': '0.0',
-            \              '@/autocommands': '0.0',}, 1)
+execute frawor#Setup('0.1', {'@/decorators': '0.0',
+            \              '@/autocommands': '0.0',})
 "▶1 _messages
 if v:lang=~?'ru'
     let s:_messages={
@@ -18,7 +18,17 @@ if v:lang=~?'ru'
                 \        'fdef': 'функция уже определена',
                 \      'nofunc': 'описание функции не содержит '.
                 \                'ключа «function»',
-                \        'nref': 'ключ «%s» не является ссылкой на функцию',
+                \        'nref': 'ключ «%s» не является ссылкой на функцию '.
+                \                'или списком',
+                \       'n3len': 'ключ «function» должен иметь ровно три '.
+                \                'элемента',
+                \      '02nstr': 'один из элементов «function» '.
+                \                'не является строкой',
+                \       '1nver': 'второй элемент «function» должен быть '.
+                \                'списком неотрицательных целых чисел',
+                \       'nodep': 'дополнение %s должно зависеть от @/functions',
+                \       'nofun': 'не найдена функция %s в s:_aufunctions '.
+                \                'дополнения %s',
                 \   'invdecret': 'декоратор %s вернул неверное значение',
                 \     'decndep': 'дополнение, определившее декоратор %s, '.
                 \                'не находится в списке зависимостей',
@@ -55,7 +65,15 @@ else
                 \        'fdef': 'function was already defined',
                 \      'nofunc': 'function description lacks '.
                 \                '`function'' key',
-                \        'nref': 'key `%s'' is not a function reference',
+                \        'nref': 'key `%s'' is not a function reference '.
+                \                'or a list',
+                \       'n3len': 'function key must have exactly two items',
+                \      '02nstr': 'one of the items in function key '.
+                \                'is not a string',
+                \       '1nver': 'second element of `function'' key must be '.
+                \                'a list of non-negative integers',
+                \       'nodep': 'plugin %s must depend on @/functions',
+                \       'nofun': 'no function %s in s:_aufunctions of %s',
                 \   'invdecret': 'decorator %s returned invalid value',
                 \     'decndep': 'plugin that defined decorator %s '.
                 \                'is not in dependency list',
@@ -94,17 +112,69 @@ function s:F.rewritefname(sid, Fref)
     endif
     return fstr
 endfunction
-"▶1 refunction      :: sid, Funcref, throwargs → Funcref
-function s:F.refunction(sid, Fref, ...)
+"▶1 refref          :: sid, Funcref → Funcref
+function s:F.refref(sid, Fref)
     let fstr=s:F.rewritefname(a:sid, a:Fref)
     if string(+fstr) is# fstr
         return a:Fref
     else
         if !exists('*'.fstr)
+            call s:_f.throw('uref', a:plugdict.id, 'function', a:fname)
             call call(s:_f.throw, a:000, {})
         endif
         return function(fstr)
     endif
+endfunction
+"▶1 fundef          :: plugdict, funopts, fundef, fname → Funcref
+function s:F.fundef(plugdict, funopts, fundef, fname)
+    "▶2 Check funopts
+    if !has_key(a:funopts, 'function')
+        call s:_f.throw('nofunc', a:fname, a:plugdict.id)
+    elseif type(a:funopts.function)!=2 && type(a:funopts.function)!=type([])
+        call s:_f.throw('nref', a:fname, a:plugdict.id, 'function')
+    elseif !empty(filter(keys(a:funopts), 'v:val isnot# "function" && '.
+                \                         'v:val isnot# "redefine" && '.
+                \                         'v:val[0] isnot# "@"'))
+        call s:_f.throw('invkeys', a:fname, a:plugdict.id)
+    endif
+    "▲2
+    " TODO: test nested 3-tuple function definitions and redefine key
+    let fundefext=copy(a:funopts)
+    let decdeps={}
+    call map(keys(a:funopts), 'v:val[0] is# "@" ? '.
+                \               'extend(decdeps, {v:val[1:] : a:plugdict}) : 0')
+    if type(a:funopts.function)==type([])
+        if len(a:funopts.function)!=3
+            call s:_f.throw('n3len', a:fname, a:plugdict.id)
+        elseif          type(a:funopts.function[0])!=type('')
+                    \|| type(a:funopts.function[2])!=type('')
+            call s:_f.throw('02nstr', a:fname, a:plugdict.id)
+        elseif          type(a:funopts.function[1])!=type([])
+                    \|| !empty(filter(copy(a:funopts.function[1]),
+                    \                    'type(v:val)!='.type(0).
+                    \                 '|| v:val<0'))
+            call s:_f.throw('1nver', a:fname, a:plugdict.id)
+        endif
+        let dplid=a:plugdict.g._f.require(a:funopts.function[0],
+                    \                     a:funopts.function[1], 1, 1)
+        if !has_key(s:aufunctions, dplid)
+            call s:_f.throw('nodep', a:fname, a:plugdict.id, dplid)
+        elseif !has_key(s:aufunctions[dplid].functions, a:funopts.function[2])
+            call s:_f.throw('nofun', a:fname, a:plugdict.id,
+                        \   a:funopts.function[2], dplid)
+        endif
+        let funopts=s:aufunctions[dplid].functions[a:funopts.function[2]]
+        let fundefext=s:F.fundef(s:aufunctions[dplid].plugdict, funopts,
+                    \            fundefext, a:fname)
+        call extend(decdeps, fundefext.decdeps)
+        let sid=s:aufunctions[dplid].sid
+    else
+        let sid=a:plugdict.sid
+    endif
+    let fundefext.function=s:F.refref(sid, fundefext.function)
+    call extend(a:fundef, fundefext)
+    let a:fundef.decdeps=decdeps
+    return a:fundef
 endfunction
 "▶1 delfunction     :: sid, Funcref → + :delfunction
 function s:F.delfunction(sid, Fref)
@@ -205,13 +275,6 @@ let s:mapexpr=repeat('substitute(',len(s:subs))."v:val, ".join(s:subs,"), ").")"
 let s:nargsexpr=substitute(s:mapexpr, 'v:val', 'newargs', '')
 unlet s:subs
 function s:F.wrapfunc(plugdict, funopts, fundictsname, fname)
-    "▶2 Check a:funopts
-    if !has_key(a:funopts, 'function')
-        call s:_f.throw('nofunc', a:fname, a:plugdict.id)
-    elseif type(a:funopts.function)!=2
-        call s:_f.throw('nref', a:fname, a:plugdict.id, 'function')
-    endif
-    "▲2
     let fname=a:fname
     let fdicts=s:{a:fundictsname}
     let fundef =  {'id': printf('%x', fdicts.nextid),
@@ -219,12 +282,8 @@ function s:F.wrapfunc(plugdict, funopts, fundictsname, fname)
                 \'plid': a:plugdict.id,}
     let fdicts.nextid+=1
     let fdicts[fundef.id]=fundef
-    "▶2 Add `function' key
-    let fundef.function=s:F.refunction(a:plugdict.sid, a:funopts.function,
-                \                      'uref', a:plugdict.id, 'function',
-                \                              a:fname)
-    "▲2
-    let decs=map(filter(keys(a:funopts), 'v:val[0] is# "@"'),
+    let fundef=s:F.fundef(a:plugdict, a:funopts, fundef, a:fname)
+    let decs=map(filter(keys(fundef), 'v:val[0] is# "@"'),
                 \'s:_r.getdecorator(v:val[1:])')
     if empty(decs) && fname is# 'fundef.cons'
         let fundef.cons=fundef.function
@@ -240,14 +299,14 @@ function s:F.wrapfunc(plugdict, funopts, fundictsname, fname)
         let addedrval=0
         "▲2
         for decorator in decs
+            let decplugdict=fundef.decdeps[decorator.id]
             "▶2 Check existance of decorator definer in dependencies
-            if !has_key(a:plugdict.dependencies, decorator.plid)
-                call s:_f.throw('decndep', a:fname, a:plugdict.id,
-                            \              decorator.id)
+            if !has_key(decplugdict.dependencies, decorator.plid)
+                call s:_f.throw('decndep', a:fname, a:plugdict.id, decorator.id)
             endif
             "▲2
-            call add(fblocks, decorator.func(a:plugdict, fname,
-                        \                    a:funopts['@'.decorator.id]))
+            call add(fblocks, decorator.func(decplugdict, fname,
+                        \                    fundef['@'.decorator.id]))
             "▶2 Check decorator return value
             if type(fblocks[-1])!=type([])
                         \|| len(fblocks[-1])!=6
@@ -298,7 +357,8 @@ function s:F.wrapfunc(plugdict, funopts, fundictsname, fname)
                         \['endfunction']
         endif
         "▲2
-        execute join(s:F.beatycode(func), "\n")
+        " execute join(s:F.beatycode(func), "\n")
+        execute join(func, "\n")
         if fname isnot# 'fundef.cons'
             let fundef.cons=function(fname)
         endif
@@ -320,6 +380,9 @@ function s:F.delfunctions(plugdict, fdict)
             unlet s:{a:fdict.fundictsname}[fundef.id]
         endif
     endfor
+    if has_key(s:aufunctions, a:plugdict.id)
+        unlet s:aufunctions[a:plugdict.id]
+    endif
 endfunction
 "▶1 loadplugin      :: fdict → + fdict, …
 function s:F.loadplugin(plid, fdict)
@@ -395,10 +458,21 @@ function s:F.wrapfunc_cons(plugdict, fdict, funopts)
     let a:fdict.fundicts[fundef.id]=fundef
     return fundef.cons
 endfunction
+let s:aufunctions={}
+function s:F.wrapfunc_register(plugdict, fdict)
+    if !has_key(a:plugdict.g, '_aufunctions') ||
+                \type(a:plugdict.g._aufunctions)!=type({})
+        let a:plugdict.g._aufunctions={}
+    endif
+    let s:aufunctions[a:plugdict.id]={'functions': a:plugdict.g._aufunctions,
+                \                     'sid': a:plugdict.sid,
+                \                     'plugdict': a:plugdict}
+endfunction
 call s:_f.newfeature('wrapfunc', {'cons': s:F.wrapfunc_cons,
             \                   'unload': s:F.delfunctions,
+            \                 'register': s:F.wrapfunc_register,
             \                     'init': {'fundictsname': 'wrappedfuncs',
             \                                  'fundicts': {}}})
 "▶1
-call frawor#Lockvar(s:, 'extfunctions,wrappedfuncs,lastdid')
+call frawor#Lockvar(s:, 'extfunctions,wrappedfuncs,lastdid,aufunctions')
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80

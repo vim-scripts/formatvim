@@ -1,8 +1,8 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.1', {'plugin/frawor/options': '0.0',
-            \           'plugin/frawor/autocommands': '0.0',
-            \              'plugin/frawor/resources': '0.0',}, 1)
+execute frawor#Setup('0.1', {'@/options': '0.0',
+            \           '@/autocommands': '0.0',
+            \              '@/resources': '0.0',})
 "▶1 Define variables
 let s:_oprefix='frawormap'
 let s:_options={}

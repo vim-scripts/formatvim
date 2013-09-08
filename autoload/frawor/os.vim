@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.2', {'@/resources': '0.0'}, 1)
+execute frawor#Setup('0.2', {'@/resources': '0.0'})
 "▶1 os resource
 let s:os={}
 "▶2 os.fullname

@@ -7,6 +7,7 @@ CONTENTS                                                     *format-contents*
         2.1. Commands                             |format-commands|
         2.2. Features                             |format-features|
     3. Options                                    |format-options|
+        3.1. HTML specification options           |format-options-html|
     4. Format specification description           |format-spec|
         4.1. Dictionary keys                      |format-spec-keys|
         4.2. String descriptions                  |format-spec-description|
@@ -21,14 +22,46 @@ BBcode, (in future) LaTeX or whatever you have written specification for.
 Features:
     ∙ Flexible format specifications
     ∙ Ability to create abstract stylesheets
-    ∙ 'list' and 'listchars' options support (only tab, trail and eol for now)
+    ∙ 'list' and 'listchars' options support (only tab, trail, eol and conceal 
+      for now)
     ∙ Diffed buffers support (if file is in diff mode and current line is 
       different from other's file line then foreground color is taken from 
       current syntaxID and background color is taken from diff syntax ID)
     ∙ Support for creating numbered lines
     ∙ Folds support
 
-Plugin requires frawor plugin.
+Differencies with built-in |:TOhtml|:
+    ∙ For large files formatting using my plugin is faster.
+    ∙ 'list' and 'listchars' options support.
+    ∙ Background color for the whole line with differencies, not just for text 
+      (for |g:html_no_pre|=1) and without trailing spaces (for 
+      |g:html_no_pre|=0).
+    ∙ Signs support. |signs|
+    ∙ Tags linked to their definition. Implemented for 2html in 
+      vimscript #2252. |g:format_IgnoreTags|
+    ∙ (HTML) Anchors in tags definition location: for copying links. 
+      |g:format_HTMLAddLinkAtTagLine|
+    ∙ Side-by-side diff based on tables (2html relies on lines having the same 
+      height which is generally false).
+    ∙ Full conceal support: with |g:format_FormatConcealed| set to 2 
+      |formats-format-html| generates both concealed and shown.
+    ∙ Non-copyable signs, fold columns and numbers by default. 2html requires 
+      setting |g:html_prevent_copy|.
+    ∙ 'fillchars' vert suboption support (2html supports only diff and fold 
+      suboptions).
+    ∙ Matches and 'hlsearch' support.
+    ∙ More correct highlighting in some cases.
+    ∙ Support for formats other then HTML/XHTML (|format-formats|). Makes it 
+      relatively easy to add new format to the list of supported formats 
+      (|format-f-format.add|).
+    ∙ 2html still has more options for HTML formatting though.
+
+
+Plugin requires some additional plugins:
+    ∙ frawor (https://bitbucket.org/ZyX_I/frawor)
+
+Note: formatvim supports VAM (https://github.com/MarcWeber/vim-addon-manager). 
+      It is prefered that you use it for formatvim installation.
 
 ==============================================================================
 2. Functionality provided                               *format-functionality*
@@ -49,9 +82,12 @@ Plugin requires frawor plugin.
             Option         Value and description ~
             columns        Unsigned integer greater then zero or -1. This 
                            option is used to specify number of columns (screen 
-                           width). Overrides |format-spec-key-columns|.
+                           width). Overrides |format-o-MinColumns|.
             to             Defines file where result should be saved. If no 
                            file was specified, new buffer will be created.
+            cursor         Bool (`cursor' or `nocursor').
+                           Overrides |format-o-IgnoreCursor|, does the 
+                           opposite to it.
             number         Bool (`number' or `nonumber').
                            Overrides |format-o-NoLineNR|, does the opposite to 
                            it.
@@ -59,7 +95,10 @@ Plugin requires frawor plugin.
                            Overrides |format-o-RelativeNumber|.
             list           Bool (`list' or `nolist').
                            Overrides |format-o-IgnoreList|.
-                           Does the opposite to IgnoreList option.
+                           Does the opposite to the IgnoreList option.
+            diff           Bool (`diff' or `nodiff').
+                           Overrides |format-o-IgnoreDiff|.
+                           Does the opposite to the IgnoreDiff option.
             starttagreg    Regex (in very nomagic mode: |/\V|).
                            Overrides |format-o-StartTagReg|.
             endtagreg      Regex (in very nomagic mode: |/\V|).
@@ -82,6 +121,14 @@ Plugin requires frawor plugin.
                            Overrides |format-o-CollapsFiller|.
             allfolds       Bool (`allfolds' or `noallfolds').
                            Overrides |format-o-AllFolds|.
+            matches        False (`nomatches'), `search', `matches' or `all'. 
+                           Determines whether patterns searched for and 
+                           patterns returned by |getmatches()| should be taken 
+                           into account: with `search' and `all' arguments it 
+                           formats search pattern as if 'hlsearch' were on 
+                           (actual value is ignored), with `matches' or `all' 
+                           it formats |getmatches()| output.
+                           Overrides |format-o-FormatMatches|.
                                                     *format-action-diffformat*
 :{range}Format diffformat [{formatName} [{option1} {value1}]]
             Like |format-action-format|, but create a side-by-side diff file. 
@@ -96,12 +143,6 @@ Plugin requires frawor plugin.
             then empty buffer will be created and nothing will be generated.
 :Format list                                              *format-action-list*
             Print a list of format specifications.
-:Format purgecolorcaches                      *format-action-purgecolorcaches*
-            Purge color caches. Useful if you change the value of 'background' 
-            option since changing colorschemes triggers |ColorScheme| event 
-            which also causes purging color caches. You may also want to do 
-            this if you do not want to have styles from previously formatted 
-            documents. Useless if |format-o-KeepColorCache| is false.
 
 ------------------------------------------------------------------------------
 2.2. Features                                                *format-features*
@@ -119,18 +160,18 @@ format.add : function ({formatName}, {specification})    *format-f-format.add*
 All options are located either in b:formatOptions and g:formatOptions 
 dictionaries or in [gb]:format_{option} variables (see |frawor-f-getoption|).
 
-KeepColorCache :: Bool                               *format-o-KeepColorCache*
-        Keep color cache after formatting is done. Default: 1.
-
+                                                      *g:format_DefaultFormat*
 DefaultFormat :: String                               *format-o-DefaultFormat*
         Default format specification's name. Default: html.
 
+                                                        *g:format_IgnoreFolds*
 IgnoreFolds :: Bool                                     *format-o-IgnoreFolds*
         If IgnoreFolds is true, then act as if there were no text folds. See 
         |fold.txt| for more information about folding. Default: 0.
         Note that if format specification does not provide "fold" key then 
         closed folds will be ignored even if IgnoreFolds is set to 0.
 
+                                                           *g:format_AllFolds*
 AllFolds :: Bool                                           *format-o-AllFolds*
         If IgnoreFolds is not true and current format has either foldstart or 
         foldend keys (or both), then collect all possible folds and call 
@@ -139,6 +180,7 @@ AllFolds :: Bool                                           *format-o-AllFolds*
         you will have to restore it manually if you terminate formatting 
         process.
 
+                                                         *g:format_FoldColumn*
 FoldColumn :: -1 | 0 | Natural                           *format-o-FoldColumn*
         If FoldColumn is set to -1 (default) and IgnoreFolds is not true, then 
         foldcolumn is added to the resulting format if 'foldcolumn' is greater 
@@ -146,24 +188,37 @@ FoldColumn :: -1 | 0 | Natural                           *format-o-FoldColumn*
         option will overwrite your 'foldminlines' option, so you will have to 
         restore it manually if you terminate formatting process.
 
+                                                         *g:format_IgnoreList*
 IgnoreList :: Bool                                       *format-o-IgnoreList*
         If IgnoreList is true, then ignore 'list' and 'listchars' options.
-        Now plugin supports only tab, trail and eol 'listchars' 
+        Now plugin supports only tab, trail, eol and conceal 'listchars' 
         specifications. Default: 0.
 
+                                                        *g:format_IgnoreSigns*
 IgnoreSigns :: Bool                                     *format-o-IgnoreSigns*
         If IgnoreSigns is true, then placed signs are ignored (see |:sign|). 
         Default: 0.
 
+                                                         *g:format_IgnoreDiff*
+IgnoreDiff :: Bool                                       *format-o-IgnoreDiff*
+        If IgnoreDiff is true, then ignore 'diff' option.
+        Default: 0.
+
+                                                        *g:format_StartTagReg*
 StartTagReg :: Regex                                    *format-o-StartTagReg*
         Defines regular expression that must match before the start of the tag 
-        text. Regex must be in very nomagic mode (|/\V|) and it is highly 
-        recommended that you use only zero-width atoms here (|/zero-width|).
+        text. Regex must be in magic mode (|/\m|) and you must use zero-width 
+        look-aheads/look-behinds if you need to match something that is the 
+        part of the tag. Regex is wrapped into |/\%(| and is suffixed by 
+        |/\zs| to exclude it from match.
 
+                                                          *g:format_EndTagReg*
 EndTagReg :: Regex                                        *format-o-EndTagReg*
         Like |format-o-StartTagReg|, but defines regex that must be matched 
-        after end of the tag text.
+        after end of the tag text. Like above it is wrapped into |/\%(| and 
+        prefixed by |/\ze|.
 
+                                                         *g:format_IgnoreTags*
 IgnoreTags :: 0 | 1 | 2                                  *format-o-IgnoreTags*
         Defines whether tags are ignored, see |taglist()|
         0: do not ignore any tags. In HTML format it produces the following 
@@ -179,17 +234,23 @@ IgnoreTags :: 0 | 1 | 2                                  *format-o-IgnoreTags*
         1: ignore tags that are not in current file (default)
         2: ignore all tags
 
+        Note: it is highly recommended that you use vim-7.3.627 and higher 
+              when formatting tags.
+
+                                                   *g:format_AddTagCmdEscapes*
 AddTagCmdEscapes :: [ Char ]                       *format-o-AddTagCmdEscapes*
         String, defines a list of characters that should be escaped if `cmd' 
         key in tag description returned by |taglist()| is an vim pattern. 
         Default: '[]*.~'.
 
+                                                         *g:format_MaxDupTags*
 MaxDupTags :: UInt                                       *format-o-MaxDupTags*
         Defines a maximum number of tag entries with one name. If actual 
         number of tag entries that share the same name exceeds this value, 
         then this tag is ignored. You can set this option to 0 in order to 
         prevent filtering. Default: 5.
 
+                                                     *g:format_RelativeNumber*
 RelativeNumber :: -1 | Bool                          *format-o-RelativeNumber*
         If it is true, then it adds relative line numbers, just like when 
         'relativenumber' is set ('relativenumber' was introduced in vim 7.3, 
@@ -197,6 +258,7 @@ RelativeNumber :: -1 | Bool                          *format-o-RelativeNumber*
         this option will be enabled if 'relativenumber' option is set. 
         Overrides |format-o-NoLineNR|.
 
+                                                           *g:format_NoLineNR*
 NoLineNR :: -1 | Bool                                      *format-o-NoLineNR*
         If it is true then do not add the line numbers, -1 (default) means 
         "preserve 'number' option" (plugin acts as if NoLineNR were true if 
@@ -207,6 +269,7 @@ NoLineNR :: -1 | Bool                                      *format-o-NoLineNR*
         3. Forces skipping applying "linenr" specification
         It has the same effect as removing "linenr" key from specification.
 
+                                                      *g:format_CollapsFiller*
 CollapsFiller :: UnsignedInteger                      *format-o-CollapsFiller*
         If this value is not zero, number of deleted lines is equal or greater 
         than CollapsFiller and there is "collapsedfiller" key in format 
@@ -214,11 +277,15 @@ CollapsFiller :: UnsignedInteger                      *format-o-CollapsFiller*
         for every deleted line. If "difffiller" key is absent, then this 
         option is ignored and plugin will act as if this option was set to 1.
 
+                                                       *g:format_IgnoreCursor*
 IgnoreCursor :: Bool                                   *format-o-IgnoreCursor*
         If this option is true (default) then cursor position is ignored 
-        (cursor line or column do not get highlighted when 'cursorline' or 
-        'cursorcolumn' is on, cursor character also is not highlighted).
+        (cursor line does not get highlighted when 'cursorline' is on, line 
+        number in cursor line does not use |hl-CursorLineNr| (unless 
+        'relativenumber' is set), concealed characters are concealed 
+        regardless of 'concealcursor' setting).
 
+                                                    *g:format_FormatConcealed*
 FormatConcealed :: 0, 1 or 2                        *format-o-FormatConcealed*
         If both this option and 'conceallevel' have non-zero values, then only 
         actually shown text will be formatted. Difference between values 
@@ -229,6 +296,17 @@ FormatConcealed :: 0, 1 or 2                        *format-o-FormatConcealed*
         |format-spec-key-concealed| is used, so information about concealed 
         characters can be possibly saved.
 
+
+                                                      *g:format_FormatMatches*
+FormatMatches :: none, search, matches or all         *format-o-FormatMatches*
+        Determines whether patterns searched for and patterns returned by 
+        |getmatches()| should be taken into account: with `search' and `all' 
+        arguments it formats search pattern as if 'hlsearch' were on (actual 
+        value is ignored), with `matches' or `all' it formats |getmatches()| 
+        output.
+        Default: `all' if 'hlsearch' is on and `matches' if it is not.
+
+                                                       *g:format_ShowProgress*
 ShowProgress :: 0, 1 or 2                              *format-o-ShowProgress*
         If this option is not zero then show progress bar. Differencies 
         between 1 and 2:
@@ -243,6 +321,7 @@ ShowProgress :: 0, 1 or 2                              *format-o-ShowProgress*
         running, so doing that may render progress bar useless. This does not 
         apply to gvim.
 
+                                                          *g:format_ColorFile*
 ColorFile :: 0 or filename (file must be readable)        *format-o-ColorFile*
         If this option is not zero, then read colors from file {ColorFile} 
         instead of {rtp}/config/formatvim/colors-default-'t_Co'.yaml. Relevant 
@@ -265,7 +344,7 @@ ColorFile :: 0 or filename (file must be readable)        *format-o-ColorFile*
             ... # Document end (may be omitted)
             # Note the following: each non-comment line must start with `- ' 
             # (a dash and a space, exactly at the start of line) followed by 
-            # an opening quote (either «'» or «"»), a hash, four hexadecimal 
+            # an opening quote (either «'» or «"»), a hash, six hexadecimal 
             # digits and a closing quote («'» or «"» depending on what you 
             # have chosen before).
 <       Note that this option must be set before format.vim is loaded. All 
@@ -284,7 +363,52 @@ ColorFile :: 0 or filename (file must be readable)        *format-o-ColorFile*
             # to SetupTable function in colortable.vim)
             ./tools/getcolors.pl image.png lines columns > colors.yaml
 <       Note: you can’t use the script in first form with less then four 
-              colors.
+        colors.
+
+                                                      *g:format_UseStyleNames*
+UseStyleNames :: Bool                                 *format-o-UseStyleNames*
+    If true, |format-spec-%S| uses name attributes in place of styleid. 
+    Default: false.
+    Note: unlike style IDs, style names are not guaranteed to be unique, 
+          though conflict is unlikely to occur.
+
+                                                         *g:format_MinColumns*
+MinColumns :: UnsignedInteger                            *format-o-MinColumns*
+    Determines minimal number of columns text must occupy. If there is a line 
+    that is wider then MinColumns then value of this option is ignored. Useful 
+    for |format-spec-%.-|, |format-spec-%-|, |format-spec-%+|.
+    Default: 40.
+
+------------------------------------------------------------------------------
+3.1. HTML specification options                          *format-options-html*
+
+                                             *g:format_HTMLAnchorFileNameExpr*
+HTMLAnchorFileNameExpr :: |expr|             *format-o-HTMLAnchorFileNameExpr*
+    Expression used to generate filename in anchor out of filename attached to 
+    the tag. Defaults to `a:tag.tfname.".html"`.
+    In the expression you can use the `a:tag` variable which is a dictionary 
+    with the following keys in addition to keys defined by |taglist()| and by 
+    formatvim (see |format-tag-keys|):
+    Key      Description ~
+    __ename  String, tag name escaped for use in anchor (wikipedia-style 
+             escaping). See http://www.w3.org/TR/html4/types.html#type-name 
+             for the description why this is needed. Example of such escaping:
+             tag `'ls'` is escaped to `.27ls.27`.
+
+                                             *g:format_HTMLUseTagNameInAnchor*
+HTMLUseTagNameInAnchor :: Bool               *format-o-HTMLUseTagNameInAnchor*
+    Determines whether anchor should contain tag name or line number.
+    Defaults to false.
+
+                                               *g:format_HTMLAddLinkAtTagLine*
+HTMLAddLinkAtTagLine :: Bool                   *format-o-HTMLAddLinkAtTagLine*
+    Determines whether line that contains tag definition should also contain 
+    tag link. This link is to be used for copy-pasting. Defaults to true.
+
+                                                      *g:format_HTMLTitleExpr*
+HTMLTitleExpr :: |expr|                        *format-o-HTMLAddLinkAtTagLine*
+    Determines what file name should go into title.
+    Default: `expand('%:p:~')`.
 
 ==============================================================================
 4. Format specification description                              *format-spec*
@@ -294,7 +418,7 @@ Document is constructed in the following way: >
     (
       [foldend]?
       [foldstart]?
-      [linestart][foldcolumn][sign][clstart][linenr]{line}[clend][lineend]
+      [linestart][foldcolumn][sign][linenr]{line}[lineend]
     )*
     [end]?
 where
@@ -303,9 +427,7 @@ where
  [linestart] by |format-spec-key-linestart|,
  [foldcolumn] by |format-spec-key-foldcolumn|,
  [sign] by |format-spec-key-sign|,
- [clstart] by |format-spec-key-clstart|,
  [linenr] by |format-spec-key-linenr|,
- [clend] by |format-spec-key-clend|,
  [lineend] by |format-spec-key-lineend|,
  [foldend] by |format-spec-key-foldend|,
  [foldstart] by |format-spec-key-foldstart|,
@@ -316,6 +438,17 @@ while {line} may be
  - collapsed sequence of difffillers described by 
    |format-spec-key-collapsedfiller|,
  - or a folded text described by |format-spec-key-fold|.
+
+In the first case there may be additional tokens: >
+  [tagstart][concealedstart]([tagstart][line][tagend])*[concealedend][tagend]
+where
+ [tagstart] is described by |format-spec-key-tagstart|,
+ [concealedstart] by |format-spec-key-concealedstart|,
+ [line] by |format-spec-key-line|,
+ [concealedend] by |format-spec-key-concealedend|,
+ [tagend] by |format-spec-key-tagend|.
+Actual position of [tagstart] and [tagend] depends on the place where tag was 
+matched. It is a bug to have nested [tagstart] .. [tagend] pairs.
 
 For side-by-side diff generation first all lines of first document are being 
 generated, then all lines of second document are being generated (both without 
@@ -343,7 +476,7 @@ begin                                                  *format-spec-key-begin*
         @@@         Empty string
         @.@         0 (zero)
         @-@         0 (zero)
-        @{stspec}@  Specification derived from "Normal" highlight group
+        @{stspec}@  Specification derived from |hl-Normal| highlight group
 
 sbsdstart                                          *format-spec-key-sbsdstart*
         String, describes the start of side-by-side diff line. Arguments (see 
@@ -354,7 +487,7 @@ sbsdstart                                          *format-spec-key-sbsdstart*
         @.@         0 (zero)
         @-@         Index of the current line (Note that index is not current 
                     line number)
-        @{stspec}@  Specification derived from "Normal" highlight group
+        @{stspec}@  Specification derived from |hl-Normal| highlight group
 
 sbsdsep                                              *format-spec-key-sbsdsep*
         String, describes the document separator of side-by-side diff line. 
@@ -365,7 +498,7 @@ sbsdsep                                              *format-spec-key-sbsdsep*
         @.@         Number of document on the right site of the separator
         @-@         Index of the current line (Note that index is not current 
                     line number)
-        @{stspec}@  Specification derived from "Normal" highlight group
+        @{stspec}@  Specification derived from |hl-VertSplit| highlight group
 
 foldstart                                          *format-spec-key-foldstart*
         String, describes start of each possible fold. Used only if 
@@ -374,7 +507,7 @@ foldstart                                          *format-spec-key-foldstart*
         Argument    Value ~
         @@@         Value returned by |foldtextresult()|
         @.@         Fold level
-        @{stspec}@  Specification derived from "Folded" highlight group
+        @{stspec}@  Specification derived from |hl-Folded| highlight group
 
 linestart                                          *format-spec-key-linestart*
         String, describes each start of line. Arguments (see 
@@ -384,12 +517,15 @@ linestart                                          *format-spec-key-linestart*
         @@@         0 for regular lines,
                     1 for folded lines,
                     2 for difffiller,
-                    3 for collapsedfiller
+                    3 for collapsedfiller,
+                    4 for trailing ~ filler lines
         @.@         0 (zero)
-        @{stspec}@  Specification derived from "Normal" highlight group. For 
-                    folded lines specification changes to "Folded" highlight 
-                    group, for difffiller and collapsedfiller lines 
-                    specification changes to "DiffDelete" highlight group.
+        @{stspec}@  Specification derived from |hl-Normal| highlight group, 
+                    possibly joined with |sign| linehl group, |hl-CursorLine| 
+                    and/or |hl-DiffAdd|/|hl-DiffChange|. For folded lines 
+                    specification changes to |hl-Folded| highlight group, for 
+                    difffiller and collapsedfiller lines specification changes 
+                    to |hl-DiffDelete| highlight group.
 
 foldcolumn                                        *format-spec-key-foldcolumn*
         String, describes foldcolumn at the start of each line. Arguments (see 
@@ -399,7 +535,7 @@ foldcolumn                                        *format-spec-key-foldcolumn*
         @@@         String that is supposed to be displayed in the real 
                     foldcolumn
         @.@         Folding level
-        @{stspec}@  Specification derived from "FoldColumn" highlight group
+        @{stspec}@  Specification derived from |hl-FoldColumn| highlight group
 
 sign                                                    *format-spec-key-sign*
         String, describes sign at the start of each line. Arguments (see 
@@ -411,20 +547,9 @@ sign                                                    *format-spec-key-sign*
         @.@         0 if no sign is placed on this line,
                     1 for text sign,
                     2 for icon sign
-        @{stspec}@  Specification derived from "SignColumn" highlight group or 
-                    whatever is defined in texthl property of the current sign 
-                    (see |:sign-define|).
-
-clstart                                              *format-spec-key-clstart*
-        String, describes start of cursor line. It is used only if 
-        'cursorline' is true and |format-o-IgnoreCursor| is false. Arguments 
-        (see |format-spec-description|) (listed only arguments with 
-        non-standart values):
-        Argument    Value ~
-        @@@         Empty string.
-        @.@         0 (zero)
-        @{stspec}@  Specification derived from "Normal" and "CursorLine" 
-                    highlight groups.
+        @{stspec}@  Specification derived from |hl-SignColumn| highlight group 
+                    or whatever is defined in texthl property of the current 
+                    sign (see |:sign-define|).
 
 linenr                                                *format-spec-key-linenr*
         String, describes line number at the start of each line without folds. 
@@ -434,10 +559,10 @@ linenr                                                *format-spec-key-linenr*
         @@@         Same as @-@ for normal lines or an empty string for 
                     difffillers and collapsedfillers
         @.@         0 (zero)
-        @{stspec}@  Specification derived from "LineNr" highlight group, from 
-                    both "Normal" and "CursorLine" highlight groups if 
-                    'cursorline' is true and |format-o-IgnoreCursor| is 
-                    false or from "Folded" highlight group for folded text
+        @{stspec}@  Specification derived from |hl-LineNr| highlight group, 
+                    from both |hl-Normal| and |hl-CursorLine| highlight groups 
+                    if 'cursorline' is true and |format-o-IgnoreCursor| is 
+                    false or from |hl-Folded| highlight group for folded text
 
 tagstart                                            *format-spec-key-tagstart*
         String, describes the start of each tag. Arguments (see 
@@ -452,16 +577,22 @@ line                                                    *format-spec-key-line*
         Arguments take only standart values (see |format-spec-description|). 
         Note that this the only required key.
 
-concealed                                          *format-spec-key-concealed*
-        String, describes the concealed character. Arguments (see 
+                                                *format-spec-key-concealed...*
+concealedstart                                *format-spec-key-concealedstart*
+        String, describes the start of concealed character. Arguments (see 
         |format-spec-description|) (listed only arguments with non-standart 
         values):
         Argument    Value ~
-        @@@         Text actually shown
-        @?@         Concealed text (this argument is unique for concealed key)
-        @&{stspec}@ Specification derived from actual highlight group (this 
-                    argument is unique for concealed key)
-        @{stspec}@  Specification derived from "Concealed" highlight group
+        @@@         |:syn-cchar|.
+        @{stspec}@  Specification derived from |hl-Concealed| highlight group
+
+concealedend                                    *format-spec-key-concealedend*
+        String, describes the end of concealed character. Arguments (see 
+        |format-spec-description|) (listed only arguments with non-standart 
+        values):
+        Argument    Value ~
+        @@@         |:syn-cchar|.
+        @{stspec}@  Specification derived from |hl-Concealed| highlight group
 
 tagend                                                *format-spec-key-tagend*
         String, describes the end of each tag. Arguments (see 
@@ -477,7 +608,7 @@ fold                                                    *format-spec-key-fold*
         Argument    Value ~
         @@@         Value returned by |foldtextresult()|
         @.@         0 (zero)
-        @{stspec}@  Specification derived from "Folded" highlight group
+        @{stspec}@  Specification derived from |hl-Folded| highlight group
 
 difffiller                                        *format-spec-key-difffiller*
         String, describes difffiller. Arguments (see 
@@ -487,7 +618,7 @@ difffiller                                        *format-spec-key-difffiller*
         @@@         @_difffillchar@
         @.@         (Total number of filler lines)-(Number of filler lines 
                                                     already created)
-        @{stspec}@  Specification derived from "DiffDelete" highlight group
+        @{stspec}@  Specification derived from |hl-DiffDelete| highlight group
 
 collapsedfiller                              *format-spec-key-collapsedfiller*
         String, describes collapsed filler. Arguments (see 
@@ -496,18 +627,7 @@ collapsedfiller                              *format-spec-key-collapsedfiller*
         Argument    Value ~
         @@@         Number of deleted lines
         @.@         0 (zero)
-        @{stspec}@  Specification derived from "DiffDelete" highlight group
-
-clend                                                  *format-spec-key-clend*
-        String, describes end of cursor line. It is used only if 'cursorline' 
-        is true and |format-o-IgnoreCursor| is false. Arguments (see 
-        |format-spec-description|) (listed only arguments with non-standart 
-        values):
-        Argument    Value ~
-        @@@         Empty string.
-        @.@         0 (zero)
-        @{stspec}@  Specification derived from "Normal" and "CursorLine" 
-                    highlight groups.
+        @{stspec}@  Specification derived from |hl-DiffDelete| highlight group
 
 lineend                                              *format-spec-key-lineend*
         String, describes each line end. Arguments (see 
@@ -518,10 +638,13 @@ lineend                                              *format-spec-key-lineend*
                     1 for folded lines
                     2 for difffiller,
                     3 for collapsedfiller
-        @{stspec}@  Specification derived from "Normal" highlight group. For 
-                    folded lines specification changes to "Folded" highlight 
-                    group, for difffiller and collapsedfiller lines 
-                    specification changes to "DiffDelete" highlight group.
+                    4 for trailing ~ filler lines
+        @{stspec}@  Specification derived from |hl-Normal| highlight group, 
+                    possibly joined with |sign| linehl group, |hl-CursorLine| 
+                    and/or |hl-DiffAdd|/|hl-DiffChange|. For folded lines 
+                    specification changes to |hl-Folded| highlight group, for 
+                    difffiller and collapsedfiller lines specification changes 
+                    to |hl-DiffDelete| highlight group.
 
 foldend                                              *format-spec-key-foldend*
         String, describes end of each possible fold. Used only if 
@@ -530,7 +653,7 @@ foldend                                              *format-spec-key-foldend*
         Argument    Value ~
         @@@         Value returned by |foldtextresult()|
         @.@         Fold level
-        @{stspec}@  Specification derived from "Folded" highlight group
+        @{stspec}@  Specification derived from |hl-Folded| highlight group
 
 sbsdend                                              *format-spec-key-sbsdend*
         String, describes the end of side-by-side diff line. Arguments (see 
@@ -541,7 +664,7 @@ sbsdend                                              *format-spec-key-sbsdend*
         @.@         Number of documents formatted
         @-@         Index of the current line (Note that index is not current 
                     line number)
-        @{stspec}@  Specification derived from "Normal" highlight group
+        @{stspec}@  Specification derived from |hl-Normal| highlight group
 
 end                                                      *format-spec-key-end*
         String, describes the end of the document. Arguments (see 
@@ -551,7 +674,7 @@ end                                                      *format-spec-key-end*
         @@@         Empty string
         @.@         0 (zero)
         @-@         Number of last formatted line
-        @{stspec}@  Specification derived from "Normal" highlight group
+        @{stspec}@  Specification derived from |hl-Normal| highlight group
 
 style                                                  *format-spec-key-style*
         String, describes the style of the given highlight group, this style 
@@ -575,6 +698,30 @@ strlen                                                *format-spec-key-strlen*
         %=...=% via @_strlen@. Default: >
             len(split(string, '\zs'))
 
+tagproc                                                  *format-spec-tagproc*
+        Function reference. If present this function will be called for every 
+        tag found with two arguments: options dictionary (see 
+        |format-spec-@_key@|, |format-spec-@__key@| and |format-spec-@___key@| 
+        for a list of keys you may find in this dictionary) and the tag 
+        dictionary. Tag dictionary contains all keys found in |taglist()| 
+        output and additionally the following keys:          *format-tag-keys*
+        Key      Description ~
+        _incurf  Boolean, true if tag is located in the current file.
+                 Note: will be false if tag is located in the current file, 
+                       but outside of the formatted region.
+        _found   Boolean, true if tag is referenced at least once in the 
+                 current file.
+        _tfname  String, filename relative to the current working directory.
+        _linenr  Number, number of line that contains tag definition.
+
+        This function may add some keys to tags dictionary in order to speed 
+        up tags processing.
+
+        Note: all keys that do not start with the underscore are reserved for 
+              |taglist()|, all keys that start with one underscore are 
+              reserved for formatvim. Use keys that start with two 
+              underscores.
+
 nolf                                                    *format-spec-key-nolf*
         Bool. Normally, new item in list returned by |format-func-format| 
         starts after each lineend, difffiller, collapsedfiller, fold, 
@@ -593,7 +740,17 @@ haslf                                                      *format-spec-haslf*
 addopts                                                  *format-spec-addopts*
         Dictionary. All keys from this dictionary are copied (|deepcopy()|) 
         and accessible as |format-spec-@__key@|. Only keys containing latin 
-        letters, digits and underscores are allowed.
+        letters, digits and underscores are allowed. Keys must not start with 
+        underscores.
+
+addoptsfun                                            *format-spec-addoptsfun*
+        Function that returns dictionary. All keys from this dictionary are 
+        copied (|deepcopy()|) and accessible as |format-spec-@___key@|. Only 
+        keys containing latin letters, digits and underscores are allowed. 
+        Keys must not start with underscores.
+
+        This function is called each time format is used. Before it is called 
+        keys defined in previous run are wiped out.
 
 Note that after each lineend, foldstart and foldend a newline will be added 
 unless nolf option is present: using "{range}FormatCommand format 
@@ -619,19 +776,15 @@ listed here are reserved and throw an error.
         Foreground and background colors (string with format "#RRGGBB"), same 
         as @fgcolor@ and @bgcolor@ inside %=...=%.
 %S                                                            *format-spec-%S*
-        Style id ("N" or "N_N" for characters affected by diff mode), same as 
-        %=@styleid@=%.
-%.S                                                          *format-spec-%.S*
-        Concealed style id ("N" or "N_N" for characters affected by diff 
-        mode), same as %=@&styleid@=%.
+        Style id ("N", "N_N", "N_N_N", …: numbers are added for signs, diff 
+        highlighting, 'cursorline' highlighting and so on), same as 
+        %=@styleid@=%. See also |format-o-UseStyleNames|.
 %N                                                            *format-spec-%N*
         Current line number, same as %=@-@=%.
 %C                                                            *format-spec-%C*
         Column number of the end of string, same as %=@.@=%.
 %s                                                            *format-spec-%s*
         String being formatted. Escaped using |format-spec-key-strescape|.
-%.s                                                          *format-spec-%.s*
-        Like |format-spec-%s|, but for concealed text.
 %:                                                            *format-spec-%:*
         All styles in |format-spec-key-begin| and |format-spec-key-end|, 
         current style only in other specification keys, same as 
@@ -711,7 +864,9 @@ of ordinary variables):
         {stspec}   Value ~
         styleid    ID of the current highlight group. For normal lines it is 
                    a single number, for lines with differencies it is equal to 
-                   {highID}_{diffhighID}.
+                   {hlID}_{diffhighID}. Signs and 'cursorline' may add 
+                   additional _{hlID} group.
+        name       Like above, but uses names in place of numbers.
         fgcolor    Foreground color transformed to "#RRGGBB" notation.
         bgcolor    Background color transformed to "#RRGGBB" notation.
         bold       Bold syntax attribute.
@@ -721,7 +876,9 @@ of ordinary variables):
 @~@                                                          *format-spec-@~@*
         Dictionary with style specification. For a list of its keys, see 
         |format-spec-@key@|.
-@_{option}@                                               *format-spec-@_opt@*
+@S@                                                          *format-spec-@S@*
+        Same as |format-spec-%S|.
+@_{option}@                                               *format-spec-@_key@*
         Value of the specified option. Possible {option}s:
         {option}      Value ~
         leadingspace  Space escaped using |format-spec-key-strescape| 
@@ -745,8 +902,8 @@ of ordinary variables):
         donr          1 if lines will be numbered normally, 0 otherwise.
         dornr         1 if lines will be numbered relatively, 0 otherwise.
         allfolds      1 if AllFolds is on, 0 otherwise
-        foldcolumn    0 if foldcolumn is not formatted, width of foldcolumn  
-                      in characters otherwise
+        foldcolumn    0 if foldcolumn is not formatted, width of foldcolumn in 
+                      characters otherwise
         ignorecursor  0 if IgnoreCursor is off and either 'cursorcolumn' is 
                       set or cursor is within formatted line range, 
                       1 otherwise.
@@ -756,6 +913,9 @@ of ordinary variables):
                       generated
         formatconcealed  0 if concealed text is ignored, 1 or 2 otherwise, see 
                       |format-o-FormatConcealed|.
+        formatmatches, formatsearch, formatsomematch
+                      0 if related match are not be formatted, 1 if they are. 
+                      See also |format-o-FormatMatches|.
         tags          Dictionary where keys are tag names and values are lists 
                       of pairs [{tag-location}, {tag-options}] where each tag 
                       location is either a line number (if tag is located in 
@@ -770,6 +930,9 @@ of ordinary variables):
                       1 otherwise, see |format-o-IgnoreCursor|
         dosigns       0 if signs are not present or ignored, 1 otherwise.
                       See |format-o-IgnoreSigns|.
+        dodiff        1 if diffs will be formatted, 0 otherwise.
+                      See |format-o-IgnoreDiff|.
+        usestylenames Equal to value of |format-o-UseStyleNames|.
         signdefinitions  Dictionary where keys are sign names and values are 
                       dictionaries {{sign-description}: {value}} (with 
                       additional key `id' containing sign name), see 
@@ -782,22 +945,15 @@ of ordinary variables):
         Value of the specified key defined in |format-spec-addopts| (well, 
         |deepcopy()| of it).
 
-The following arguments are unique for the |format-spec-key-concealed|:
-@?@                                                          *format-spec-@?@*
-        Concealed text (text that is actually present in the file). Empty 
-        string if text is not concealed.
-@&{stspec}@                                               *format-spec-@&key@*
-        Value of the actual style specification. For a list of possible 
-        {stspec}s see |format-spec-@key@|. It is an alias for 
-        |format-spec-@key@| unless used inside |format-spec-key-concealed|.
-@&@                                                          *format-spec-@&@*
-        String with style computed for actual style specification. It is an 
-        alias for |format-spec-@:@| unless used inside 
-        |format-spec-key-concealed|.
-@^@                                                          *format-spec-@^@*
-        Dictionary with actual style specification. For a list of possible 
-        keys, see |format-spec-@key@|. It is an alias for |format-spec-@~@| 
-        unless used outside |format-spec-key-concealed|.
+@___key@                                                *format-spec-@___key@*
+        Value of the specified key defined in |format-spec-addoptsfun| (well, 
+        |deepcopy()| of it).
+
+@<@{expr}@>@                               *format-spec-@<@* *format-spec-@>@*
+        Evaluate {expr}, perform @…@ substitutions on the result of the 
+        evaluation and replace the whole @<@…@>@ with the last result. Useful 
+        for optimizations. You can use |format-spec-@_key@| and 
+        |format-spec-@__key@| in {expr}. No nesting allowed.
 
 Note that these expressions are replaced in arbitrary order, so you need to 
 avoid such ambigious constructions as @_columns@-@=@. Use spaces or brackets 
@@ -860,6 +1016,8 @@ tokens                                                  *format-format-tokens*
             cl      Style of cursor line. Datas: style.
             ln      Line number. Datas: line number and style.
             ts      Tag start. Datas: tag name.
+            cs      Concealed character start. Datas: shown text, style.
+            ce      Concealed character end. Datas: shown text, style.
             te      Tag end. Datas: tag name.
             l       Regular text. Datas: text, its style.
             c       Concealed text. Datas: shown text, its style, concealed 
