@@ -49,7 +49,7 @@ Differencies with built-in |:TOhtml|:
       setting |g:html_prevent_copy|.
     ∙ 'fillchars' vert suboption support (2html supports only diff and fold 
       suboptions).
-    ∙ Matches and 'hlsearch' support.
+    ∙ Matches and 'hlsearch' support. |g:format_FormatMatches|
     ∙ More correct highlighting in some cases.
     ∙ Support for formats other then HTML/XHTML (|format-formats|). Makes it 
       relatively easy to add new format to the list of supported formats 
@@ -505,7 +505,8 @@ foldstart                                          *format-spec-key-foldstart*
         |format-o-AllFolds| is true. Arguments (see |format-spec-description|) 
         (listed only arguments with non-standart values):
         Argument    Value ~
-        @@@         Value returned by |foldtextresult()|
+        @@@         Value returned by |foldtextresult()| concatenated with 
+                    fold, sign and column number contents
         @.@         Fold level
         @{stspec}@  Specification derived from |hl-Folded| highlight group
 
@@ -651,7 +652,8 @@ foldend                                              *format-spec-key-foldend*
         |format-o-AllFolds| is true. Arguments (see |format-spec-description|) 
         (listed only arguments with non-standart values):
         Argument    Value ~
-        @@@         Value returned by |foldtextresult()|
+        @@@         Value returned by |foldtextresult()| concatenated with 
+                    fold, sign and column number contents
         @.@         Fold level
         @{stspec}@  Specification derived from |hl-Folded| highlight group
 
