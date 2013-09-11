@@ -20,13 +20,13 @@ Testing:
       and matches highlighting work alltogether
     - Test IgnoreDiff option: with and without diffformat
     - Test 'highlight'
-
     - Test formats with and without persistent* conditions
-
     - Test tag ending at EOL (regression: it used to skip tagend)
-
     - Test non-full-file diffformat: check whether it may yield lists with 
       different number of items.
+    - Test formats with per cent signs.
+    - Test html format with 'fillchars' option containing something that should 
+      be escaped.
 
 UI:
     - When using tags add support for progress bar to formattags function
@@ -38,7 +38,6 @@ Customization:
 
 Refactoring:
     - Split main formatting function
-    - Move persistent* variables to opts
 
 Optimizations:
 
@@ -46,5 +45,3 @@ Bugs:
     - Fix handling of `!!' and `!' tags in help files
     - Fix 'highlight' support: 'highlight' option may hold something other then 
       list of C:HiGroup pairs.
-    - Fix sign columns highlighting near diff filler (see 
-      signs.yaml%icons-noPATH)

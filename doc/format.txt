@@ -8,6 +8,7 @@ CONTENTS                                                     *format-contents*
         2.2. Features                             |format-features|
     3. Options                                    |format-options|
         3.1. HTML specification options           |format-options-html|
+        3.2. vimorg-tagged specification options  |format-options-vo-tagged|
     4. Format specification description           |format-spec|
         4.1. Dictionary keys                      |format-spec-keys|
         4.2. String descriptions                  |format-spec-description|
@@ -55,6 +56,9 @@ Differencies with built-in |:TOhtml|:
       relatively easy to add new format to the list of supported formats 
       (|format-f-format.add|).
     ∙ 2html still has more options for HTML formatting though.
+    ∙ Full 'foldcolumn' support: 2html sets foldcolumn to either 'foldcolumn' 
+      value or maximum fold level, whichever is greater, formatvim uses 
+      'foldcolumn' value, fully emulating what vim shows.
 
 
 Plugin requires some additional plugins:
@@ -410,6 +414,34 @@ HTMLTitleExpr :: |expr|                        *format-o-HTMLAddLinkAtTagLine*
     Determines what file name should go into title.
     Default: `expand('%:p:~')`.
 
+------------------------------------------------------------------------------
+3.2. vimorg-tagged specification options            *format-options-vo-tagged*
+
+   *g:format_VOHelpPrefix* *g:format_VOHelpSuffix* *g:format_VOHelpAnchorExpr*
+VOHelpPrefix :: string                                 *format-o-VOHelpPrefix*
+VOHelpSuffix :: string                                 *format-o-VOHelpSuffix*
+VOHelpAnchorExpr :: |expr|                         *format-o-VOHelpAnchorExpr*
+    All these options determine how links at the bottom should look like: they 
+    are used as below: >
+        [1] {VOHelpPrefix}{filename}{VOHelpSuffix}#{eval(VOHelpAnchorExpr)}
+<    Defaults are the following: >
+        [1] http://vimpluginloader.sourceforge.net/doc/format.txt.html#line220-0 (g:format_IgnoreTags)
+            1111111111111111111111111111111111111111111222222222233333 4444444444444444444444444444444
+<    or >
+        [1] http://vimpluginloader.sourceforge.net/doc/options.txt.html#.27list.27
+            11111111111111111111111111111111111111111112222222222233333 4444444444
+<    where
+    1 is VOHelpPrefix (note: includes the trailing slash).
+      Default is "http://vimpluginloader.sourceforge.net/doc/".
+    2 is help file name.
+    3 is VOHelpSuffix. Default is ".html".
+    4 is a result of |eval()|uating VOHelpAnchorExpr.
+      Default is "tag.__ename=~#':'?('line'.tag._linenr.'-0 ('.tag.name.')'):(tag.__ename)".
+      Note: here it uses `tag` variable which is a dictionary described at 
+            |format-tag-keys|. In addition to those keys `__ename` key is 
+            available which is the same as described at 
+            |format-o-HTMLAnchorFileNameExpr|.
+
 ==============================================================================
 4. Format specification description                              *format-spec*
 
@@ -692,13 +724,14 @@ style                                                  *format-spec-key-style*
 strescape                                          *format-spec-key-strescape*
         String, specifies expression that should be used to obtain escaped 
         string for current format. In expression `@@@' should represent 
-        escaped value.
+        escaped value. Should not depend on anything except 
+        |format-spec-@_key@|, |format-spec-@__key@| or |format-spec-@___key@| 
+        and |format-spec-@@@|.
 
 strlen                                                *format-spec-key-strlen*
         Function reference, specifies the function that counts length of line 
         for "%_" and "%-" formats and "@=@" argument. Can be accessed inside
-        %=...=% via @_strlen@. Default: >
-            len(split(string, '\zs'))
+        %=...=% via @_strlen@. Default: |strdisplaywidth()|.
 
 tagproc                                                  *format-spec-tagproc*
         Function reference. If present this function will be called for every 
@@ -753,6 +786,19 @@ addoptsfun                                            *format-spec-addoptsfun*
 
         This function is called each time format is used. Before it is called 
         keys defined in previous run are wiped out.
+
+state                                                      *format-spec-state*
+sbsdstate                                              *format-spec-sbsdstate*
+        Dictionary that contains mutable state and |Dictionary-function|s that 
+        manipulate it, receiving this dictionary as |self| variable. 
+        Difference between state and sbsdstate keys is that the former is 
+        regererated (|deepcopy()|) before each next processed buffer and the 
+        latter is regenerated once per |:Format| call.
+        If these dictionaries contain `init' key then it will be called with 
+        a single opts (see |format-spec-@_key@|) dictionary as an argument 
+        once after each regeneration. It will as well receive newly generated 
+        dictionary as |self| variable.
+        See also |format-spec-@!key@|: this is how you should use it.
 
 Note that after each lineend, foldstart and foldend a newline will be added 
 unless nolf option is present: using "{range}FormatCommand format 
@@ -885,6 +931,8 @@ of ordinary variables):
         {option}      Value ~
         leadingspace  Space escaped using |format-spec-key-strescape| 
                       expression.
+        fillchars     Dictionary containing values from 'fillchars' options. 
+                      Not escaped.
         difffillchar  Value of the diff item in 'fillchars' option if it is 
                       present, "-" otherwise. Escaped.
         foldfillchar  Value of the fold item in 'fillchars' option if it is 
@@ -941,7 +989,6 @@ of ordinary variables):
                       |:sign-define|.
         placedsigns   Dictionary where keys are line numbers and values are 
                       2-tuples (id, sign-definition).
-        strescape     String equal to |format-spec-key-strescape|.
 
 @__key@                                                  *format-spec-@__key@*
         Value of the specified key defined in |format-spec-addopts| (well, 
@@ -950,6 +997,11 @@ of ordinary variables):
 @___key@                                                *format-spec-@___key@*
         Value of the specified key defined in |format-spec-addoptsfun| (well, 
         |deepcopy()| of it).
+
+@!key@                                                    *format-spec-@!key@*
+@!!key@                                                  *format-spec-@!!key@*
+        Value of the specified key defined in |format-spec-state| (first) or 
+        |format-spec-sbsdstate| (second).
 
 @<@{expr}@>@                               *format-spec-@<@* *format-spec-@>@*
         Evaluate {expr}, perform @…@ substitutions on the result of the 
@@ -968,6 +1020,7 @@ html                                                      *format-format-html*
         Specification for html format. Supports numbered lines, currently 
         closed folds, tags, AllFolds option. Uses CSS styles; CSS :hover and 
         JavaScript for AllFolds.
+        See also |format-options-html|.
 html-vimwiki                                      *format-format-html-vimwiki*
         Specification for html format that can be pasted to vim.wikia.com 
         without any modifications. Supports numbered lines, currently closed 
@@ -982,6 +1035,17 @@ latex-xcolor                                      *format-format-latex-xcolor*
 csi                                                        *format-format-csi*
         Uses terminal escape sequences to describe color information.
         See also |format-o-ColorFile|.
+vimorg-tagged                                           *format-vimorg-tagged*
+        Does not emit any highlighting, its sole purpose is formatting 
+        description setting for www.vim.org like this: >
+            This is the example description. Features:
+
+            - Example description contains link to an option: 'list' [1]
+            - Example description contains link to a command: :TOhtml [2]
+
+            [1] http://vimpluginloader.sourceforge.net/doc/options.txt.html#.27list.27
+            [2] http://vimpluginloader.sourceforge.net/doc/syntax.txt.html#line420-0 (:TOhtml)
+<	See also |format-options-vo-tagged|.
 tokens                                                  *format-format-tokens*
         Format useful only if you want to export color information in order to 
         process it outside of vim: >
@@ -1030,5 +1094,4 @@ tokens                                                  *format-format-tokens*
             cf      Collapsed filler line. Datas: number of deleted lines, 
                     style of filler line.
 
-vim: ft=help:tw=78
-
+vim: ft=help:tw=78:ts=8
