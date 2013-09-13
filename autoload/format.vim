@@ -1,6 +1,6 @@
 "▶1 Начало
 scriptencoding utf-8
-execute frawor#Setup('3.0', {'@/options': '0.0',
+execute frawor#Setup('4.0', {'@/options': '0.0',
             \                     '@/os': '0.0',
             \                    '@/fwc': '0.0',
             \        '@/fwc/constructor': '4.2',
@@ -89,6 +89,12 @@ let s:_options={
             \'HTMLAddLinkAtTagLine':   {'default': 1, 'filter': 'bool'},
             \'HTMLTitleExpr':          {'default': 'expand(''%:p:~'')',
             \                           'checker': 'type string',},
+            \'HTMLFontFamily':         {'default': '"Bitstream Vera Sans Mono",'.
+            \                                      '"DejaVu Sans Mono",'.
+            \                                      'Monaco,'.
+            \                                      'monospace',
+            \                           'checker': 'type string'},
+            \'HTMLAdditionalCSS':      {'default': '', 'checker': 'type string'},
             \
             \'VOHelpPrefix':     {'default': 'http://vimpluginloader.sourceforge.net/doc/',
             \                     'checker': 'type string',},
@@ -117,6 +123,7 @@ let s:_messages={
             \   'nelines': 'Internal error: formatted buffer does not contain '.
             \              'enough lines. If you can reproduce this error please '.
             \              'post a bug report',
+            \'noatdollar': '@$@ is not allowed inside @<@expr@>@ and %!cmd!%.',
         \}
 "▶1 squote
 function s:F.squote(str)
@@ -185,8 +192,8 @@ let s:fmtexpressions={
             \ '@': "'@'",
             \ '~': '@_difffillchar@',
             \'.~': '@_foldfillchar@',
-            \ '-': 'repeat(@_difffillchar@,@_columns@-@=@)',
-            \'.-': 'repeat(@_foldfillchar@,@_columns@-@=@)',
+            \ '-': '@$@repeat(@_difffillchar@,@_columns@-@=@)',
+            \'.-': '@$@repeat(@_foldfillchar@,@_columns@-@=@)',
             \ '|': '@_vertseparator@',
         \}
 "▶2 s:fcompexpressions
@@ -199,7 +206,7 @@ let s:fcompexpressions={
             \                       "(''.".s:spacesexpr.".''.@@@))''):".
             \                   "(".s:spacesexpr.".''.@@@'')):".
             \               "(''\"\"''))@>@'",
-            \ '+': "'repeat('.a:opts.qleadingspace.','.a:opts.columns.'-@=@)'",
+            \ '+': "'@$@repeat('.a:opts.qleadingspace.','.a:opts.columns.'-@=@)'",
             \ '_': "'@<@".
             \           "(@_dosomenr@?".
             \               "(''repeat(''.s:F.squote(@_leadingspace@).'',''.@_linenumlen@.'')''):".
@@ -261,7 +268,7 @@ let s:atargs={
 let s:atexpratargs={
             \'opts': 'a:opts',
         \}
-function s:F.getats(str, opts, req, key, atargs)
+function s:F.getats(str, opts, req, key, atargs, exprempty)
     let r=''
     let str=a:str
     while !empty(str)
@@ -279,14 +286,14 @@ function s:F.getats(str, opts, req, key, atargs)
             if idx!=-1
                 let expr=str[2:(idx-1)]
                 try
-                    let expr=s:F.getats(expr, a:opts, 0, 0, s:atexpratargs)
+                    let expr=s:F.getats(expr, a:opts, 0, 0, s:atexpratargs, -1)
                     let result=eval(expr)
                 endtry
                 if type(result)!=type('')
                     call s:_f.throw('atnstr')
                 endif
                 let arg=''
-                let r.=s:F.getats(result, a:opts, a:req, a:key, a:atargs)
+                let r.=s:F.getats(result, a:opts, a:req, a:key, a:atargs, -1)
                 let str=str[(idx+3):]
             endif
         elseif atv is# '_' && str[1] is# '_'
@@ -354,14 +361,25 @@ function s:F.getats(str, opts, req, key, atargs)
             call s:F.inqreq(a:req, 'a:cspec')
             let arg=a:atargs.cspec.'[0].'.(a:opts.usestylenames?('name'):('styleid'))
             let str=str[3:]
+        elseif atv is# '$' && str[1] is# '@'
+            if a:exprempty is 0
+                call s:F.inqreq(a:req, '=')
+                let r=substitute(r, '\.$', '', '')
+                let r.="\nlet str\.="
+            elseif a:exprempty is -1
+                call s:_f.throw('noatdollar')
+            endif
+            let str=str[2:]
+            let arg=''
         elseif atv is# '=' && str[1] is# '@'
-            call s:F.inqreq(a:req, '=')
             call s:F.inqreq(a:req, 'a:cur')
             call s:F.inqreq(a:req, 'a:opts')
             call s:F.inqreq(a:req, 'a:opts.strlen')
-            let r=substitute(r, '\v%(^|\''@<=\.)(%(%(\''\.)@!.)*)',
-                        \    '\nlet str.=\1'.a:atargs.opts.
-                        \                   '.strlen('.a:atargs.cur.'.str)', '')
+            if a:req isnot 0 && has_key(a:req, '=')
+                let r.=a:atargs.opts.'.strlen('.a:atargs.cur.'.str)'
+            else
+                let r.=a:atargs.opts.'.strlen('.a:atargs.cur.')'
+            endif
             let arg=''
             let str=str[2:]
         elseif atv is# '~'
@@ -397,48 +415,39 @@ function s:F.getats(str, opts, req, key, atargs)
     endwhile
     return r
 endfunction
+"▶1 addexprchunk
+function s:F.addexprchunk(prevchar, expr, exprchunk)
+    if empty(a:exprchunk) || a:exprchunk is# '""' || a:exprchunk is# "''"
+        return [a:prevchar, a:expr]
+    elseif (a:prevchar is# "'" || a:prevchar is# '"') && a:exprchunk[0] is# a:prevchar
+        return [a:exprchunk[-1:], a:expr[:-3].a:exprchunk[1:].'.']
+    else
+        return [a:exprchunk[-1:], a:expr.a:exprchunk.'.']
+    endif
+endfunction
 "▶1 procpc
 function s:F.procpc(cf, str, opts, key, req, atargs, escpc)
     let str=a:str
-    "▶2 Process %*
-    let chunks=[]
+    let prevchar=0
+    let expr=''
     while !empty(str)
         let pidx=stridx(str, '%')
         if pidx==-1
-            call add(chunks, s:F.squote(str))
+            let [prevchar, expr]=s:F.addexprchunk(prevchar, expr, s:F.squote(str))
             break
         elseif pidx!=0
-            call add(chunks, s:F.squote(str[:(pidx-1)]))
+            let [prevchar, expr]=s:F.addexprchunk(prevchar, expr, s:F.squote(str[:(pidx-1)]))
         endif
         let str=str[(pidx+1):]
         let [shift, chunk]=s:F.getexpr(a:cf, str, a:opts)
+        let str=str[(shift):]
         if a:escpc
             let chunk=substitute(chunk, '%', '%%', 'g')
         endif
-        call add(chunks, s:F.getats(chunk, a:opts, a:req, a:key, a:atargs))
-        let str=str[(shift):]
+        let exprchunk=s:F.getats(chunk, a:opts, a:req, a:key, a:atargs, empty(expr))
+        let [prevchar, expr]=s:F.addexprchunk(prevchar, expr, exprchunk)
     endwhile
-    "▶2 Join chunks
-    let prevchar=0
-    let expr=''
-    while !empty(chunks)
-        let chunk=remove(chunks, 0)
-        if empty(chunk) || chunk is# '""' || chunk is# "''"
-            continue
-        endif
-        let firstchar=chunk[0]
-        if (prevchar is# "'" || prevchar is# '"') && firstchar is# prevchar
-            let chunk=chunk[1:]
-            let expr=expr[:-3]
-        endif
-        let expr.=chunk.'.'
-        let prevchar=chunk[-1:]
-    endwhile
-    let expr=expr[:-2]
-    if a:req isnot 0 && has_key(a:req, '=')
-        let expr=substitute(expr, '\V.\n\@=', '', 'g')
-    endif
-    "▲2
+    let expr=substitute(expr, '\v\.%(\n|$)@=', '', 'g')
     return expr
 endfunction
 "▶1 ftmcompile
@@ -471,7 +480,7 @@ function s:F.fmtcompileone(cf, str, opts, key)
     if str[0:1] is# '%!'
         let cmd=matchstr(str, '\v.{-}%(\!\%)@=', 2)
         let str=str[(4+len(cmd)):]
-        let cmd=s:F.getats(cmd, a:opts, r.req, a:key, s:defatargs)
+        let cmd=s:F.getats(cmd, a:opts, r.req, a:key, s:defatargs, -1)
         let r.isexpr=0
     endif
     "▲2
@@ -480,7 +489,7 @@ function s:F.fmtcompileone(cf, str, opts, key)
     if exists('cmd')
         let funstr.=cmd."\n"
     endif
-    let expr=s:F.procpc(a:cf, str, a:opts, a:key, r.req, s:defatargs, 0)."\n"
+    let expr=s:F.procpc(a:cf, str, a:opts, a:key, r.req, s:defatargs, 0)
     let r.isconst=empty(filter(keys(r.req), 'v:val[0:5] isnot# "a:opts"'))
     if has_key(r.req, '=')
         let funstr.='let str='.expr."\nreturn str"
@@ -583,7 +592,7 @@ let s:formats.html={
             \                       'content="text/html; charset=utf-8" />'.
             \                '<meta name="generator" content="format.vim" />'.
             \                '<style type="text/css"> '.
-            \                'body { font-family: monospace; '.
+            \                'body { font-family: %''@___fontfamily@''%; '.
             \                        'white-space: nowrap; '.
             \                        'margin: 0; padding: 0; border: 0;  '.
             \                        'color: %''@_fgcolor@''%; '.
@@ -617,7 +626,7 @@ let s:formats.html={
             \                'input { display: inline; '.
             \                        'padding: 0; margin: 0; '.
             \                        'border: 0; background: none; '.
-            \                        'font-family: monospace; '.
+            \                        'font-family: inherit; '.
             \                        'font-size: 100%%; '.
             \                        'pointer-events: none; '.
             \                        'height: 100%%; }'.
@@ -643,7 +652,7 @@ let s:formats.html={
             \                                      'padding: 0; '.
             \                                      'border: 0; } "):'.
             \                    '(""))''%'.
-            \                '%:</style>'.
+            \                '%:%''@___additionalcss@''%</style>'.
             \                '<title>%'''.substitute(s:escapehtml, '\V@@@',
             \                                        'eval(@___titleexpr@)', '').
             \                '''%</title>'.
@@ -709,10 +718,8 @@ let s:formats.html={
             \                                     '''g'')''%', ''),
             \'fold':         '<span class="Text">%s</span>'.
             \                '<span class="FoldFiller">% %.-</span>',
-            \'difffiller':   '<span class="DiffFiller">%-</span>',
-            \'collapsedfiller': '<span class="CollapsedFiller">'.
-            \                       '%~ Deleted lines: %s %-'.
-            \                   '</span>',
+            \'difffiller':   '%-',
+            \'collapsedfiller': '%~ Deleted lines: %s %-',
             \'foldstart':    '<div id="fold%N" class="closed-fold" '.
             \                      'onclick="toggleFold(event, ''fold%N'')">'.
             \                   '<div class="toggle-open s%S" id="cf%N">'.
@@ -725,9 +732,11 @@ let s:formats.html={
             \'sbsdsep':      '</td><td class="SbSDSep SbSDSep%C s%S">%|</td>'.
             \                '<td class="SbSD%C">',
             \'sbsdend':      '</td></tr>',
-            \'sign':         printf(s:htmlinput, 'Sign', 2, '%s', ''),
+            \'sign':         printf(s:htmlinput,
+            \                 'Sign %''@__signstylelist@[@.@]''%', 2, '%s', ''),
             \'addopts': {'stylelist': ['Line', 'Fold', 'DiffFiller',
             \                          'CollapsedFiller', 'TrailLine'],
+            \            'signstylelist': ['SignAbsent', 'SignText', 'SignIcon'],
             \            'replaces': s:htmlreplaces,},
         \}
 unlet s:htmlreplaces
@@ -775,7 +784,7 @@ function s:formats.html.tagproc(opts, tag)
         let fname=a:opts.strescape(eval(a:opts.__anchorfnameexpr))
         let a:tag.__href=fname.a:tag.__href
     endif
-    let a:tag.__anchor='<a href="'.a:tag.__href.'">'
+    let a:tag.__anchor='<a class="Tag" href="'.a:tag.__href.'">'
     return a:tag
 endfunction
 "▶3 addoptsfun
@@ -784,7 +793,9 @@ function s:formats.html.addoptsfun()
                 \      'usetagname': s:_f.getoption('HTMLUseTagNameInAnchor'),
                 \ 'anchorfnameexpr': s:_f.getoption('HTMLAnchorFileNameExpr'),
                 \'addlinkattagline': s:_f.getoption('HTMLAddLinkAtTagLine'),
-                \       'titleexpr': s:_f.getoption('HTMLTitleExpr')
+                \       'titleexpr': s:_f.getoption('HTMLTitleExpr'),
+                \      'fontfamily': s:_f.getoption('HTMLFontFamily'),
+                \   'additionalcss': s:_f.getoption('HTMLAdditionalCSS'),
             \}
 endfunction
 "▲3
@@ -2216,7 +2227,7 @@ function s:F.initcfopts(opts, cf)
         if opts.collapsafter
             let opts.persistentfiller=0
         elseif a:cf.has('difffiller')
-            let opts.persistentfiller=!a:cf.hasreq('difffiller', ['a:line', 'a:char', '=', 'a:cf'])
+            let opts.persistentfiller=!a:cf.hasreq('difffiller', ['a:line','a:char','a:cur','a:cf'])
         else
             let opts.persistentfiller=1
         endif
@@ -2771,9 +2782,10 @@ function s:F.format(type, slnr, elnr, options, ...)
           call      ff._up()
         endif
         call        ff.addif('has_key(%sign,''text'')')
-        call            ff.letcf('%scols[%sname]', 'sign','%sign.text','%spec',0,1)
+        call            ff.letcf('%scols[%sname]', 'sign','%sign.text','%spec', 0, 1)
         call        ff.else()
-        call            ff.letcf('%scols[%sname]', 'sign', '''  ''',  '%scspec', 0,1)
+        " XXX If sign is missing text attribute texthl attribute does not apply
+        call            ff.letcf('%scols[%sname]', 'sign', '''  ''',  '%scspec', 0, 1)
         call        ff.endif()
         call    ff.endfor()
       endif

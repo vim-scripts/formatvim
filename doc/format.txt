@@ -21,15 +21,13 @@ This plugin provides the ability to convert current file to colored HTML,
 BBcode, (in future) LaTeX or whatever you have written specification for.
 
 Features:
-    ∙ Flexible format specifications
-    ∙ Ability to create abstract stylesheets
+    ∙ Flexible format specifications.
+    ∙ Ability to create abstract stylesheets.
     ∙ 'list' and 'listchars' options support (only tab, trail, eol and conceal 
-      for now)
-    ∙ Diffed buffers support (if file is in diff mode and current line is 
-      different from other's file line then foreground color is taken from 
-      current syntaxID and background color is taken from diff syntax ID)
-    ∙ Support for creating numbered lines
-    ∙ Folds support
+      for now).
+    ∙ Side-by-side diffs support. |format-side-by-side-diff|
+    ∙ Support for creating numbered lines.
+    ∙ Dynamic folds support. |g:format_AllFolds|
 
 Differencies with built-in |:TOhtml|:
     ∙ For large files formatting using my plugin is faster.
@@ -133,6 +131,7 @@ Note: formatvim supports VAM (https://github.com/MarcWeber/vim-addon-manager).
                            (actual value is ignored), with `matches' or `all' 
                            it formats |getmatches()| output.
                            Overrides |format-o-FormatMatches|.
+                                                    *format-side-by-side-diff*
                                                     *format-action-diffformat*
 :{range}Format diffformat [{formatName} [{option1} {value1}]]
             Like |format-action-format|, but create a side-by-side diff file. 
@@ -413,6 +412,79 @@ HTMLAddLinkAtTagLine :: Bool                   *format-o-HTMLAddLinkAtTagLine*
 HTMLTitleExpr :: |expr|                        *format-o-HTMLAddLinkAtTagLine*
     Determines what file name should go into title.
     Default: `expand('%:p:~')`.
+
+                                                     *g:format_HTMLFontFamily*
+HTMLFontFamily :: string                             *format-o-HTMLFontFamily*
+    Determins font-family property in embedded CSS.
+    Default: `"Bitstream Vera Sans Mono","DejaVu Sans Mono",Monaco,monospace`.
+
+                                                  *g:format_HTMLAdditionalCSS*
+HTMLAdditionalCSS :: string                       *format-o-HTMLAdditionalCSS*
+    Determines CSS string that will be added at the very end of <style> tag 
+    contents. Default is empty.
+    Useful information about possible selectors:
+
+    Line selectors:
+    Selector          Description ~
+    .Line             Attached to the outer container of the regular line. If 
+                      side-by-side diff is active outer container is wrapped 
+                      into table line.
+    .Fold             Same as above, but for folded lines.
+                      See |format-o-IgnoreFolds|.
+    .DiffFiller       Same as above, but for diff filler lines.
+    .CollapsedFiller  Same as above, but for collapsed diff fillers.
+                      See |format-o-CollapsFiller|.
+    .TrailLine        Same as above, but for trailing `~` lines. Can only be 
+                      seen in side-by-side diff in some rare cases (e.g. when 
+                      diffing against an empty file).
+                      See |format-side-by-side-diff|.
+    #line{n}-{b}      Outer container for line number {n}. {b} is 0 unless 
+                      side-by-side diff is being generated, otherwise it is 
+                      number of the buffer.
+
+    Fold selectors, see |format-o-IgnoreFolds| and |format-o-AllFolds|:
+    Selector             Description ~
+    .Fold > .Text        Text inside collapsed fold.
+    .Fold > .FoldFiller  Fold filler inside collapsed fold.
+
+    |format-side-by-side-diff| selectors:
+    Selector     Description ~
+    .SbSDLine    Outer container for some line in all buffers in 
+                 a side-by-side diff.
+    .SbSD{n}     Outer container for a buffer in a side-by-side diff.
+    .SbSDSep     Container for 'fillchars'/vert that separates two diffed 
+                 buffers.
+    .SbSDSep{n}  Same as above, but only for separator between (n-1)’th diffed 
+                 buffer and n’th.
+    #sbsd{n}     Outer container for a line {n}. Note that due to diff fillers 
+                 and folds this may have nothing to do with actual line number 
+                 in any of the diffed buffers.
+
+    |format-o-FormatConcealed|==2 selectors:
+    Selector               Description ~
+    .Concealed             Container for both concealed and shown text.
+    .Concealed > .Shown    Container for the |:syn-cchar|.
+    .Concealed > .Present  Container for the text actually present in the 
+                           buffer.
+
+    Tags selectors, see |format-o-IgnoreTags|:
+    Selector      Description ~
+    .Tag          Link to some tag definition.
+    .TagLink      Container for quick link near tag definition. Applicable 
+                  only if |format-o-HTMLAddLinkAtTagLine| is true.
+    .TagLink > a  Like above, but selects the link itself.
+
+    Selectors for various columns:
+    Selector     Description ~
+    .LineNR      Container for line number, see |format-o-NoLineNR|, 'number' 
+                 and 'relativenumber' options.
+    .FoldColumn  Container for fold column, see |format-o-IgnoreFolds|, 
+                 |format-o-FoldColumn| and 'foldcolumn' options.
+    .Sign        Container for |signs|, see |format-o-IgnoreSigns|.
+    .SignImage   Same as above, but selects only signs that use icons.
+    .SignText    Same as above, but selects only signs that do not use icons.
+    .SignAbsent  Same as above, but selects only sign columns in lines where 
+                 no sign is defined.
 
 ------------------------------------------------------------------------------
 3.2. vimorg-tagged specification options            *format-options-vo-tagged*
@@ -903,10 +975,13 @@ of ordinary variables):
         String with all styles in |format-spec-key-begin| and 
         |format-spec-key-end|, string with current style in other 
         specification keys.
+                                                             *format-spec-@$@*
 @=@                                                          *format-spec-@=@*
-        Length of the string of the current line before expression. Before 
-        using this ensure that there are no "'." sequences before it inside 
-        character expression.
+        Length of the string of the current line before expression. You must 
+        split format with @$@ at the very top level of expr before using it to 
+        get valid values. Example: >
+            Some text<span class="Filler">%''@$@repeat(@_foldfillchar@),@_columns@-@=@)''%</span>
+<	You do not have to use it if your filler is not followed by any text.
 @{stspec}@                                                 *format-spec-@key@*
         Value of the style specification. Possible {stspec}s:
         {stspec}   Value ~
