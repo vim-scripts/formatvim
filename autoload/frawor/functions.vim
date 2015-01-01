@@ -277,7 +277,7 @@ unlet s:subs
 function s:F.wrapfunc(plugdict, funopts, fundictsname, fname)
     let fname=a:fname
     let fdicts=s:{a:fundictsname}
-    let fundef =  {'id': printf('%x', fdicts.nextid),
+    let fundef =  {'id': printf('x%x', fdicts.nextid),
                 \'name':   fname,
                 \'plid': a:plugdict.id,}
     let fdicts.nextid+=1

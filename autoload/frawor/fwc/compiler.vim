@@ -330,7 +330,7 @@ function s:compiler.getfunstatvar(name, init, ...)
                 \                   (1))
         let id=a:1
     else
-        let id=printf('%x', self.vids[a:name])
+        let id=printf('x%x', self.vids[a:name])
         let self.vids[a:name]+=1
     endif
     let self.vars[a:name][id]=a:init
@@ -432,11 +432,11 @@ function s:compiler.getvar(var, ...)
 endfunction
 "▶1 getlvarid       :: varname + self → varname
 function s:compiler.getlvarid(v)
-    return printf('@$@%s%X', a:v, len(self._stack))
+    return printf('@$@%sx%X', a:v, len(self._stack))
 endfunction
 "▶1 getulvarid      :: varname + self → varname
 function s:compiler.getulvarid(v)
-    let lvarid=printf('@$@%s%X', a:v, len(self._stack))
+    let lvarid=printf('@$@%sx%X', a:v, len(self._stack))
     let i=0
     while has_key(self.lvars, printf('%s_%X', lvarid, i))
         let i+=1

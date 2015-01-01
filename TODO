@@ -1,6 +1,5 @@
 Main features:
     - Add 'colorcolumn' support
-    - Add spelling support
     - Add allfolds support in diffformat mode
     - Add 'wrap' and related options support ('linebreak', 'listchars': 
       extends/precedes, 'showbreak', 'wrapmargin')
@@ -35,6 +34,7 @@ UI:
 Customization:
     - Make it support using line spec for line numbers, diff fillers (including 
       collapsed), sign and fold columns
+    - Make it support link* spec for tag*
 
 Refactoring:
     - Split main formatting function

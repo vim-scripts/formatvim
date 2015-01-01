@@ -1096,7 +1096,7 @@ option :: {}                                                 *frawor-t-option*
         Dictionary which describes option. It has the following keys:
         Key         Description ~
                                                            *frawor-od-default*
-        default     Determines default value of an option. Is neither checker 
+        default     Determines default value of an option. Is neither checked 
                     nor filtered.
                                                             *frawor-od-scopes*
         scopes      Scope of variables which can be searched for an option. 
@@ -1144,6 +1144,11 @@ option :: {}                                                 *frawor-t-option*
                     Note 2: if merger key is present, first of merged options 
                     is deep copied (see |deepcopy()|). Otherwise copying is 
                     not performed.
+                                                          *frawor-od-override*
+        override    Determines values from which scopes should override 
+                    default value. Value is the same as |frawor-od-scopes|.
+                    This option is ignored unless |frawor-od-merger| is 
+                    defined.
 
 funcdescr : {}                                            *frawor-t-funcdescr*
         Function description is a dictionary with the following keys (all 
@@ -1421,8 +1426,8 @@ Only API changes are listed here. See commit log in order to get other
 changes.
 
 @frawor:
-    0.1: Added |frawor-f-require| and |frawor-fk-depadd|
-    0.2: Added s:_loading variable
+    0.1: Added |frawor-f-require| and |frawor-fk-depadd|.
+    0.2: Added s:_loading variable.
     0.3: Added isftplugin key to |frawor-t-plugdict|,
          adjusted the way plugin type is determined.
     1.0: Removed twoload feature and s:_loading variable.
@@ -1431,13 +1436,13 @@ changes.
     0.1: Added possibility to specify dictionaries in `strfunc' and `func' 
          keys.
 @/table:
-    0.1: Posted |frawor-r-strdisplaywidth|
+    0.1: Posted |frawor-r-strdisplaywidth|.
 @/fwc:
-    0.1: (intfuncs-0.1) Added |FWC-c-idof|
-    0.2: (intfuncs-0.2) Made |FWC-f-path| filter expand argument
-    0.3: (intfuncs-0.3) Added -onlystrings support for |FWC-c-range|
+    0.1: (intfuncs-0.1) Added |FWC-c-idof|.
+    0.2: (intfuncs-0.2) Made |FWC-f-path| filter expand argument.
+    0.3: (intfuncs-0.3) Added -onlystrings support for |FWC-c-range|.
     0.4: (intfuncs-0.4) Made |FWC-f-isfunc| transform argument to a function 
-                        reference
+                        reference.
 @/fwc/constructor:
     0.1: Added more functions
     1.0: Renamed some functions so that they now have “_” at the start of 
@@ -1451,18 +1456,20 @@ changes.
     4.2: Made it possible to minimize code (currently only indent is removed 
          and command names are truncated).
 @/os:
-    0.1: Added |frawor-r-os.path.relpath|
-         Made |frawor-r-os.path.normpath| also simplify its argument
+    0.1: Added |frawor-r-os.path.relpath|.
+         Made |frawor-r-os.path.normpath| also simplify its argument.
     0.2: Added |frawor-r-os.readsystem|, made |frawor-r-os.run| also accept 
-         plain strings as the first argument
+         plain strings as the first argument.
 @/decorators/altervars:
-    0.1: Added folds |frawor-av-special|
+    0.1: Added folds |frawor-av-special|.
 @/python:
     1.0: Removed _r.py resource, made it handle python and python3 separately.
 @/functions:
     0.1: Added ability to have [{plid}, {version}, {key}] in 
          |frawor-fd-function| and |frawor-fd-thisplugin|.
 @/commands:
-    0.1: Added usedictcompsplitfunc option
+    0.1: Added usedictcompsplitfunc option.
+@/options:
+    0.1: Added |frawor-od-override|.
 
 vim: ft=help:tw=78

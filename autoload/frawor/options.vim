@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/checks': '0.0'})
+execute frawor#Setup('0.1', {'@/checks': '0.0'})
 "▶1 Define messages
 if v:lang=~?'ru'
     let s:_messages=map({
@@ -10,28 +10,33 @@ if v:lang=~?'ru'
                 \               'префиксом переменной',
             \}, '"Ошибка получения настройки для дополнения %s: ".v:val')
     call extend(s:_messages, map({
-                \  'nooptions': 'глобальная переменная не содержит '.
-                \               'описания настроек (_options)',
-                \'_optnotdict': 'значение ключа _messages не является словарём',
-                \   'nooption': 'отсутствует описание настройки',
-                \ 'optnotdict': 'описание настройки не является словарём',
-                \ 'scopesnstr': 'ключ «scopes» описания настройки должен '.
-                \               'быть строкой',
-                \  'invscopes': 'строка «%s» не является правильным '.
-                \               'описанием локальности настройки',
-                \'scopesanstr': 'второй аргумент должен быть строкой',
-                \ 'invscopesa': 'строка «%s» не является правильным '.
-                \               'описанием локальности настройки',
-                \    'chkfail': 'проверка настройки провалилась '.
-                \               '(настройка была получена из переменной %s)',
-                \    'filfail': 'фильтрация настройки провалилась '.
-                \               '(настройка была получена из переменной %s)',
-                \    'onotdef': 'настройка нигде не определена',
-                \ 'typenmatch': 'тип настройки, полеченной из переменной %s, '.
-                \               'не совпадает с типом настройки, '.
-                \               'полученной ранее',
-                \  'mergefref': 'невозможно слить две ссылки на функции',
-                \    'umerger': 'неверное значение ключа «merger»',
+                \   'nooptions': 'глобальная переменная не содержит '.
+                \                'описания настроек (_options)',
+                \ '_optnotdict': 'значение ключа _messages не является '.
+                \                'словарём',
+                \    'nooption': 'отсутствует описание настройки',
+                \  'optnotdict': 'описание настройки не является словарём',
+                \  'scopesnstr': 'ключ «scopes» описания настройки должен '.
+                \                'быть строкой',
+                \   'invscopes': 'строка «%s» не является правильным '.
+                \                'описанием локальности настройки',
+                \'overridenstr': 'ключ «override» описания настройки должен '.
+                \                'быть строкой',
+                \ 'invoverride': 'строка «%s» не является правильным '.
+                \                'описанием области видимости',
+                \ 'scopesanstr': 'второй аргумент должен быть строкой',
+                \  'invscopesa': 'строка «%s» не является правильным '.
+                \                'описанием локальности настройки',
+                \     'chkfail': 'проверка настройки провалилась '.
+                \                '(настройка была получена из переменной %s)',
+                \     'filfail': 'фильтрация настройки провалилась '.
+                \                '(настройка была получена из переменной %s)',
+                \     'onotdef': 'настройка нигде не определена',
+                \  'typenmatch': 'тип настройки, полеченной из переменной %s, '.
+                \                'не совпадает с типом настройки, '.
+                \                'полученной ранее',
+                \   'mergefref': 'невозможно слить две ссылки на функции',
+                \     'umerger': 'неверное значение ключа «merger»',
             \}, '"Ошибка получения настройки %s для дополнения %s: ".v:val'))
 else
     let s:_messages=map({
@@ -40,24 +45,29 @@ else
                 \ 'invoprefix': 'string `%s'' is not a valid option prefix',
             \}, '"Error while obtaining option for plugin %s: ".v:val')
     call extend(s:_messages, map({
-                \  'nooptions': 'global variable does not contain _options',
-                \'_optnotdict': '_messages key value is not a Dictionary',
-                \   'nooption': 'option description is missing',
-                \ 'optnotdict': 'option description is not a Dictionary',
-                \ 'scopesnstr': '`scopes'' key must have a String value',
-                \  'invscopes': "string `%s' is not a valid scopes description",
-                \'scopesanstr': 'second argument is not a String',
-                \ 'invscopesa': "string `%s' is not a valid scopes description",
-                \    'chkfail': 'option failed to pass a check '.
-                \               '(option was obtained from %s variable)',
-                \    'filfail': 'option filtering failed'.
-                \               '(option was obtained from %s variable)',
-                \    'onotdef': 'option was not defined anywhere',
-                \ 'typenmatch': 'type of the option obtained from %s variable '.
-                \               'does not match type of the option obtained '.
-                \               'earlier',
-                \  'mergefref': 'unable to merge function references',
-                \    'umerger': '`merger'' key value is not valid',
+                \   'nooptions': 'global variable does not contain _options',
+                \ '_optnotdict': '_messages key value is not a Dictionary',
+                \    'nooption': 'option description is missing',
+                \  'optnotdict': 'option description is not a Dictionary',
+                \  'scopesnstr': '`scopes'' key must have a String value',
+                \   'invscopes': "string `%s' is not a valid scopes ".
+                \                "description",
+                \'overridenstr': '`override'' key must have a String value',
+                \ 'invoverride': "string `%s' is not a valid scopes ".
+                \                "description",
+                \ 'scopesanstr': 'second argument is not a String',
+                \  'invscopesa': "string `%s' is not a valid scopes ".
+                \                "description",
+                \     'chkfail': 'option failed to pass a check '.
+                \                '(option was obtained from %s variable)',
+                \     'filfail': 'option filtering failed'.
+                \                '(option was obtained from %s variable)',
+                \     'onotdef': 'option was not defined anywhere',
+                \  'typenmatch': 'type of the option obtained from %s '.
+                \                'variable does not match type of the option '.
+                \                'obtained earlier',
+                \   'mergefref': 'unable to merge function references',
+                \     'umerger': '`merger'' key value is not valid',
             \}, '"Error while obtaining option %s for plugin %s: ".v:val'))
 endif
 "▶1 getovalue  :: oshadow ovalue, oid, plid, ovar → ovalue
@@ -99,8 +109,38 @@ function s:F.extendopts(a, b, oid, plid, ovar)
     endif
     return eval(s:merges[type(a:a)])
 endfunction
+"▶1 mergeopts :: oshadow, od, oid, plid, ovar → od
+function s:F.mergeopts(oshadow, ovalue, od, oid, plid, ovar)
+    if a:ovar is# 'default'
+        let a:od.newval=a:ovalue
+    else
+        let a:od.newval=s:F.getovalue(a:oshadow, a:ovalue, a:oid, a:plid,
+                    \                 a:ovar)
+    endif
+    try
+        if exists('a:od.ovalue')
+            if a:oshadow.override is 0 ||
+                        \a:od.mergedin!~#'['.a:oshadow.override.']'
+                let a:od.tmp=a:od.ovalue
+                try
+                    let a:od.ovalue=a:oshadow.merger(a:od.tmp, a:od.newval,
+                                \                    a:oid, a:plid, a:ovar)
+                finally
+                    unlet a:od.tmp
+                endtry
+            endif
+        else
+            let a:od.ovalue=deepcopy(a:od.newval)
+        endif
+    finally
+        unlet a:od.newval
+    endtry
+    let a:od.mergedin=get(a:od, 'mergedin', '').a:ovar[0]
+    return a:od
+endfunction
 "▶1 getoption  :: {f}, oid[, scopes] + p:_options, p:_oprefix → ovalue
 let s:dochecks=1
+let s:scopereg='^[wtbg]\+$'
 function s:F.getoption(plugdict, fdict, oid, ...)
     "▶2 Check arguments
     if s:dochecks
@@ -129,12 +169,24 @@ function s:F.getoption(plugdict, fdict, oid, ...)
         if has_key(option, 'scopes')
             if type(option.scopes)!=type('')
                 call s:_f.throw('scopesnstr', a:oid, a:plugdict.id)
-            elseif option.scopes!~#'^[wtbg]\+$'
+            elseif option.scopes!~#s:scopereg
                 call s:_f.throw('invscopes', a:oid,a:plugdict.id,option.scopes)
             endif
             let oshadow.scopes=option.scopes
         else
             let oshadow.scopes='bg'
+        endif
+        "▶3 `override' key
+        if has_key(option, 'override')
+            if type(option.override)!=type('')
+                call s:_f.throw('overridenstr', a:oid, a:plugdict.id)
+            elseif option.override!~#s:scopereg
+                call s:_f.throw('invoverride', a:oid, a:plugdict.id,
+                            \                  option.override)
+            endif
+            let oshadow.override=option.override
+        else
+            let oshadow.override=0
         endif
         "▶3 `merger' key
         if has_key(option, 'merger')
@@ -185,7 +237,7 @@ function s:F.getoption(plugdict, fdict, oid, ...)
     if a:0
         if type(a:1)!=type('')
             call s:_f.throw('scopesanstr', a:oid, a:plugdict.id)
-        elseif a:1!~#'^[wtbg]\+$'
+        elseif a:1!~#s:scopereg
             call s:_f.throw('invscopesa', a:oid, a:plugdict.id, a:1)
         endif
         let scopes=a:1
@@ -200,17 +252,8 @@ function s:F.getoption(plugdict, fdict, oid, ...)
             let soptions=eval(ovar)
             if type(soptions)==type({}) && has_key(soptions, a:oid)
                 if merge
-                    let d.newval=s:F.getovalue(oshadow, soptions[a:oid], a:oid,
-                                \              a:plugdict.id, ovar)
-                    if exists('d.ovalue')
-                        let d.tmp=d.ovalue
-                        let d.ovalue=oshadow.merger(d.tmp, d.newval, a:oid,
-                                    \               a:plugdict.id, ovar)
-                        unlet d.tmp
-                    else
-                        let d.ovalue=deepcopy(d.newval)
-                    endif
-                    unlet d.newval
+                    let d=s:F.mergeopts(oshadow, soptions[a:oid], d, a:oid,
+                                \       a:plugdict.id, ovar)
                 else
                     return s:F.getovalue(oshadow, soptions[a:oid], a:oid,
                                 \        a:plugdict.id, ovar)
@@ -223,19 +266,10 @@ function s:F.getoption(plugdict, fdict, oid, ...)
             let ovar=scope.':'.oprefix.'_'.a:oid
             if exists(ovar)
                 if merge
-                    let d.newval=s:F.getovalue(oshadow, eval(ovar), a:oid,
-                                \              a:plugdict.id, ovar)
-                    if exists('d.ovalue')
-                        let d.tmp=d.ovalue
-                        let d.ovalue=oshadow.merger(d.tmp, d.newval, a:oid,
-                                    \               a:plugdict.id, ovar)
-                        unlet d.tmp
-                    else
-                        let d.ovalue=deepcopy(d.newval)
-                    endif
-                    unlet d.newval
+                    let d=s:F.mergeopts(oshadow, eval(ovar), d, a:oid,
+                                \       a:plugdict.id, ovar)
                 else
-                    return s:F.getovalue(oshadow, eval(ovar), a:oid, 
+                    return s:F.getovalue(oshadow, eval(ovar), a:oid,
                                 \        a:plugdict.id, ovar)
                 endif
             endif
@@ -245,14 +279,8 @@ function s:F.getoption(plugdict, fdict, oid, ...)
     "▶2 `default' key
     if has_key(option, 'default')
         if merge
-            let d.newval=option.default
-            if exists('d.ovalue')
-                let d.tmp=d.ovalue
-                let d.ovalue=oshadow.merger(d.tmp, d.newval, a:oid,
-                            \               a:plugdict.id, 'default')
-            else
-                let d.ovalue=deepcopy(d.newval)
-            endif
+            let d=s:F.mergeopts(oshadow, option.default, d, a:oid, a:plugdict.id,
+                        \       'default')
             return d.ovalue
         else
             return option.default

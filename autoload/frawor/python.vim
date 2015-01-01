@@ -1,7 +1,8 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('1.0', {'@/os': '0.0',
-            \         '@/resources': '0.0',})
+execute frawor#Setup('1.1', {'@/os': '0.0',
+            \         '@/resources': '0.0',
+            \            '@/python': '1.0',})
 "▶1 Define messages
 if v:lang=~?'ru'
     let s:_messages={
@@ -65,6 +66,27 @@ endfunction
 "▶2 register feature
 call s:_f.newfeature('addpythonpath', {'register': s:F.addpydir,
             \                         'unloadpre': s:F.delpydir,})
+"▶1 FraworTypedCall
+for s:p in [''] " ['', '3']
+    " XXX Must go after newfeature call
+    execute 'python'.s:p 'import frawor'
+    execute 'python'.s:p 'frawor._ftc_name="<SNR>'.s:_sid.'_FraworTypedCall"'
+endfor
+unlet s:p
+function s:F.gettypes(v)
+    if type(a:v)==type({}) || type(a:v)==type([])
+        let r=map(copy(a:v), 's:F.gettypes(v:val)')
+        call map(a:v, 'type(v:val)==2 ? string(v:val)[10:-3] : v:val')
+        return r
+    else
+        return type(a:v)
+    endif
+endfunction
+function s:FraworTypedCall(...)
+    let r=deepcopy(call('call', a:000))
+    return [s:F.gettypes(r), r]
+endfunction
+let s:_functions+=['s:FraworTypedCall']
 "▶1
 call frawor#Lockvar(s:, 'addedpaths')
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80

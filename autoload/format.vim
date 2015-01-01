@@ -1,6 +1,6 @@
 "▶1 Начало
 scriptencoding utf-8
-execute frawor#Setup('4.0', {'@/options': '0.0',
+execute frawor#Setup('4.1', {'@/options': '0.0',
             \                     '@/os': '0.0',
             \                    '@/fwc': '0.0',
             \        '@/fwc/constructor': '4.2',
@@ -16,9 +16,11 @@ let s:keylist=['begin',
             \     'linestart',
             \      'foldcolumn', 'sign', 'linenr',
             \      'tagstart',
-            \       'concealedstart',
-            \        'line',
-            \       'concealedend',
+            \       'linkstart',
+            \        'concealedstart',
+            \         'line',
+            \        'concealedend',
+            \       'linkend',
             \      'tagend',
             \      'fold', 'difffiller', 'collapsedfiller',
             \     'lineend',
@@ -50,6 +52,7 @@ let s:_options={
             \        'AllFolds': {'default':  0,  'filter': 'bool'},
             \     'IgnoreSigns': {'default':  0,  'filter': 'bool'},
             \      'IgnoreDiff': {'default':  0,  'filter': 'bool'},
+            \     'IgnoreSpell': {'default':  0,  'filter': 'bool'},
             \      'IgnoreTags': {'default':  1, 'checker': 'range  0  2' },
             \    'ShowProgress': {'default':  0, 'checker': 'range  0  2' },
             \   'CollapsFiller': {'default':  0, 'checker': 'range  0 inf'},
@@ -69,6 +72,18 @@ let s:_options={
             \'AddTagCmdEscapes': {'default': '[]*.~',
             \                     'checker': 'type string'},
             \   'UseStyleNames': {'default': 0, 'filter': 'bool'},
+            \     'FormatLinks': {'default': 1, 'filter': 'bool'},
+            \     'LinkRegexes': {'default': [
+            \                       ['\vhttps?\:\/\/'.
+            \                          '%([[:alnum:]\-]+\.)+\a{2,3}\/'.
+            \                          '%(\S{-}%([.?!]?%(\ |$))@=|\S+>)',
+            \                                                                        'submatch(0)'],
+            \                       ['\v%(%(git|ssh)\:\/\/%(git|hg)\@)'.
+            \                          '(github\.com|bitbucket\.org)[:/]'.
+            \                          '([^/ ]+/[^/ ]+>)%(\.git)?',
+            \                                         '''https://''.submatch(1).''/''.submatch(2)'],
+            \                     ],
+            \                     'checker': 'list (tuple ((isreg) (type string)))',},
             \
             \       'Debugging': {'default': 0, 'filter': 'bool'},
             \ 'Debugging_FuncF': {'default': 0,
@@ -104,6 +119,10 @@ let s:_options={
             \                                   '(tag.__ename)',
             \                     'checker': 'type string',},
         \}
+function s:_options.LinkRegexes.merger(old, new, oname, plid, vname)
+    unsilent echomsg string(a:vname)
+    return extend(copy(a:old), a:new)
+endfunction
 "▶1 Выводимые сообщения
 let s:_messages={
             \   'misskey': 'Required key is missing: %s',
@@ -711,6 +730,8 @@ let s:formats.html={
             \                   ':"")''%</p>',
             \'tagstart':     '%''get(get(@_tags@,@@@,[]),0,'.
             \                            '[{"__anchor":"<a>"}])[-1].__anchor''%',
+            \'linkstart':    '<a class="Link" href="%s">',
+            \'linkend':      '</a>',
             \'tagend':       '</a>',
             \'foldcolumn':   printf(s:htmlinput, 'FoldColumn',
             \                       '%''@_foldcolumn@''%',
@@ -1071,19 +1092,45 @@ let s:formats.tokens={
             \'strescape':       "string(@@@)",
             \'addopts':         {'linetypes': ['lr', 'lf', 'ld', 'lc']},
         \}
+"▶1 ishlcleared
+let s:cleared_dict={
+            \   'fgcolor': '',
+            \   'bgcolor': '',
+            \   'bold': '',
+            \   'italic': '',
+            \   'underline': '',
+            \   'inverse': '',
+            \}
+function s:F.ishlcleared(specdict)
+    return empty(filter(copy(s:cleared_dict), 'v:val isnot# a:specdict[v:key]'))
+endfunction
 "▶1 getspecdict
 function s:F.getspecdict(hlname, ...)
     if type(a:hlname)==type([])
-        let r=s:F.getspecdict(a:hlname[0])
-        for hlname in a:hlname[1:]
-            let r=call(s:F.mergespecdicts,
-                        \[r, s:F.getspecdict(hlname)]+a:000, {})
-        endfor
+        let specdicts=map(copy(a:hlname), 's:F.getspecdict(v:val)')
+        let r=specdicts[0]
+        call map(specdicts[1:], 'extend(l:, {"r": call(s:F.mergespecdicts, [r, v:val]+a:000, {})})')
+        if !empty(filter(copy(a:hlname), 'v:val[0] is# "!"'))
+            let spellidx=filter(map(copy(a:hlname), '[v:key, v:val]'), 'v:val[1][0] is# "!"')[0][0]
+            if spellidx > 0 && spellidx < len(a:hlname)-1
+                for attr in ['bgcolor', 'fgcolor']
+                    if !empty(specdicts[spellidx-1][attr]) && empty(specdicts[spellidx+1][attr]) &&
+                                \!s:F.ishlcleared(specdicts[spellidx+1])
+                        let r[attr]=specdicts[spellidx-1][attr]
+                    endif
+                endfor
+            endif
+        endif
         return r
     endif
-    let id=synIDtrans(hlID(a:hlname))
+    if a:hlname[0] is# '!'
+        let hlname=a:hlname[1:]
+    else
+        let hlname=a:hlname
+    endif
+    let id=synIDtrans(hlID(hlname))
     return {
-    \            'name':    a:hlname,
+    \            'name':    hlname,
     \            'styleid': id,
     \            'fgcolor': s:F.getcolor(
     \                           synIDattr(id, 'fg#', s:whatterm)),
@@ -1111,7 +1158,6 @@ function s:F.mergespecdicts(oldspecdict, newspecdict, ...)
                 \'underline': a:oldspecdict.underline || a:newspecdict.underline,
                 \'inverse':   a:oldspecdict.inverse   || a:newspecdict.inverse,
             \}
-                " \'cleared':   a:newspecdict.styleid == hlID('Normal'),
 endfunction
 "▶1 redrawprogress
 function s:F.redrawprogress()
@@ -1234,14 +1280,21 @@ function s:CmpMatches(m1, m2)
                 \   :-1)
 endfunction
 let s:_functions+=[function('s:CmpMatches')]
+"▶1 regescapeslash
+function s:F.regescapeslash(s)
+    return substitute(a:s, '\v%(\\@<!%(\\\\)*\\)@<!\/', '\\/', 'g')
+endfunction
 "▶1 formatmatches
 function s:F.formatmatches(opts, slnr, elnr)
     let toformat=[]
     if a:opts.formatmatches
         " According to the help &ignorecase option has no effect on matches
         call extend(toformat, map(getmatches(),
-                    \'extend(v:val, {"pattern": '.
-                    \                'substitute(v:val.pattern,''^\(\\%#=\d\)\?'',''\1\\C'',"")})'))
+                    \'has_key(v:val, "pattern")'.
+                    \'? extend(v:val, {"pattern": '.
+                    \                 'substitute(get(v:val, "pattern"),'.
+                    \                            '''^\(\\%#=\d\)\?'',''\1\\C'',"")})'.
+                    \': v:val'))
     endif
     " Search must have the highest .num key because it always wins over other matches with the same 
     " priority. If two non-search matches match at the same position match defined later wins. Match 
@@ -1254,8 +1307,9 @@ function s:F.formatmatches(opts, slnr, elnr)
         return {}
     endif
     " Escape unescaped `/'.
-    call map(toformat, 'extend(v:val, {"pattern": substitute(v:val.pattern, '.
-                \'''\v%(\\@<!%(\\\\)*\\)@<!\/'', ''\\/'', "g"), "num": v:key})')
+    call map(toformat, 'extend(v:val, {"num":v:key})')
+    call map(filter(copy(toformat), 'has_key(v:val, "pattern")'),
+                \'extend(v:val, {"pattern":s:F.regescapeslash(v:val.pattern)})')
     call sort(toformat, function('s:CmpMatches'))
     let d={'recordmlmatch': s:F.recordmlmatchmatch, 'matches': [], 'pasteol': {}}
     let [fstmtch; othmtches]=toformat
@@ -1263,14 +1317,14 @@ function s:F.formatmatches(opts, slnr, elnr)
     let d.priority=fstmtch.priority
     let d.group=fstmtch.group
     let d.num=fstmtch.num
-    call s:F.collectmultilinematches(a:slnr, a:elnr, fstmtch.pattern, d)
+    call s:F.collectmultilinematches(a:slnr, a:elnr, fstmtch, d)
     for mtch in othmtches
         let d.priority=mtch.priority
         let d.group=mtch.group
         let d.pointer=0
         let d.matcheslen=len(d.matches)
         let d.num=mtch.num
-        call s:F.collectmultilinematches(a:slnr, a:elnr, mtch.pattern, d)
+        call s:F.collectmultilinematches(a:slnr, a:elnr, mtch, d)
     endfor
     let splcolumns=s:F.eventstosplcolumns(s:F.matchestoevents(d.matches))
     return [splcolumns, d.pasteol]
@@ -1331,72 +1385,176 @@ function s:F.recordtagmatch(lnr, col, tname) dict
                 \        a:col+len(a:tname): [['tagend',   a:tname]]})})
     let self.foundtnames[a:tname]=1
 endfunction
+"▶1 recordspellmatch
+let s:spelltype_to_spellhl={
+            \'bad'  : 'SpellBad',
+            \'rare' : 'SpellRare',
+            \'local': 'SpellLocal',
+            \'caps' : 'SpellCap',
+        \}
+function s:F.recordspellmatch(lnr, col, word) dict
+    call extend(self.splcolumns,
+                \{a:lnr :
+                \   extend(get(self.splcolumns, a:lnr, {}),
+                \       {a:col            : [['spellborder',
+                \                             s:spelltype_to_spellhl[self.spelltype]]],
+                \        a:col+len(a:word): [['spellborder', 0]]})})
+endfunction
+"▶1 recordlinkmatch
+function s:F.recordlinkmatch(lnr, col, link) dict
+    let link=eval(self.expr)
+    call extend(self.splcolumns,
+                \{a:lnr :
+                \   extend(get(self.splcolumns, a:lnr, {}),
+                \       {a:col            : [['linkstart', link]],
+                \        a:col+len(a:link): [['linkend',   link]]})})
+endfunction
+"▶1 collectmisspells
+let s:found_badly_spelled_word=0
+function s:FoundBadlySpelledWord()
+    let s:found_badly_spelled_word=1
+    return ''
+endfunction
+let s:_functions+=['s:FoundBadlySpelledWord']
+function s:F.collectmisspells(slnr, elnr, d)
+    let saved_wrapscan=&l:wrapscan
+    setlocal nowrapscan
+    let winview=winsaveview()
+    nnoremap       <special> <Plug>(FormatVimFindNextBadlySpelledWord) ]s
+    nnoremap <expr><special> <Plug>(FormatVimFoundBadlySpelledWord) <SID>FoundBadlySpelledWord()
+    try
+        call cursor(a:slnr, 1)
+        if empty(spellbadword()[1])
+            normal! ]s
+        endif
+        let l:empty=''
+        while line('.') <= a:elnr
+            let [word, type]=spellbadword()
+            let a:d.spelltype=type
+            call a:d.recordmatch(line('.'), col('.'), word)
+            execute 'normal '.
+                        \"\<Plug>(FormatVimFindNextBadlySpelledWord)".
+                        \"\<Plug>(FormatVimFoundBadlySpelledWord)"
+            if !s:found_badly_spelled_word
+                break
+            endif
+            let s:found_badly_spelled_word=0
+        endwhile
+    finally
+        let &l:wrapscan=saved_wrapscan
+        call winrestview(winview)
+        nunmap <Plug>(FormatVimFindNextBadlySpelledWord)
+        nunmap <Plug>(FormatVimFoundBadlySpelledWord)
+        let s:found_badly_spelled_word=0
+    endtry
+endfunction
+"▶1 formatmisspells
+function s:F.formatmisspells(slnr, elnr)
+    let d={'recordmatch': s:F.recordspellmatch, 'splcolumns': {}}
+    call s:F.collectmisspells(a:slnr, a:elnr, d)
+    return d.splcolumns
+endfunction
 "▶1 Collect matches
 if v:version>703 || (v:version==703 && has('patch627')) "▶2
-    function s:F.collectmatches(slnr, elnr, regex, d)
-        let save_history=&history
-        if save_history
-            let &history+=1
-            let lasthistitem=histget('/', -1)
-        endif
-        let save_atslash=@/
-        try
-            execute 'lockmarks keepmarks keepjumps silent '.a:slnr.','.a:elnr
-                        \ 's/'.a:regex.'/\=a:d.recordmatch(line("."), col("."), submatch(0))/gne'
-        " Too long pattern error
-        catch /\m^Vim(substitute):E339:/
-            throw 'TOO LONG REGEX'
-        finally
+    let s:haslistsubmatch=(v:version>704 || (v:version==704 && has('pathch241')))
+    function s:F.collectmatches(slnr, elnr, mtch, d)
+        if type(a:mtch)!=type({}) || has_key(a:mtch, 'pattern')
+            let regex=((type(a:mtch)==type(''))?(a:mtch):(a:mtch.pattern))
+            let save_history=&history
             if save_history
-                let &history=save_history
-                if histget('/', -1) isnot# lasthistitem
-                    call histdel('/', -1)
-                endif
+                let &history+=1
+                let lasthistitem=histget('/', -1)
             endif
-            let @/=save_atslash
-        endtry
+            let save_atslash=@/
+            let winview=winsaveview()
+            try
+                if s:haslistsubmatch
+                    execute 'lockmarks keepmarks keepjumps silent '.a:slnr.','.a:elnr
+                                \'s/'.regex.'/\='.
+                                \   'a:d.recordmlmatch(line("."), col("."), submatch(0, 1))/gne'
+                else
+                    execute 'lockmarks keepmarks keepjumps silent '.a:slnr.','.a:elnr
+                                \'s/'.regex.'/\='.
+                                \   'a:d.recordmatch(line("."), col("."), submatch(0))/gne'
+                endif
+            " Too long pattern error
+            catch /\m^Vim(substitute):E339:/
+                throw 'TOO LONG REGEX'
+            finally
+                if save_history
+                    let &history=save_history
+                    if histget('/', -1) isnot# lasthistitem
+                        call histdel('/', -1)
+                    endif
+                endif
+                let @/=save_atslash
+                call winrestview(winview)
+            endtry
+        else
+            let i=1
+            while has_key(a:mtch, 'pos'.i)
+                let pos=a:mtch['pos'.i]
+                if a:slnr <= pos[0] && pos[0] <= a:elnr
+                    if len(pos) == 1
+                        call a:d.recordmatch(pos[0], 1, getline(pos[0]))
+                        call a:d.recordmatch(pos[0], col([pos[0], '$']), '')
+                    else
+                        if pos[1] <= col([pos[0], '$'])
+                            let match=matchstr(getline(pos[0]), '\v\C.{-}%(.%>'.pos[2].'c|$)',
+                                        \      pos[1]-1)
+                            call a:d.recordmatch(pos[0], pos[1], match)
+                        endif
+                    endif
+                endif
+                let i+=1
+            endwhile
+        endif
     endfunction
     let s:F.collectonelinematches=s:F.collectmatches
-    function s:F.multilinewrapper(lnr, col, match) dict
-        let lines=split(a:match, "\n", 1)
-        if len(lines)==1
-            return self.recordmlmatch(a:lnr, a:col, lines)
-        endif
-        let lnr=a:lnr
-        let realmatch=[]
-        let idx=a:col-1
-        while !empty(lines)
-            let line=getline(lnr)
-            let chunk=remove(lines, 0)
-            if empty(lines)
-                call add(realmatch, chunk)
-                break
-            else
-                " If we did not hit NUL chunk represents match from starting column (first column in 
-                " case of non-starting line) to the end of line.
-                if line[(idx):] is# chunk
-                    call add(realmatch, chunk)
-                else
-                    " If we did match was split at NUL (as it is represented as newline). We need to 
-                    " determine how many NULs were there. Alternative and, probably, better approach 
-                    " would be comparing len(chunk) to len(line)-idx in the same cycle. Note that 
-                    " match may be actually one line match, but contain NULs.
-                    let chunk.="\n".remove(lines, 0)
-                    while line[(idx):] isnot# chunk && !empty(lines)
-                        let chunk.="\n".remove(lines, 0)
-                    endwhile
-                    call add(realmatch, chunk)
-                endif
-                " In non-starting line match starts in first column
-                let idx=0
+    if !s:haslistsubmatch
+        function s:F.multilinewrapper(lnr, col, match) dict
+            let lines=split(a:match, "\n", 1)
+            if len(lines)==1
+                return self.recordmlmatch(a:lnr, a:col, lines)
             endif
-            let lnr+=1
-        endwhile
-        call self.recordmlmatch(a:lnr, a:col, realmatch)
-    endfunction
-    function s:F.collectmultilinematches(slnr, elnr, regex, d)
-        let a:d.recordmatch=s:F.multilinewrapper
-        call s:F.collectmatches(a:slnr, a:elnr, a:regex, a:d)
+            let lnr=a:lnr
+            let realmatch=[]
+            let idx=a:col-1
+            while !empty(lines)
+                let line=getline(lnr)
+                let chunk=remove(lines, 0)
+                if empty(lines)
+                    call add(realmatch, chunk)
+                    break
+                else
+                    " If we did not hit NUL chunk represents match from starting column (first column in 
+                    " case of non-starting line) to the end of line.
+                    if line[(idx):] is# chunk
+                        call add(realmatch, chunk)
+                    else
+                        " If we did match was split at NUL (as it is represented as newline). We need to 
+                        " determine how many NULs were there. Alternative and, probably, better approach 
+                        " would be comparing len(chunk) to len(line)-idx in the same cycle. Note that 
+                        " match may be actually one line match, but contain NULs.
+                        let chunk.="\n".remove(lines, 0)
+                        while line[(idx):] isnot# chunk && !empty(lines)
+                            let chunk.="\n".remove(lines, 0)
+                        endwhile
+                        call add(realmatch, chunk)
+                    endif
+                    " In non-starting line match starts in first column
+                    let idx=0
+                endif
+                let lnr+=1
+            endwhile
+            call self.recordmlmatch(a:lnr, a:col, realmatch)
+        endfunction
+    endif
+    function s:F.collectmultilinematches(slnr, elnr, mtch, d)
+        if !s:haslistsubmatch
+            let a:d.recordmatch=s:F.multilinewrapper
+        endif
+        call s:F.collectmatches(a:slnr, a:elnr, a:mtch, a:d)
     endfunction
 else "▶2
     function s:F.collectonelinematches(slnr, elnr, regex, d)
@@ -1404,7 +1562,7 @@ else "▶2
         try
             let lnr=a:slnr
             while lnr
-                call cursor(lnr, 0)
+                call cursor(lnr, 1)
                 let lnr=search(a:regex, 'nWc', a:elnr)
                 if lnr
                     let line=getline(lnr)
@@ -1451,12 +1609,21 @@ function s:F.collecttags(slnr, elnr, tags, tagregexpref, tagregexsuf, d)
         endif
     endtry
 endfunction
+"▶1 formatlinks
+function s:F.formatlinks(opts, slnr, elnr)
+    let splcolumns={}
+    for [regex, expr] in a:opts.linkregexes
+        let d={'recordmatch': s:F.recordlinkmatch, 'splcolumns': {}, 'expr': expr}
+        try
+            call s:F.collectonelinematches(a:slnr, a:elnr, s:F.regescapeslash(regex), d)
+        endtry
+        let splcolumns=s:F.mergesplcolumns(splcolumns, d.splcolumns)
+    endfor
+    return d.splcolumns
+endfunction
 "▶1 formattags
 function s:F.formattags(opts, slnr, elnr, starttagreg, endtagreg)
     "▶2 Объявление переменных
-    if a:opts.ignoretags==2
-        return []
-    endif
     let fname=expand('%:.') " Имя обрабатываемого файла
     let tags=taglist('.')   " Список тёгов
     if empty(tags)
@@ -1503,7 +1670,7 @@ function s:F.formattags(opts, slnr, elnr, starttagreg, endtagreg)
         let d={'recordmatch': s:F.recordtagmatch,
                     \'splcolumns': splcolumns, 'foundtnames': foundtnames, 'tags': tags}
         call s:F.collecttags(a:slnr, a:elnr, tags, tagregexpref, tagregexsuf, d)
-        call cursor(a:slnr, 0)
+        call cursor(a:slnr, 1)
         " !empty(extend(, non-empty-dict)) always results in 1
         call filter(tags, 'has_key(foundtnames, v:val.name) '.
                     \       '? !empty(extend(v:val, {"_found": 1}))'.
@@ -2005,6 +2172,15 @@ endfunction
 let s:_functions+=['s:NRSort']
 "▶1 mergesplcolumns
 function s:F.mergesplcolumns(splcolumns1, splcolumns2)
+    if empty(a:splcolumns1)
+        if empty(a:splcolumns2)
+            return {}
+        else
+            return deepcopy(a:splcolumns2)
+        endif
+    elseif empty(a:splcolumns2)
+        return deepcopy(a:splcolumns1)
+    endif
     let splcolumns=deepcopy(a:splcolumns1)
     call map(copy(a:splcolumns2),
                 \'has_key(splcolumns, v:key)'.
@@ -2013,6 +2189,15 @@ function s:F.mergesplcolumns(splcolumns1, splcolumns2)
                 \           '?extend(splcolumns[".v:key."][v:key], v:val)'.
                 \           ':extend(splcolumns[".v:key."], {v:key : v:val})")'.
                 \   ':extend(splcolumns, {v:key : v:val})')
+    return splcolumns
+endfunction
+"▶1 flattensplcolumns
+function s:F.flattensplcolumns(lowsplcolumns, highsplcolumns)
+    let splcolumns=s:F.mergesplcolumns(a:lowsplcolumns, a:highsplcolumns)
+    if empty(a:lowsplcolumns) || empty(a:highsplcolumns)
+        return splcolumns
+    endif
+    " FIXME Make sure they do not overlap
     return splcolumns
 endfunction
 "▶1 initfileopts
@@ -2124,12 +2309,21 @@ function s:F.initfileopts(opts, slnr, elnr, options, format, sbsd)
         if has_key(a:format, 'tagproc')
             call map(usedtags, 'a:format.tagproc(opts, v:val)')
         endif
-        let opts.dotags=(opts.ignoretags!=2 && !empty(opts.tagssplcolumns))
+        let opts.dotags=!empty(opts.tagssplcolumns)
     else
         let opts.tags={}
         let opts.curtags={}
         let usedtags=0
         let opts.dotags=0
+        let opts.tagssplcolumns=0
+    endif
+    "▶2 Structures with link
+    if opts.formatlinks
+        let opts.linkssplcolumns=s:F.formatlinks(opts, a:slnr, a:elnr)
+        let opts.dolinks=!empty(opts.linkssplcolumns)
+    else
+        let opts.linkssplcolumns=0
+        let opts.dolinks=0
     endif
     "▶2 Structures with matches
     if opts.formatsomematch
@@ -2138,6 +2332,15 @@ function s:F.initfileopts(opts, slnr, elnr, options, format, sbsd)
     else
         let opts.domatches=0
         let opts.matchespasteol=0
+        let opts.matchessplcolumns=0
+    endif
+    "▶2 Structures with spell
+    if opts.formatspell
+        let opts.spellsplcolumns=s:F.formatmisspells(a:slnr, a:elnr)
+        let opts.dospell=!empty(opts.spellsplcolumns)
+    else
+        let opts.spellsplcolumns=0
+        let opts.dospell=0
     endif
     "▶2 'listchars'
     let listchars={}
@@ -2161,17 +2364,16 @@ function s:F.initfileopts(opts, slnr, elnr, options, format, sbsd)
     let opts.listchars=listchars
     let opts.spsplcolumns=s:F.formatspecialchars(a:opts, a:slnr, a:elnr)
     "▶2 special columns
-    if !empty(get(opts, 'matchessplcolumns')) && empty(get(opts, 'tagssplcolumns'))
-        let opts.splcolumns=s:F.mergesplcolumns(opts.matchessplcolumns, opts.spsplcolumns)
-    elseif !empty(get(opts, 'tagssplcolumns')) && empty(get(opts, 'matchessplcolumns'))
-        let opts.splcolumns=s:F.mergesplcolumns(opts.tagssplcolumns, opts.spsplcolumns)
-    elseif !empty(get(opts, 'tagssplcolumns')) && !empty(get(opts, 'matchessplcolumns'))
-        let opts.splcolumns=s:F.mergesplcolumns(
-                    \s:F.mergesplcolumns(opts.tagssplcolumns, opts.matchessplcolumns),
-                    \opts.spsplcolumns)
-    else
-        let opts.splcolumns=opts.spsplcolumns
-    endif
+    let opts.splcolumns=
+                \s:F.mergesplcolumns(
+                \   s:F.mergesplcolumns(
+                \       s:F.mergesplcolumns(
+                \           s:F.mergesplcolumns(
+                \               opts.linkssplcolumns,
+                \               opts.tagssplcolumns),
+                \           opts.matchessplcolumns),
+                \       opts.spsplcolumns),
+                \   opts.spellsplcolumns)
     "▶2 Signs
     let dosigns=0
     if has_key(a:format, 'sign')
@@ -2201,7 +2403,7 @@ function s:F.initfileopts(opts, slnr, elnr, options, format, sbsd)
     endif
     "▲2
     let opts.dolinemergehl=(opts.dodiff || opts.docline || opts.dosigns)
-    let opts.domergehl=(opts.dolinemergehl || opts.domatches)
+    let opts.domergehl=(opts.dolinemergehl || opts.domatches || opts.dospell)
     return opts
 endfunction
 "▶1 initstrescapeopts
@@ -2252,9 +2454,9 @@ function s:F.initopts(opts, options, format, sbsd)
     let opts=a:opts
     call filter(opts, 'v:key[:1] isnot# "__"')
     let opts.highlight=s:F.gethighlight()
-    let opts.dodiff=(s:_f.getoption('IgnoreDiff') || !get(a:options, 'diff', 1))
-                \       ?0
-                \       :&diff
+    let opts.dodiff=&diff && (a:options.diff == -1
+                \             ? !s:_f.getoption('IgnoreDiff')
+                \             : a:options.diff)
     let opts.usestylenames=s:_f.getoption('UseStyleNames')
     "▶2 Debugging/profiling
     let opts.profiling=v:profiling
@@ -2309,12 +2511,28 @@ function s:F.initopts(opts, options, format, sbsd)
             let opts.ignoretags=(2-a:options.tags)
         endif
     endif
+    "▶2 Links
+    let opts.formatlinks=0
+    if has_key(a:format, 'linkstart') || has_key(a:format, 'linkend')
+        if a:options.links is -1
+            let opts.formatlinks=s:_f.getoption('FormatLinks')
+        else
+            let opts.formatlinks=a:options.links
+        endif
+    endif
+    if opts.formatlinks
+        let opts.linkregexes=s:_f.getoption('LinkRegexes')
+    else
+        let opts.linkregexes=[]
+    endif
     "▶2 Matches
     let matches=((a:options.matches == -1)?
                 \   (s:_f.getoption('FormatMatches')):
                 \   (a:options.matches))
     if matches is -1
-        if has('extra_search') && &hlsearch
+        if has('extra_search') && &hlsearch && (exists('v:hlsearch')
+                    \                           ? v:hlsearch
+                    \                           : 1)
             let matches='all'
         else
             let matches='matches'
@@ -2323,6 +2541,17 @@ function s:F.initopts(opts, options, format, sbsd)
     let opts.formatsearch  = (matches is# 'all' || matches is# 'search')  && !empty(@/)
     let opts.formatmatches = (matches is# 'all' || matches is# 'matches') && !empty(getmatches())
     let opts.formatsomematch = opts.formatsearch || opts.formatmatches
+    "▶2 Spelling support
+    let opts.formatspell = &spell && (a:options.spell == -1
+                \                     ? !s:_f.getoption('IgnoreSpell')
+                \                     : a:options.spell)
+    if opts.formatspell
+        try
+            call spellbadword()
+        catch /Vim(call):E756:/
+            let opts.formatspell=0
+        endtry
+    endif
     "▶2 collapsafter
     if a:sbsd
         let opts.collapsafter=0
@@ -2431,6 +2660,13 @@ function s:F.initspecs(ff, opts)
     "▲2
     if a:opts.dodiff
         call a:ff.letspec('fill', a:opts.highlight.DiffDelete)
+    endif
+    "▶2 Spelling support
+    if a:opts.dospell
+        call a:ff.letspec('spb', a:opts.highlight.SpellBad)
+        call a:ff.letspec('spc', a:opts.highlight.SpellCap)
+        call a:ff.letspec('spr', a:opts.highlight.SpellRare)
+        call a:ff.letspec('spl', a:opts.highlight.SpellLocal)
     endif
     "▶2 Line numbers
     if a:opts.dosomenr
@@ -2673,11 +2909,17 @@ function s:F.sbsdrun(type, slnr, elnr, options, cf, sbsd)
 endfunction
 "▶1 getlcsspecstr
 function s:F.getlcsspecstr(specstr, opts)
-    let lcsspecstr=a:opts.dodiff
-                \     ?('(%diffattr'.
+    let lcsspecstr=a:specstr
+    if a:opts.dospell
+        let lcsspecstr='(%spellhlname is 0'.
+                    \       '?'.lcsspecstr.' '.
+                    \       ':%spellhlname)'
+    endif
+    if a:opts.dodiff
+        let lcsspecstr='(%diffattr'.
                 \         '?%ddspec '.
-                \         ':'.a:specstr.')')
-                \     :a:specstr
+                \         ':'.lcsspecstr.')'
+    endif
     if a:opts.domatches
         let lcsspecstr='(%matchhlname is 0'.
                     \       '?'.lcsspecstr.' '.
@@ -2724,12 +2966,21 @@ function s:F.format(type, slnr, elnr, options, ...)
     call        ff.leta('%opts', 'a:opts')
     call        ff.leta('%r', '[]')    " List with formatted output
     call        ff.leta('%clnr', slnr) " Line being processed
-    call        ff.leta('%matchhlname', 0)
-    call        ff.leta('%oldmatchhlname', 0)
+    if opts.domatches
+        call    ff.leta('%matchhlname', 0)
+        call    ff.leta('%oldmatchhlname', 0)
+    endif
+    if opts.dospell
+        call    ff.leta('%spellhlname', 0)
+        call    ff.leta('%oldspellhlname', 0)
+    endif
     call        ff.leta('%name2sptypemap', ff.expr(substitute(string({
                 \       'special':     '%specialchar',
                 \       'tagstart':    '%startedtag',
                 \       'tagend':      '%endedtag',
+                \       'linkstart':   '%startedlink',
+                \       'linkend':     '%endedlink',
+                \       'spellborder': '%spellhlname',
                 \       'matchborder': '%matchhlname',
                 \       'trail':       '%dummy',
                 \   }), ' ', '', 'g'), 1))
@@ -3408,6 +3659,11 @@ function s:F.format(type, slnr, elnr, options, ...)
                   \                                 '?'.hlnamestradd.
                   \                                ' :[%oldmatchhlname])'
     endif
+    if opts.dospell
+        let                     hlnamestradd='(%oldspellhlname is 0'.
+                    \                               '?[]'.
+                    \                               ':["!".%oldspellhlname])+'.hlnamestradd
+    endif
     if hlnamestradd isnot# '[]'
       let                       hlnamestr.='+'.hlnamestradd
     endif
@@ -3416,9 +3672,9 @@ function s:F.format(type, slnr, elnr, options, ...)
       call                          ff.let('%cstr', 'substitute(%cstr,'' '','.
                   \                        escape(s:F.squote(opts.listchars.trail),'\&~').',''g'')')
       if opts.domatches
-        let                     trailhlnamestr='(%oldmatchhlname is 0'.
-                    \                                   '?('.hlnamestr.')'.
-                    \                                   ':[%oldmatchhlname])'
+        let                         trailhlnamestr='(%oldmatchhlname is 0'.
+                    \                                       '?('.hlnamestr.')'.
+                    \                                       ':[%oldmatchhlname])'
         call                        ff.leta('%curspec', cf.specstr(trailhlnamestr))
         call                    ff.else()
       else
@@ -3436,19 +3692,21 @@ function s:F.format(type, slnr, elnr, options, ...)
     call                    ff.leta('%oldid', '%id')
     call                    ff.leta('%startcol', '%curcol')
     "▲6
-    "▶6 Tag breaks
-    if opts.dotags && cf.has('tagend')
-      call                  ff.if('exists(''%endedtag'')')
-      call                      ff.appendc('tagend', '%endedtag', '0', '%clnr', '%curcol')
-      call                      ff.unlet('%endedtag')
-      call                  ff.endif()
-    endif
-    if opts.dotags && cf.has('tagstart')
-      call                  ff.if('exists(''%startedtag'')')
-      call                      ff.appendc('tagstart', '%startedtag', '0', '%clnr', '%curcol')
-      call                      ff.unlet('%startedtag')
-      call                  ff.endif()
-    endif
+    "▶6 Tag/link breaks
+    for type in (opts.dotags?['tag']:[])+(opts.dolinks?['link']:[])
+      for key in ['start', 'end']
+        if cf.has(type.key)
+          let               varname='%'.key.'ed'.type " startedtag/endedlink/…
+          call              ff.if('exists('.string(varname).')')
+          call                  ff.appendc(type.key, varname, 0, '%clnr', '%curcol')
+          call                  ff.unlet(varname)
+          call              ff.endif()
+          unlet varname
+        endif
+        unlet key
+      endfor
+      unlet type
+    endfor
     "▲6
     "▶6 Concealed character breaks
     if opts.formatconcealed
@@ -3629,6 +3887,9 @@ function s:F.format(type, slnr, elnr, options, ...)
     if opts.domatches
       call                  ff.leta('%oldmatchhlname', '%matchhlname')
     endif
+    if opts.dospell
+      call                  ff.leta('%oldspellhlname', '%spellhlname')
+    endif
     "▲6
     "▲5
     "▶5 Finish cycle
@@ -3682,31 +3943,35 @@ function s:F.format(type, slnr, elnr, options, ...)
     endif
     "▲5
     "▶5 Special columns
-    if opts.domatches || opts.dotags
+    if opts.domatches || opts.dotags || opts.dospell
       call              ff.if('has_key(%specialcolumns,%linelen+1)')
       call                  ff.call('map(%specialcolumns[%linelen+1],'.
                   \                    '''extend(l:,{%name2sptypemap[v:val[0]]:v:val[1]})'')')
-      call                  ff.let('%oldmatchhlname', '%matchhlname')
+      if opts.domatches
+          call              ff.let('%oldmatchhlname', '%matchhlname')
+      endif
+      if opts.dospell
+          call              ff.let('%oldspellhlname', '%spellhlname')
+      endif
       call              ff.endif()
     endif
-    if opts.dotags && cf.has('tagstart')
-      call                  ff.if('exists(''%startedtag'')')
-      call                      ff.unlet('%startedtag')
-      call                  ff.endif()
-    endif
     "▲5
-    "▶5 Tags
-    if opts.dotags && cf.has('tagend')
-      call                  ff.if('exists(''%endedtag'')')
-      call                      ff.appendc('tagend', '%endedtag', '0', '%clnr', '%curcol')
-      call                      ff.unlet('%endedtag')
-      call                  ff.endif()
-    endif
-    if opts.dotags && cf.has('tagstart')
-      call                  ff.if('exists(''%startedtag'')')
-      call                      ff.unlet('%startedtag')
-      call                  ff.endif()
-    endif
+    "▶5 Tags/links
+    for type in (opts.dotags?['tag']:[])+(opts.dolinks?['link']:[])
+      if cf.has(type.'start')
+        call            ff.if('exists(''%started'.type.''')')
+        call                ff.unlet('%started'.type)
+        call            ff.endif()
+      endif
+      if cf.has(type.'end')
+        call            ff.if('exists(''%ended'.type.''')')
+        call                ff.appendc(type.'end', '%ended'.type, 0, '%clnr', '%curcol')
+        call                ff.unlet('%ended'.type)
+        call            ff.endif()
+      endif
+      unlet type
+    endfor
+    "▲5
     "▶5 Processing EOL
     if has_key(opts.listchars, 'eol') || !empty(opts.matchespasteol)
       if !empty(opts.matchespasteol)
@@ -3745,7 +4010,7 @@ function s:F.format(type, slnr, elnr, options, ...)
     call                ff.appendc('lineend', 0, '%linespec', '%clnr', '%curcol')
     "▲4
     "▶4 Rules
-    " Order: colorcolumn > matches > diff > cursorline > signs > special > syntax
+    " Order: colorcolumn > matches > diff > cursorline > signs > spell > special > syntax
     " Rules:
     " (colorcolumn = colorcolumn and cursorcolumn)
     " (signs       = sign linehl)
@@ -3874,13 +4139,16 @@ let s:filcomprefs=
             \              '!           number :=(-1) '.
             \              '!   relativenumber :=(-1) '.
             \              '!             list :=(-1) '.
+            \              '!             diff :=(-1) '.
             \              '!+1           tags :=(-1)  in [local all] '.
             \              '!+1     foldcolumn :=(-2)  |earg range -1 inf '.
             \              '!            folds :=(-1) '.
             \              '!            signs :=(-1) '.
+            \              '!            spell :=(-1) '.
             \              '!+1      concealed :=(-1)  in [shown both] '.
             \              '!+1       progress :=(-1)  in [percent lines] '.
-            \              '!+1        matches :=(-1)  in [search matches all] '
+            \              '!+1        matches :=(-1)  in [search matches all] '.
+            \              '!            links :=(-1) '
 let s:filformats='[:*_f.getoption("DefaultFormat") key formats~start]'
 let s:cmd['@FWC']=[
             \'-onlystrings _ _ '.
@@ -3922,6 +4190,8 @@ let s:cmpcomprefs=                      'columns  in ["-1" "80" =string(&co) '.
             \                '!           number '.
             \                '!   relativenumber '.
             \                '!             list '.
+            \((has('spell'))?
+            \               ('!            spell '                    ):('')).
             \((has('diff'))?
             \               ('!             diff '                    ):('')).
             \                '!+1           tags  in [local all] '.
@@ -3937,7 +4207,8 @@ let s:cmpcomprefs=                      'columns  in ["-1" "80" =string(&co) '.
             \                '!+1        matches  in [all matches '.
             \                                        (has('extra_search')
             \                                           ?('search')
-            \                                           :('')).']'
+            \                                           :('')).']'.
+            \                '!            links '
 let s:cmpformats='[key formats]'
 let s:cmdcomplete='<'.
             \((has('diff'))?
@@ -3989,5 +4260,5 @@ call s:_f.newfeature('format', {'cons': s:format,
             \                 'unload': s:F.formatunload,})
 unlet s:format
 "▶1
-call frawor#Lockvar(s:, 'formats,progress,profiled')
+call frawor#Lockvar(s:, 'formats,progress,profiled,found_badly_spelled_word')
 " vim: ft=vim:ts=8:fdm=marker:fenc=utf-8:fmr=▶,▲:tw=100

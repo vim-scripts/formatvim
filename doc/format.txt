@@ -57,6 +57,7 @@ Differencies with built-in |:TOhtml|:
     ∙ Full 'foldcolumn' support: 2html sets foldcolumn to either 'foldcolumn' 
       value or maximum fold level, whichever is greater, formatvim uses 
       'foldcolumn' value, fully emulating what vim shows.
+    ∙ 'spell' checking support. |g:format_IgnoreSpell|
 
 
 Plugin requires some additional plugins:
@@ -115,6 +116,9 @@ Note: formatvim supports VAM (https://github.com/MarcWeber/vim-addon-manager).
             signs          Bool (`signs' or `nosigns').
                            Overrides |format-o-IgnoreSigns|, does the opposite 
                            to it.
+            spell          Bool (`spell' or `nospell').
+                           Overrides |format-o-IgnoreSpell|, does the opposite 
+                           to it.
             concealed      False (`noconcealed'), `show' or `both'.
                            Overrides |format-o-FormatConcealed|.
             progress       False (`noprogress'), `lines' or `percent'.
@@ -131,6 +135,8 @@ Note: formatvim supports VAM (https://github.com/MarcWeber/vim-addon-manager).
                            (actual value is ignored), with `matches' or `all' 
                            it formats |getmatches()| output.
                            Overrides |format-o-FormatMatches|.
+            links          Bool (`links' or `nolinks').
+                           Overrides |format-o-FormatLinks|.
                                                     *format-side-by-side-diff*
                                                     *format-action-diffformat*
 :{range}Format diffformat [{formatName} [{option1} {value1}]]
@@ -253,6 +259,11 @@ MaxDupTags :: UInt                                       *format-o-MaxDupTags*
         then this tag is ignored. You can set this option to 0 in order to 
         prevent filtering. Default: 5.
 
+                                                        *g:format_IgnoreSpell*
+IgnoreSpell :: Bool                                     *format-o-IgnoreSpell*
+        Determines whether spell checker highlighting should be ignored.
+        Default: 0.
+
                                                      *g:format_RelativeNumber*
 RelativeNumber :: -1 | Bool                          *format-o-RelativeNumber*
         If it is true, then it adds relative line numbers, just like when 
@@ -299,7 +310,6 @@ FormatConcealed :: 0, 1 or 2                        *format-o-FormatConcealed*
         |format-spec-key-concealed| is used, so information about concealed 
         characters can be possibly saved.
 
-
                                                       *g:format_FormatMatches*
 FormatMatches :: none, search, matches or all         *format-o-FormatMatches*
         Determines whether patterns searched for and patterns returned by 
@@ -307,7 +317,29 @@ FormatMatches :: none, search, matches or all         *format-o-FormatMatches*
         arguments it formats search pattern as if 'hlsearch' were on (actual 
         value is ignored), with `matches' or `all' it formats |getmatches()| 
         output.
-        Default: `all' if 'hlsearch' is on and `matches' if it is not.
+        Default: `all' if 'hlsearch' is on and |v:hlsearch| is 1 and `matches' 
+                 if it is not.
+                 If |v:hlsearch| is not present it is `all' once 'hlsearch' is 
+                 on. If vim was compiled without |+extra_search| it is 
+                 `matches' by default regardless of other settings.
+
+                                                        *g:format_FormatLinks*
+FormatLinks :: Bool                                     *format-o-FormatLinks*
+        Determines whether links should be detected and formatted using 
+        |format-spec-key-linkstart| and/or |format-spec-key-linkend|. If true 
+        linkstart is added before links described by |format-o-LinkRegexes| 
+        and linkend is added after.
+        Default: 1.
+
+                                 *b:format_LinkRegexes* *g:format_LinkRegexes*
+LinkRegexes :: [(|regexp|, |expr|)]                     *format-o-LinkRegexes*
+        Determines what the link is and what it links to. Is a list of pairs 
+        where first value is a regular expression (in |/\m| and |/\C| mode) 
+        and second value is a |sub-replace-expression|.
+        Note: if you define both g:format_LinkRegexes and b:format_LinkRegexes 
+              they will be merged together. g:format_LinkRegexes will override 
+              default value, b:format_LinkRegexes will be merged with it.
+        Note 2: you must define regexes so that they will not overlap.
 
                                                        *g:format_ShowProgress*
 ShowProgress :: 0, 1 or 2                              *format-o-ShowProgress*
@@ -467,12 +499,13 @@ HTMLAdditionalCSS :: string                       *format-o-HTMLAdditionalCSS*
     .Concealed > .Present  Container for the text actually present in the 
                            buffer.
 
-    Tags selectors, see |format-o-IgnoreTags|:
+    Tags and links, see |format-o-IgnoreTags| and |format-o-FormatLinks|:
     Selector      Description ~
     .Tag          Link to some tag definition.
     .TagLink      Container for quick link near tag definition. Applicable 
                   only if |format-o-HTMLAddLinkAtTagLine| is true.
     .TagLink > a  Like above, but selects the link itself.
+    .Link         Link to some location
 
     Selectors for various columns:
     Selector     Description ~
@@ -1039,8 +1072,14 @@ of ordinary variables):
         formatconcealed  0 if concealed text is ignored, 1 or 2 otherwise, see 
                       |format-o-FormatConcealed|.
         formatmatches, formatsearch, formatsomematch
-                      0 if related match are not be formatted, 1 if they are. 
+                      0 if related match will not be formatted, 1 if they are. 
                       See also |format-o-FormatMatches|.
+        domatches     0 if matches are not formatted or no matches were found, 
+                      1 otherwise.
+        formatspell   0 if spell checking results are ignored, 1 otherwise.
+                      See also |format-o-IgnoreSpell|.
+        dospell       0 if spell checking results are not formatted or no bad 
+                      words were found, 1 otherwise.
         tags          Dictionary where keys are tag names and values are lists 
                       of pairs [{tag-location}, {tag-options}] where each tag 
                       location is either a line number (if tag is located in 

@@ -188,7 +188,7 @@ function s:F.altervars(plugdict, fname, arg)
     let laltvars=len(a:arg)
     let plid=a:plugdict.id
     let i=0
-    let id=printf('%x', s:altervars.lastid)
+    let id=printf('x%x', s:altervars.lastid)
     let fpref='@%@.altervars.'.id
     let altcopy=map(copy(a:arg), 'copy(v:val)')
     let s:altervars[id]=altcopy
